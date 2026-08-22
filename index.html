@@ -1,0 +1,120 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="Recipe Friend — your personal recipe box, saved right in your browser.">
+  <title>Recipe Friend</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🍲</text></svg>">
+  <link rel="stylesheet" href="css/styles.css">
+</head>
+<body>
+  <header class="app-header">
+    <div class="app-header-inner">
+      <h1 class="app-title">🍲 Recipe Friend</h1>
+      <div class="header-actions">
+        <button id="export-btn" class="btn btn-ghost" title="Download all recipes as a JSON file">Export</button>
+        <button id="import-btn" class="btn btn-ghost" title="Import recipes from a JSON file">Import</button>
+        <input type="file" id="import-file" accept="application/json,.json" hidden>
+        <button id="add-recipe-btn" class="btn btn-primary">+ New recipe</button>
+      </div>
+    </div>
+  </header>
+
+  <main class="container">
+    <section class="toolbar" aria-label="Search and filter">
+      <input type="search" id="search-input" class="search-input"
+             placeholder="Search recipes, ingredients, tags…" aria-label="Search recipes">
+      <div class="filter-row">
+        <button id="favorites-filter" class="chip" aria-pressed="false">★ Favorites</button>
+        <div id="tag-filters" class="tag-filter-list"></div>
+      </div>
+    </section>
+
+    <section id="recipe-list" class="recipe-grid" aria-live="polite"></section>
+
+    <div id="empty-state" class="empty-state" hidden>
+      <p class="empty-emoji">🥕</p>
+      <h2>No recipes here yet</h2>
+      <p>Add your first recipe, or import a collection from a JSON file.<br>
+         Everything is saved locally in this browser — no account needed.</p>
+      <button class="btn btn-primary" id="empty-add-btn">+ Add your first recipe</button>
+    </div>
+  </main>
+
+  <footer class="app-footer">
+    <p>Recipes are stored only in this browser via localStorage. Use Export to back them up or move them to another device.</p>
+  </footer>
+
+  <!-- Add / edit recipe -->
+  <dialog id="recipe-dialog" class="recipe-dialog">
+    <form id="recipe-form" method="dialog" novalidate>
+      <h2 id="dialog-title">New recipe</h2>
+
+      <label class="field">
+        <span>Name *</span>
+        <input type="text" name="name" required maxlength="120" placeholder="e.g. Weeknight ramen">
+      </label>
+
+      <label class="field">
+        <span>Description</span>
+        <textarea name="description" rows="2" maxlength="500"
+                  placeholder="A short note about this recipe"></textarea>
+      </label>
+
+      <div class="field-row">
+        <label class="field">
+          <span>Servings</span>
+          <input type="number" name="servings" min="1" max="99" placeholder="4">
+        </label>
+        <label class="field">
+          <span>Prep (min)</span>
+          <input type="number" name="prepMinutes" min="0" max="999" placeholder="15">
+        </label>
+        <label class="field">
+          <span>Cook (min)</span>
+          <input type="number" name="cookMinutes" min="0" max="999" placeholder="30">
+        </label>
+      </div>
+
+      <label class="field">
+        <span>Ingredients * <small>(one per line)</small></span>
+        <textarea name="ingredients" rows="6" required
+                  placeholder="200g noodles&#10;2 eggs&#10;1 tbsp soy sauce"></textarea>
+      </label>
+
+      <label class="field">
+        <span>Steps * <small>(one per line)</small></span>
+        <textarea name="steps" rows="6" required
+                  placeholder="Boil the noodles.&#10;Soft-boil the eggs.&#10;Assemble the bowl."></textarea>
+      </label>
+
+      <label class="field">
+        <span>Tags <small>(comma separated)</small></span>
+        <input type="text" name="tags" maxlength="200" placeholder="dinner, quick, vegetarian">
+      </label>
+
+      <div class="dialog-actions">
+        <button type="button" class="btn btn-ghost" id="cancel-dialog-btn">Cancel</button>
+        <button type="submit" class="btn btn-primary" id="save-recipe-btn">Save recipe</button>
+      </div>
+    </form>
+  </dialog>
+
+  <!-- Recipe detail -->
+  <dialog id="detail-dialog" class="recipe-dialog detail-dialog">
+    <div id="detail-content"></div>
+    <div class="dialog-actions">
+      <button type="button" class="btn btn-danger" id="detail-delete-btn">Delete</button>
+      <span class="dialog-actions-spacer"></span>
+      <button type="button" class="btn btn-ghost" id="detail-close-btn">Close</button>
+      <button type="button" class="btn btn-primary" id="detail-edit-btn">Edit</button>
+    </div>
+  </dialog>
+
+  <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
+
+  <script src="js/storage.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>
