@@ -6,19 +6,24 @@
   <meta name="description" content="Recipe Friend — your personal recipe box, saved right in your browser.">
   <title>Recipe Friend</title>
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🍲</text></svg>">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,300..600;1,9..144,300..600&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="css/styles.css">
 </head>
 <body>
-  <header class="app-header">
-    <div class="app-header-inner">
-      <h1 class="app-title">🍲 Recipe Friend</h1>
-      <div class="header-actions">
-        <button id="export-btn" class="btn btn-ghost" title="Download all recipes as a JSON file">Export</button>
-        <button id="import-btn" class="btn btn-ghost" title="Import recipes from a JSON file">Import</button>
-        <input type="file" id="import-file" accept="application/json,.json" hidden>
-        <button id="add-recipe-btn" class="btn btn-primary">+ New recipe</button>
-      </div>
+  <header class="masthead">
+    <p class="masthead-kicker">A personal recipe box</p>
+    <h1 class="app-title">Recipe <em>Friend</em></h1>
+    <p class="masthead-note">kept entirely in this browser · no accounts, no cloud</p>
+    <div class="header-actions">
+      <button id="export-btn" class="btn btn-ghost" title="Download all recipes as a JSON file">Export</button>
+      <span class="action-sep" aria-hidden="true">·</span>
+      <button id="import-btn" class="btn btn-ghost" title="Import recipes from a JSON file">Import</button>
+      <span class="action-sep" aria-hidden="true">·</span>
+      <button id="add-recipe-btn" class="btn btn-primary">New recipe</button>
     </div>
+    <input type="file" id="import-file" accept="application/json,.json" hidden>
   </header>
 
   <main class="container">
@@ -26,7 +31,7 @@
       <input type="search" id="search-input" class="search-input"
              placeholder="Search recipes, ingredients, tags…" aria-label="Search recipes">
       <div class="filter-row">
-        <button id="favorites-filter" class="chip" aria-pressed="false">★ Favorites</button>
+        <button id="favorites-filter" class="chip chip-fav" aria-pressed="false">★ Favourites</button>
         <div id="tag-filters" class="tag-filter-list"></div>
       </div>
     </section>
@@ -35,15 +40,16 @@
 
     <div id="empty-state" class="empty-state" hidden>
       <p class="empty-emoji">🥕</p>
-      <h2>No recipes here yet</h2>
+      <h2>Nothing on the menu yet</h2>
       <p>Add your first recipe, or import a collection from a JSON file.<br>
          Everything is saved locally in this browser — no account needed.</p>
-      <button class="btn btn-primary" id="empty-add-btn">+ Add your first recipe</button>
+      <button class="btn btn-primary" id="empty-add-btn">Add your first recipe</button>
     </div>
   </main>
 
   <footer class="app-footer">
-    <p>Recipes are stored only in this browser via localStorage. Use Export to back them up or move them to another device.</p>
+    <p>Recipes are stored only in this browser via localStorage.<br>
+       Use Export to back them up or move them to another device.</p>
   </footer>
 
   <!-- Add / edit recipe -->
@@ -107,6 +113,7 @@
     <div class="dialog-actions">
       <button type="button" class="btn btn-danger" id="detail-delete-btn">Delete</button>
       <span class="dialog-actions-spacer"></span>
+      <button type="button" class="btn btn-ghost" id="detail-fav-btn" aria-pressed="false">☆ Favourite</button>
       <button type="button" class="btn btn-ghost" id="detail-close-btn">Close</button>
       <button type="button" class="btn btn-primary" id="detail-edit-btn">Edit</button>
     </div>
