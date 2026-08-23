@@ -81,7 +81,7 @@
       .join("");
   }
 
-  function recipeCard(recipe) {
+  function recipeCard(recipe, index) {
     const time = totalTime(recipe);
     const meta = [
       recipe.servings ? `Serves ${recipe.servings}` : null,
@@ -94,13 +94,14 @@
     return `
       <article class="recipe-card" data-id="${escapeHTML(recipe.id)}" tabindex="0"
                role="button" aria-label="Open ${escapeHTML(recipe.name)}">
+        <span class="card-index">№ ${String(index + 1).padStart(2, "0")}</span>
         <div class="card-top">
           <h3 class="card-title">${escapeHTML(recipe.name)}</h3>
           <button class="fav-btn ${recipe.favorite ? "fav-active" : ""}"
                   data-action="favorite" data-id="${escapeHTML(recipe.id)}"
                   aria-pressed="${recipe.favorite}"
-                  aria-label="${recipe.favorite ? "Remove from" : "Add to"} favorites"
-                  title="${recipe.favorite ? "Remove from" : "Add to"} favorites">★</button>
+                  aria-label="${recipe.favorite ? "Remove from" : "Add to"} favourites"
+                  title="${recipe.favorite ? "Remove from" : "Add to"} favourites">${recipe.favorite ? "★" : "☆"}</button>
         </div>
         ${recipe.description ? `<p class="card-desc">${escapeHTML(recipe.description)}</p>` : ""}
         <p class="card-meta">${escapeHTML(meta)}</p>
@@ -116,7 +117,7 @@
 
   function render() {
     const visible = store.recipes.filter(matchesFilters);
-    listEl.innerHTML = visible.map(recipeCard).join("");
+    listEl.innerHTML = visible.map((r, i) => recipeCard(r, i)).join("");
 
     const hasAny = store.recipes.length > 0;
     emptyStateEl.hidden = hasAny;
@@ -198,8 +199,9 @@
     ].filter(Boolean);
 
     detailContent.innerHTML = `
+      <p class="detail-kicker">From your recipe box</p>
       <h2 class="detail-title">${escapeHTML(recipe.name)}
-        ${recipe.favorite ? '<span class="detail-fav" title="Favorite">★</span>' : ""}
+        ${recipe.favorite ? '<span class="detail-fav" title="Favourite">★</span>' : ""}
       </h2>
       ${recipe.description ? `<p class="detail-desc">${escapeHTML(recipe.description)}</p>` : ""}
       ${metaBits.length ? `<p class="card-meta">${escapeHTML(metaBits.join(" · "))}</p>` : ""}
@@ -218,7 +220,14 @@
       <ol class="detail-steps">
         ${recipe.steps.map((s) => `<li>${escapeHTML(s)}</li>`).join("")}
       </ol>`;
-    detailDialog.showModal();
+    syncDetailFavButton(recipe);
+    if (!detailDialog.open) detailDialog.showModal();
+  }
+
+  function syncDetailFavButton(recipe) {
+    const btn = $("#detail-fav-btn");
+    btn.textContent = recipe.favorite ? "★ Favourited" : "☆ Favourite";
+    btn.setAttribute("aria-pressed", String(recipe.favorite));
   }
 
   // --- Import / export ---
@@ -304,6 +313,13 @@
   });
 
   $("#detail-close-btn").addEventListener("click", () => detailDialog.close());
+
+  $("#detail-fav-btn").addEventListener("click", () => {
+    const recipe = store.toggleFavorite(detailId);
+    if (!recipe) return;
+    openDetailDialog(recipe); // re-render the open dialog with the new state
+    render();
+  });
 
   $("#detail-edit-btn").addEventListener("click", () => {
     const recipe = store.getById(detailId);
