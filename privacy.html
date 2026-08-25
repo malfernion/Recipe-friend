@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="Recipe Friend privacy policy — what we store, why, and how to have it deleted.">
+  <title>Privacy Policy · Recipe Friend</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🍲</text></svg>">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,300..600;1,9..144,300..600&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="css/styles.css">
+</head>
+<body>
+  <main class="legal">
+    <p class="legal-kicker"><a href="./">Recipe Friend</a></p>
+    <h1>Privacy Policy</h1>
+    <p class="legal-date">Last updated: August 2026</p>
+
+    <p>Recipe Friend is a small, free recipe app run by an individual as a personal
+       project. This policy explains exactly what it stores, why, and how to get rid
+       of it. It is written to be read, not to be survived.</p>
+
+    <h2>What we collect</h2>
+    <p><strong>From Google, when you sign in.</strong> Recipe Friend uses Sign in with
+       Google so that there are no passwords to manage. We receive your name, your
+       email address, and the account identifier Google issues. We do not request or
+       receive access to your Gmail, Drive, contacts, calendar, or anything else in
+       your Google account.</p>
+    <p><strong>What you put into the app.</strong> The recipes you write or import —
+       names, descriptions, ingredients, steps, tags, timings, and any photos you
+       attach — together with the names of your recipe books and who belongs to them.</p>
+    <p><strong>Your settings.</strong> Your measurement preferences (for example
+       grams versus ounces), stored against your profile so they follow you between
+       devices.</p>
+    <p>That is the whole list. There are no analytics, no advertising, no tracking
+       pixels, and no third-party cookies. We do not build a profile of you, and we
+       do not track you across other websites.</p>
+
+    <h2>How it is used</h2>
+    <p>Only to run the app: to sign you in, to sync your recipes between your
+       devices, and to show your name to the other members of any recipe book you
+       share. We do not sell your information, and we do not share it for
+       advertising or marketing.</p>
+
+    <h2>Where it is stored</h2>
+    <p>Your account and recipes are stored in a hosted PostgreSQL database provided
+       by <strong>Supabase</strong>, which also handles authentication. The website
+       itself is static and served by <strong>GitHub Pages</strong>. Sign-in is
+       provided by <strong>Google</strong>. These providers process data on our
+       behalf so the app can function; each has its own privacy policy.</p>
+    <p>Your browser also keeps a local copy of your recipes so the app loads
+       instantly and works offline. That copy lives only on your device and you can
+       remove it by clearing the site's data in your browser.</p>
+
+    <h2>Shared recipe books</h2>
+    <p>A recipe book can be shared with other people by invitation. Anything you put
+       into a shared book — recipes, photos, edits — is visible to every member of
+       that book, and they can edit or delete it. Your display name is visible to
+       people you share a book with. Books you have not shared are visible only to
+       you; this is enforced by database access rules, not merely by the app.</p>
+
+    <h2>Share links</h2>
+    <p>When you share a single recipe as a link, the recipe is encoded into the part
+       of the URL after the <code>#</code>. Browsers never send that part to a
+       server, so a shared recipe travels directly from you to whoever you send it
+       to. We never see it. Anyone holding the link can read that recipe, so treat
+       links as you would the recipe itself.</p>
+
+    <h2>Keeping it, and deleting it</h2>
+    <p>Your recipes are kept until you delete them or ask for your account to be
+       removed. You can delete any recipe in the app at any time, and you can export
+       everything as a file whenever you like.</p>
+    <p>To have your account and its data deleted, ask via the contact below. We will
+       delete your profile, the books you own along with their recipes, and your
+       membership of any shared book. Recipes you added to a book owned by someone
+       else remain with that book, because they are part of a collection that
+       belongs to its owner. Deletion is permanent, so export first if you want a
+       copy.</p>
+
+    <h2>Security</h2>
+    <p>Traffic is encrypted in transit, sign-in is handled by Google so we never see
+       a password, and access to every table is restricted by row-level security
+       rules so that people can only reach books they belong to. No system is
+       perfectly secure, and this is a personal project rather than a company with a
+       security team — please bear that in mind when deciding what to store.</p>
+
+    <h2>Children</h2>
+    <p>Recipe Friend is not directed at children and should not be used by anyone
+       under 13.</p>
+
+    <h2>Changes</h2>
+    <p>If this policy changes, the updated version will be posted on this page with a
+       new date. Material changes to how your information is used will be reflected
+       here before they take effect.</p>
+
+    <h2>Contact</h2>
+    <p>For privacy questions or a deletion request, open an issue at
+       <a href="https://github.com/malfernion/Recipe-friend/issues">github.com/malfernion/Recipe-friend/issues</a>,
+       or use the support email shown on the Google sign-in consent screen.</p>
+
+    <p class="legal-foot"><a href="./">← Back to Recipe Friend</a> · <a href="terms.html">Terms of Service</a></p>
+  </main>
+</body>
+</html>
