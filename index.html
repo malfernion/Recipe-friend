@@ -5,7 +5,10 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <meta name="description" content="Recipe Friend — your personal recipe box, saved right in your browser.">
   <title>Recipe Friend</title>
-  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🍲</text></svg>">
+  <link rel="icon" href="assets/favicon.ico" sizes="any">
+  <link rel="icon" type="image/png" sizes="32x32" href="assets/favicon-32.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="assets/favicon-16.png">
+  <link rel="apple-touch-icon" href="assets/apple-touch-icon.png">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,300..600;1,9..144,300..600&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
@@ -13,6 +16,7 @@
 </head>
 <body class="gated">
   <header class="masthead">
+    <img class="masthead-logo" src="assets/logo.png" width="512" height="512" alt="" aria-hidden="true">
     <p class="masthead-kicker">A personal recipe box</p>
     <h1 class="app-title">Recipe <em>Friend</em></h1>
     <p class="masthead-note">your recipes, on every device you cook from</p>
@@ -40,12 +44,16 @@
 
   <section class="signin-view">
     <div class="signin-card">
-      <p class="masthead-kicker">A personal recipe box</p>
+      <img class="signin-logo" src="assets/logo.png" width="512" height="512"
+           alt="Recipe Friend — a recipe box wreathed in herbs">
       <h1 class="app-title">Recipe <em>Friend</em></h1>
       <p class="signin-blurb">Your recipes, on every device you cook from.<br>
          Keep a private book of your own, or share one with the household.</p>
       <button id="signin-cta" class="btn btn-primary signin-cta">Sign in with Google</button>
       <p class="signin-foot">We only ever see your name and email address.</p>
+      <p class="legal-links">
+        <a href="privacy.html">Privacy Policy</a> · <a href="terms.html">Terms of Service</a>
+      </p>
     </div>
   </section>
 
@@ -80,6 +88,9 @@
   <footer class="app-footer">
     <p>Your recipes sync to your account and stay available offline.<br>
        Use Export any time you want your own copy.</p>
+    <p class="legal-links">
+      <a href="privacy.html">Privacy Policy</a> · <a href="terms.html">Terms of Service</a>
+    </p>
   </footer>
 
   <!-- Add / edit recipe -->

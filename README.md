@@ -126,6 +126,8 @@ The site will be published at `https://<username>.github.io/Recipe-friend/`.
 
 ```
 index.html                     App shell, sign-in gate, and dialogs
+privacy.html, terms.html       Legal pages linked from the app and Google
+assets/                        Logo and favicons
 css/styles.css                 Styling (light + dark themes)
 js/storage.js                  RecipeStore — local persistence and sanitisation
 js/app.js                      UI: rendering, search/filter, dialogs, import/export
