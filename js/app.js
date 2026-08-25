@@ -654,6 +654,10 @@
     });
   }
 
+  // Handle for the sync layer (account.js/sync.js): shared store plus a
+  // way to redraw once remote changes land.
+  window.RecipeApp = { store, render, toast };
+
   render();
   handleIncomingShare();
   // A share link opened in an already-loaded tab only changes the fragment.
