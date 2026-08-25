@@ -1274,10 +1274,10 @@ body.gated .app-footer {
 }
 
 .masthead-logo {
-  width: 60px;
+  width: 78px;
   height: auto;
   display: block;
-  margin: 0 auto 0.9rem;
+  margin: 0 auto 1rem;
 }
 
 .legal-logo {
@@ -1296,17 +1296,17 @@ body.gated .app-footer {
   .legal-logo {
     background: #f4f1e4;
     border-radius: 50%;
-    padding: 4%;
+    padding: 5.5%;
   }
 }
 
 @media (max-width: 480px) {
   .signin-logo {
-    width: 132px;
+    width: 152px;
   }
 
   .masthead-logo {
-    width: 48px;
+    width: 84px;
   }
 }
 
