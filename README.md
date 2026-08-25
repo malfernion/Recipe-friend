@@ -15,8 +15,7 @@ build step.
   tags; filter by tag or favorites.
 - **Structured ingredients** — each ingredient is entered as amount · unit ·
   item (leave the amount empty for "to taste" lines), so scaling is exact
-  arithmetic rather than text parsing. Older free-text recipes are migrated
-  on a best-effort basis and easy to tidy in the editor.
+  arithmetic rather than text parsing.
 - **Portion scaling** — a Portions stepper in the recipe view rescales
   ingredient amounts on the fly with kitchen-friendly fractions ("1½ tbsp"
   halves to "¾ tbsp"). Display-only; the saved recipe is untouched.

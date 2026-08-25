@@ -2,9 +2,7 @@
  * scale.js — quantity helpers for structured ingredients.
  *
  * An ingredient is {amount: number|null, unit: string, item: string}.
- * Scaling multiplies the amount field — no free-text parsing at render
- * time. The legacy line parser lives on only to migrate old string
- * ingredients ("200g spaghetti") into the structured shape once.
+ * Scaling multiplies the amount field — no free-text parsing anywhere.
  */
 (function (global) {
   "use strict";
@@ -68,43 +66,5 @@
     return parts.join(" ");
   }
 
-  // --- Legacy migration only below this line ---
-
-  const KNOWN_UNITS = new Set([
-    "g", "kg", "mg", "ml", "cl", "dl", "l", "litre", "litres", "liter", "liters",
-    "tsp", "tbsp", "teaspoon", "teaspoons", "tablespoon", "tablespoons",
-    "cup", "cups", "oz", "lb", "stick", "sticks", "clove", "cloves",
-    "can", "cans", "tin", "tins", "slice", "slices", "bunch", "bunches",
-    "pinch", "pinches", "handful", "handfuls", "sprig", "sprigs",
-    "knob", "sheet", "sheets", "rasher", "rashers", "fillet", "fillets",
-  ]);
-
-  const LEADING_QTY = new RegExp(
-    `^\\s*(\\d+(?:\\.\\d+)?(?:\\s*(?:\\d+\\s*\\/\\s*\\d+|[${FRACTION_CHARS}]))?|\\d+\\s*\\/\\s*\\d+|[${FRACTION_CHARS}])\\s*`
-  );
-
-  /**
-   * Best-effort split of a legacy free-text line into {amount, unit, item}.
-   * Anything ambiguous lands whole in `item` for the user to tidy by hand.
-   */
-  function parseLegacyIngredient(line) {
-    const text = String(line).trim();
-    if (!text) return null;
-    const match = text.match(LEADING_QTY);
-    if (!match) return { amount: null, unit: "", item: text };
-    let rest = text.slice(match[0].length);
-    // A range ("2-3 carrots") doesn't fit a single amount — keep it as text.
-    if (/^[-–]/.test(rest)) return { amount: null, unit: "", item: text };
-    const amount = quantityToNumber(match[1]);
-    if (amount === null) return { amount: null, unit: "", item: text };
-    const firstWord = (rest.match(/^([A-Za-z]+)\b/) || [])[1];
-    let unit = "";
-    if (firstWord && KNOWN_UNITS.has(firstWord.toLowerCase())) {
-      unit = firstWord;
-      rest = rest.slice(firstWord.length).replace(/^\s+/, "");
-    }
-    return { amount, unit, item: rest.trim() };
-  }
-
-  global.RecipeScale = { quantityToNumber, formatQuantity, ingredientText, parseLegacyIngredient };
+  global.RecipeScale = { quantityToNumber, formatQuantity, ingredientText };
 })(window);

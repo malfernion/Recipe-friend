@@ -25,16 +25,9 @@
     return value.map((s) => String(s).trim()).filter(Boolean);
   }
 
-  /**
-   * Ingredients are structured: {amount: number|null, unit, item}.
-   * Legacy free-text lines (old stored data, exports, share links) are
-   * migrated via a one-time best-effort split; whatever it can't place
-   * lands whole in `item` for hand-tidying in the editor.
-   */
+  /** Ingredients are structured: {amount: number|null, unit, item}. */
   function sanitizeIngredient(raw) {
-    if (raw === null || raw === undefined) return null;
-    if (typeof raw === "string") return global.RecipeScale.parseLegacyIngredient(raw);
-    if (typeof raw !== "object") return null;
+    if (!raw || typeof raw !== "object") return null;
     const amountNum = Number(raw.amount);
     const amount = Number.isFinite(amountNum) && amountNum > 0 ? amountNum : null;
     const unit = String(raw.unit || "").trim().slice(0, 24);
