@@ -66,6 +66,7 @@
         recipe.name,
         recipe.description,
         ...recipe.ingredients.map((i) => RecipeScale.ingredientText(i)),
+        ...recipe.ingredients.map((i) => displayIngredient(i, 1)),
         ...recipe.tags,
       ]
         .join("\n")
@@ -74,6 +75,20 @@
     }
     if (pantryOn && pantryTerms.length > 0 && pantryMatches(recipe).length === 0) return false;
     return true;
+  }
+
+  /**
+   * One ingredient as this viewer should read it: scaled for the chosen
+   * portions, then converted into their preferred units. Recipes are
+   * stored exactly as entered, so this is the only place units change —
+   * which is what lets two people share a book and each see their own.
+   */
+  function displayIngredient(ing, factor) {
+    const scaled =
+      ing.amount === null || ing.amount === undefined || factor === 1
+        ? ing
+        : { ...ing, amount: ing.amount * factor };
+    return RecipeScale.ingredientText(RecipeUnits.convertIngredient(scaled, store.prefs));
   }
 
   /** Which of the user's pantry terms this recipe's ingredients mention. */
@@ -402,7 +417,7 @@
       <h3>Ingredients</h3>
       <ul class="detail-ingredients">
         ${recipe.ingredients
-          .map((i) => `<li>${escapeHTML(RecipeScale.ingredientText(i, factor))}</li>`)
+          .map((i) => `<li>${escapeHTML(displayIngredient(i, factor))}</li>`)
           .join("")}
       </ul>
       <h3>Steps</h3>
@@ -502,7 +517,7 @@
   $("#prefs-close-btn").addEventListener("click", () => prefsDialog.close());
 
   $("#prefs-save-btn").addEventListener("click", () => {
-    const changed = store.setPrefs({ mass: $("#mass-pref").value, volume: $("#volume-pref").value });
+    store.setPrefs({ mass: $("#mass-pref").value, volume: $("#volume-pref").value });
     const cloud = window.RecipeCloud;
     if (cloud && cloud.sync && cloud.sync.userId) {
       cloud.sync.pushPrefs(store.prefs).catch((err) => {
@@ -510,7 +525,12 @@
       });
     }
     prefsDialog.close();
-    toast(changed > 0 ? `Preferences saved — ${changed} amount${changed === 1 ? "" : "s"} converted.` : "Preferences saved.");
+    toast("Preferences saved.");
+    // Nothing stored changed — only how amounts are shown.
+    if (detailDialog.open && detailId) {
+      const recipe = store.getById(detailId);
+      if (recipe) detailContent.innerHTML = recipeDetailHTML(recipe, "From your recipe box", true);
+    }
     render();
   });
 

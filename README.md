@@ -18,12 +18,13 @@ accounts and sync.
   item (leave the amount empty for "to taste" lines), so scaling is exact
   arithmetic rather than text parsing.
 - **Measurement preferences** — pick your units (grams/kilograms vs
-  ounces/pounds, millilitres/litres vs cups/fluid ounces) and everything you
-  add, import, or save from a share link is converted before storing;
-  changing preference converts the recipes already in your box. Preferences
-  are stored on your profile, so they follow you between devices. Teaspoons
-  and tablespoons are left alone, and unrecognised units ("cloves", "pinch",
-  "can") are never converted.
+  ounces/pounds, millilitres/litres vs cups/fluid ounces) and amounts are
+  shown that way wherever you read a recipe. Recipes are stored exactly as
+  entered and converted only for display, so two people sharing a book can
+  each keep their own setting without rewriting each other's data.
+  Preferences live on your profile and follow you between devices.
+  Teaspoons and tablespoons are left alone, and unrecognised units
+  ("cloves", "pinch", "can") are never converted.
 - **Portion scaling** — a Portions stepper in the recipe view rescales
   ingredient amounts on the fly with kitchen-friendly fractions ("1½ tbsp"
   halves to "¾ tbsp"). Display-only; the saved recipe is untouched.
@@ -116,7 +117,9 @@ offline — a failed sync retries on the next change, when the tab regains
 focus, or when the network returns. A status line under the header shows
 Saving… / Syncing… / Synced. Measurement preferences follow the person
 rather than the device: they are stored on your profile, so signing in
-elsewhere applies the same units.
+elsewhere applies the same units — and because conversion happens when a
+recipe is displayed rather than when it is saved, changing your units
+never edits the book.
 
 The `service_role` key is never used by the app and must never be
 committed.
