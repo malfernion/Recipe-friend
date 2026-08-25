@@ -1,0 +1,24 @@
+{
+  "name": "Lemon Garlic Roast Chicken",
+  "description": "A one-tray roast: the lemon halves steam the bird from inside while the potatoes catch the fat.",
+  "servings": 4,
+  "prepMinutes": 20,
+  "cookMinutes": 80,
+  "ingredients": [
+    { "amount": 1.6, "unit": "kg", "item": "whole chicken" },
+    { "amount": 800, "unit": "g", "item": "potatoes, halved" },
+    { "amount": 4, "unit": "clove", "item": "garlic, crushed" },
+    { "amount": 2, "unit": "tbsp", "item": "olive oil" },
+    { "amount": 1, "unit": "", "item": "lemon, halved" },
+    { "amount": null, "unit": "", "item": "salt and black pepper, to taste" }
+  ],
+  "steps": [
+    "Heat the oven to 200°C (fan 180°C).",
+    "Toss the potatoes with the oil and garlic in a roasting tin and season well.",
+    "Put the lemon halves inside the chicken, sit it on the potatoes, and season the skin.",
+    "Roast for 80 minutes, basting once, until the juices run clear.",
+    "Rest for 10 minutes before carving."
+  ],
+  "tags": ["chicken", "roast", "sunday"],
+  "image": ""
+}

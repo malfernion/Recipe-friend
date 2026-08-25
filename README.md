@@ -176,6 +176,21 @@ supabase/schema.sql            Tables, RLS policies, triggers, functions
 supabase/migrations/           Additive schema changes, run in order
                                (004 creates the private photo bucket)
 .github/workflows/deploy-pages.yml   GitHub Pages deployment
+.claude/skills/recipe-share-link/     Agent skill: recipe -> share link
+```
+
+## Turning a recipe into a share link
+
+`.claude/skills/recipe-share-link/` is an agent skill that teaches an
+assistant to read a recipe from a web page, a photo of a cookbook page, or
+pasted text and hand back a share link that opens straight into the app. It
+carries the app's validation rules (what makes a recipe importable, which
+units convert, why photos can't travel) and a dependency-free encoder in
+both Node and Python, so it also works pasted into an agent that doesn't
+have this repo checked out. Build a link by hand with:
+
+```bash
+node .claude/skills/recipe-share-link/scripts/recipe-link.mjs recipe.json
 ```
 
 ## Notes on storage
