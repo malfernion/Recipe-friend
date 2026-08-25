@@ -99,6 +99,11 @@ link that works for 7 days. A recipe can be moved to another book from its
 remove members, and members can leave. Recipes belong to the book, so
 leaving one takes nothing away from it.
 
+An owner can also delete a book outright, which permanently removes its
+recipes for every member — the app says how many recipes and how many
+other people will be affected before you confirm. You cannot delete your
+last remaining book, and **Export** is the way to keep a copy first.
+
 ### How sync behaves
 
 Signed in, the app syncs your recipes with your book in the background:
