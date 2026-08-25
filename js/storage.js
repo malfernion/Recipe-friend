@@ -245,15 +245,10 @@
       this._applying = false;
     }
 
-    _convert(recipe) {
-      global.RecipeUnits.applyPrefs(recipe, this.prefs);
-      return recipe;
-    }
-
     /**
-     * Save measurement preferences and convert the whole collection so it
-     * is consistently in the preferred units. Returns how many ingredient
-     * amounts changed.
+     * Save measurement preferences. Recipes are stored as entered and
+     * converted when displayed, so nothing stored changes here — which is
+     * what lets two people share a book with different preferences.
      */
     setPrefs(prefs) {
       this.prefs = {
@@ -265,17 +260,7 @@
       } catch (err) {
         console.warn("Recipe Friend: could not save preferences.", err);
       }
-      let changed = 0;
-      for (const recipe of this.state.recipes) {
-        const n = global.RecipeUnits.applyPrefs(recipe, this.prefs);
-        if (n > 0) {
-          // The stored amounts really changed, so mark it for sync.
-          recipe.updatedAt = Date.now();
-          changed += n;
-        }
-      }
-      if (changed > 0) this._persist();
-      return changed;
+      return this.prefs;
     }
 
     get recipes() {
@@ -290,7 +275,6 @@
     add(input) {
       const recipe = sanitizeRecipe({ ...input, id: null, createdAt: Date.now() });
       if (!recipe) return null;
-      this._convert(recipe);
       this._untomb(recipe.id);
       this.state.recipes.unshift(recipe);
       this._persist();
@@ -310,7 +294,6 @@
         updatedAt: Date.now(),
       });
       if (!merged) return null;
-      this._convert(merged);
       Object.assign(existing, merged);
       this._persist();
       return existing;
@@ -350,7 +333,6 @@
       if (!recipe) return null;
       const existing = this.getById(recipe.id);
       if (existing) return { recipe: existing, existed: true };
-      this._convert(recipe);
       this._untomb(recipe.id);
       this.state.recipes.unshift(recipe);
       this._persist();
@@ -398,8 +380,7 @@
           continue;
         }
         existingIds.add(recipe.id);
-        this._convert(recipe);
-        this._untomb(recipe.id);
+          this._untomb(recipe.id);
         this.state.recipes.push(recipe);
         imported++;
       }
