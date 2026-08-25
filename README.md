@@ -124,6 +124,22 @@ never edits the book.
 The `service_role` key is never used by the app and must never be
 committed.
 
+## Keeping the free project awake
+
+Free Supabase projects pause after 7 days without API activity, and a
+project left paused for 90 days is deleted.
+`.github/workflows/supabase-keepalive.yml` sends one request a day to keep
+that clock reset. It reads the project URL and publishable key straight out
+of `js/config.js` — both are public by design, so no repository secret is
+involved.
+
+Two things worth knowing: GitHub disables scheduled workflows on a
+repository with no activity for 60 days (a push or a manual run re-enables
+them), and the job fails loudly if Supabase does not answer with 200, which
+doubles as a cheap uptime check. There is deliberately no automated backup
+job — that would need a key that bypasses row-level security, so **Export**
+remains the way to keep your own copy.
+
 ## Deploying to GitHub Pages
 
 The included workflow (`.github/workflows/deploy-pages.yml`) deploys the site
