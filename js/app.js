@@ -7,7 +7,6 @@
   "use strict";
 
   const store = new RecipeStore();
-  store.seedIfEmpty();
 
   // --- UI state (not persisted) ---
   let searchQuery = "";
@@ -496,6 +495,12 @@
 
   $("#prefs-save-btn").addEventListener("click", () => {
     const changed = store.setPrefs({ mass: $("#mass-pref").value, volume: $("#volume-pref").value });
+    const cloud = window.RecipeCloud;
+    if (cloud && cloud.sync && cloud.sync.userId) {
+      cloud.sync.pushPrefs(store.prefs).catch((err) => {
+        console.warn("Recipe Friend: could not save preferences to your account.", err);
+      });
+    }
     prefsDialog.close();
     toast(changed > 0 ? `Preferences saved — ${changed} amount${changed === 1 ? "" : "s"} converted.` : "Preferences saved.");
     render();
@@ -589,6 +594,8 @@
     }
   });
 
+  const PENDING_SHARE_KEY = "recipe-friend:pending-share";
+
   async function handleIncomingShare() {
     const match = location.hash.match(/^#add=(.+)$/);
     if (!match) return;
@@ -601,13 +608,51 @@
       return;
     }
     incomingShare = raw;
+    // Opened while signed out: hold it across the sign-in round trip
+    // instead of losing the recipe.
+    if (document.body.classList.contains("gated")) {
+      try {
+        sessionStorage.setItem(PENDING_SHARE_KEY, JSON.stringify(raw));
+      } catch {
+        /* held in memory instead */
+      }
+      return;
+    }
+    openShareDialog(preview);
+  }
+
+  function openShareDialog(preview) {
     $("#share-content").innerHTML = recipeDetailHTML(preview, "A recipe shared with you");
-    shareDialog.showModal();
+    if (!shareDialog.open) shareDialog.showModal();
+  }
+
+  /** Called once signed in, for a link that arrived before sign-in. */
+  function showPendingShare() {
+    if (!incomingShare) {
+      try {
+        const held = sessionStorage.getItem(PENDING_SHARE_KEY);
+        if (held) incomingShare = JSON.parse(held);
+      } catch {
+        return;
+      }
+    }
+    if (!incomingShare) return;
+    const preview = RecipeStore.sanitizeRecipe(incomingShare);
+    if (preview) openShareDialog(preview);
+  }
+
+  function clearPendingShare() {
+    incomingShare = null;
+    try {
+      sessionStorage.removeItem(PENDING_SHARE_KEY);
+    } catch {
+      /* nothing to clear */
+    }
   }
 
   $("#share-save-btn").addEventListener("click", () => {
     const result = incomingShare && store.addShared(incomingShare);
-    incomingShare = null;
+    clearPendingShare();
     shareDialog.close();
     if (!result) {
       toast("That share link couldn't be read.");
@@ -618,7 +663,7 @@
   });
 
   $("#share-dismiss-btn").addEventListener("click", () => {
-    incomingShare = null;
+    clearPendingShare();
     shareDialog.close();
   });
 
@@ -656,7 +701,7 @@
 
   // Handle for the sync layer (account.js/sync.js): shared store plus a
   // way to redraw once remote changes land.
-  window.RecipeApp = { store, render, toast };
+  window.RecipeApp = { store, render, toast, showPendingShare };
 
   render();
   handleIncomingShare();

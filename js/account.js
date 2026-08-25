@@ -14,8 +14,10 @@
   if (!signInBtn) return;
 
   if (!cfg || !cfg.supabaseUrl || !cfg.supabaseKey || !window.supabase) {
-    // No backend configured (or vendor script missing): stay local-only.
+    // No backend configured (or vendor script missing): stay local-only,
+    // and never leave the user stranded behind the sign-in gate.
     signInBtn.hidden = true;
+    document.body.classList.remove("gated");
     return;
   }
 
@@ -42,6 +44,24 @@
     }
   }
 
+  /**
+   * Preferences belong to the person, so they follow them between devices:
+   * what the profile already holds wins, otherwise this device seeds it.
+   */
+  async function reconcilePrefs(sync, store) {
+    const remote = await sync.pullPrefs();
+    const local = store.prefs;
+    const hasRemote = remote && (remote.mass || remote.volume);
+    const hasLocal = Boolean(local.mass || local.volume);
+    if (hasRemote) {
+      if (remote.mass !== local.mass || remote.volume !== local.volume) {
+        store.setPrefs(remote); // also converts what's already stored
+      }
+    } else if (hasLocal) {
+      await sync.pushPrefs(local);
+    }
+  }
+
   async function startSync(session) {
     const app = window.RecipeApp;
     if (!app || !window.RecipeSync) return;
@@ -51,8 +71,14 @@
     app.store.onChange = () => sync.schedulePush();
     try {
       await sync.resolveBook(session.user.id);
+      try {
+        await reconcilePrefs(sync, app.store);
+      } catch (err) {
+        console.warn("Recipe Friend: could not sync preferences.", err);
+      }
       await sync.syncNow();
       app.render();
+      if (app.showPendingShare) app.showPendingShare();
     } catch (err) {
       console.warn("Recipe Friend: could not start sync.", err);
       showStatus("error", err && err.message);
@@ -75,6 +101,7 @@
   function render(session) {
     const had = Boolean(window.RecipeCloud.session);
     window.RecipeCloud.session = session;
+    document.body.classList.toggle("gated", !session);
     if (session) {
       signInBtn.textContent = "Sign out";
       nameEl.textContent = displayName(session);
@@ -101,6 +128,9 @@
     const sync = window.RecipeCloud.sync;
     if (sync && sync.bookId) sync.syncNow();
   });
+
+  const ctaBtn = document.getElementById("signin-cta");
+  if (ctaBtn) ctaBtn.addEventListener("click", () => signInBtn.click());
 
   signInBtn.addEventListener("click", async () => {
     if (window.RecipeCloud.session) {

@@ -75,6 +75,9 @@ design; all protection is row-level security). One-time setup:
 3. Sign in from the app's header. First sign-in auto-creates your profile
    and a personal "My recipes" book.
 
+Signed out, the app shows a sign-in screen; recipes and preferences live
+with the account, not the browser.
+
 ### How sync behaves
 
 Signed in, the app syncs your recipes with your book in the background:
@@ -85,7 +88,9 @@ device doesn't reappear from another device's cache. localStorage remains
 the working copy, so the app still renders instantly and keeps working
 offline — a failed sync retries on the next change, when the tab regains
 focus, or when the network returns. A status line under the header shows
-Saving… / Syncing… / Synced.
+Saving… / Syncing… / Synced. Measurement preferences follow the person
+rather than the device: they are stored on your profile, so signing in
+elsewhere applies the same units.
 
 The `service_role` key is never used by the app and must never be
 committed.
