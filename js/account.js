@@ -110,7 +110,7 @@
     try {
       const remembered =
         window.RecipeBooks && window.RecipeBooks.rememberedSelection(session.user.id);
-      await sync.resolveBook(session.user.id, remembered);
+      await sync.resolveBook(session.user.id, remembered, displayName(session));
       // The local cache is per book, so point it at this one before syncing.
       app.store.useBook(sync.bookId);
       if (window.RecipeBooks) {
@@ -141,9 +141,7 @@
     const app = window.RecipeApp;
     const booksBtn = document.getElementById("books-btn");
     const bookLabel = document.getElementById("current-book");
-    const bookSep = document.querySelector(".book-sep");
     if (booksBtn) booksBtn.hidden = true;
-    if (bookSep) bookSep.hidden = true;
     if (bookLabel) bookLabel.hidden = true;
     books = null;
     window.RecipeCloud.books = null;

@@ -34,10 +34,11 @@ accounts and sync.
 - **Sync across devices** — recipes live with your account and sync in the
   background; localStorage stays the working copy, so the app renders
   instantly and keeps working offline.
-- **Shared recipe books** — keep a private book of your own, or share one
-  with the household. Invite people with a link, see who's in a book, and
-  switch between books from the header. Each book keeps its own local
-  cache, so switching never mixes them.
+- **Shared recipe books** — every book is the same kind of thing: one you
+  own and may invite others into, or one you were invited to. Your first
+  book is named after you and can be shared as-is, renamed, or joined by
+  others via an invite link. Recipes can be moved between books, and each
+  book keeps its own local cache so switching never mixes them.
 - **Share links** — share a single recipe as a URL: the recipe travels
   compressed inside the link's `#` fragment, so no server ever sees it. The
   recipient gets a preview and a "Save to my recipe box" button, and opening
@@ -88,11 +89,15 @@ with the account, not the browser.
 
 ### Recipe books
 
-Everyone gets a personal book on first sign-in. From **Books** in the header
-you can create more, switch between them, and — in books you own — invite
-others with a link that works for 7 days. Anyone in a book can add and edit
-its recipes; owners can remove members, and members can leave. Recipes
-belong to the book, so leaving one takes nothing away from it.
+Your first book is created on sign-in and named after you (for example
+"Dave's recipes"). There is no separate "personal" tier — that book can be
+shared exactly like any other, so inviting someone into your existing
+collection needs no copying. From **Books** in the header you can create
+more, rename ones you own, switch between them, and invite others with a
+link that works for 7 days. A recipe can be moved to another book from its
+**Move** button. Anyone in a book can add and edit its recipes; owners can
+remove members, and members can leave. Recipes belong to the book, so
+leaving one takes nothing away from it.
 
 ### How sync behaves
 

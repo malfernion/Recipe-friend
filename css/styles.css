@@ -60,71 +60,77 @@ body {
   color: var(--paper);
 }
 
-/* ---------- Masthead ---------- */
-.masthead {
-  text-align: center;
-  padding: 3.5rem 1rem 2.25rem;
+/* ---------- App bar ----------
+   A single compact row so the recipes start near the top of the page.
+   The full masthead treatment lives on the sign-in screen instead. */
+.appbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem 1.25rem;
+  padding: 0.7rem 1.25rem;
   border-bottom: 1px solid var(--rule);
-  background:
-    linear-gradient(to bottom, transparent 0 calc(100% - 1px), var(--rule) 0),
-    var(--paper);
+  background: var(--paper);
+  position: sticky;
+  top: 0;
+  z-index: 30;
 }
 
-.masthead-kicker {
-  margin: 0 0 0.75rem;
-  font-size: 0.7rem;
-  font-weight: 600;
-  letter-spacing: 0.32em;
-  text-transform: uppercase;
-  color: var(--ink-faint);
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  margin-right: auto;
+  min-width: 0;
 }
 
-.app-title {
-  margin: 0;
+.brand-logo {
+  width: 42px;
+  height: auto;
+  flex-shrink: 0;
+}
+
+.brand-name {
   font-family: var(--serif);
-  font-weight: 380;
-  font-size: clamp(2.6rem, 7vw, 4.25rem);
-  line-height: 1.05;
-  letter-spacing: -0.01em;
+  font-weight: 420;
+  font-size: 1.4rem;
+  line-height: 1;
+  white-space: nowrap;
 }
 
-.app-title em {
+.brand-name em {
   font-style: italic;
-  font-weight: 340;
+  font-weight: 380;
   color: var(--accent);
 }
 
-.masthead-note {
-  margin: 0.85rem 0 0;
-  font-family: var(--serif);
-  font-style: italic;
-  font-size: 0.95rem;
-  color: var(--ink-soft);
-}
-
-.header-actions {
-  margin-top: 1.75rem;
+.appbar-meta {
   display: flex;
   align-items: center;
-  justify-content: center;
   gap: 0.9rem;
   flex-wrap: wrap;
+  min-width: 0;
 }
 
-.action-sep {
-  color: var(--rule-strong);
+.appbar-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
 }
 
-.account-row {
-  margin-top: 0.6rem;
-}
-
-.account-name {
-  font-size: 0.68rem;
+.account-name,
+.current-book,
+.sync-status {
+  font-size: 0.66rem;
   font-weight: 600;
-  letter-spacing: 0.18em;
+  letter-spacing: 0.16em;
   text-transform: uppercase;
   color: var(--ink-faint);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 14rem;
+  margin: 0;
 }
 
 .account-name::before {
@@ -132,17 +138,122 @@ body {
   color: var(--accent);
 }
 
-.sync-status {
-  font-size: 0.68rem;
-  font-weight: 600;
-  letter-spacing: 0.18em;
-  text-transform: uppercase;
-  color: var(--ink-faint);
-  margin-left: 0.9rem;
+.current-book::before {
+  content: "▤ ";
+  color: var(--accent);
 }
 
 .sync-status.sync-error {
   color: var(--danger);
+}
+
+/* Secondary actions tuck into a menu so the bar stays one line. */
+.more-menu {
+  position: relative;
+}
+
+.more-summary {
+  list-style: none;
+  cursor: pointer;
+  padding: 0.35rem 0.6rem;
+  font-size: 1.1rem;
+  line-height: 1;
+  letter-spacing: 0.05em;
+  color: var(--ink-soft);
+  border: 1px solid transparent;
+  user-select: none;
+}
+
+.more-summary::-webkit-details-marker {
+  display: none;
+}
+
+.more-summary:hover,
+.more-menu[open] .more-summary {
+  color: var(--ink);
+  border-color: var(--rule-strong);
+}
+
+.more-panel {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 0.45rem);
+  min-width: 11rem;
+  background: var(--paper-raised);
+  border: 1px solid var(--rule-strong);
+  box-shadow: 0 12px 32px rgba(20, 15, 8, 0.18);
+  display: flex;
+  flex-direction: column;
+  padding: 0.3rem;
+  z-index: 40;
+}
+
+.more-item {
+  font-family: var(--sans);
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  text-align: left;
+  background: none;
+  border: none;
+  color: var(--ink-soft);
+  padding: 0.6rem 0.75rem;
+  cursor: pointer;
+}
+
+.more-item:hover {
+  background: var(--paper);
+  color: var(--accent);
+}
+
+.label-short {
+  display: none;
+}
+
+@media (max-width: 620px) {
+  .appbar {
+    padding: 0.6rem 1rem;
+    gap: 0.4rem 0.75rem;
+  }
+
+  /* Keep the bar to a single row on phones. */
+  .label-long {
+    display: none;
+  }
+
+  .label-short {
+    display: inline;
+  }
+
+  .btn-primary {
+    padding: 0.6rem 1rem;
+  }
+
+  .brand-logo {
+    width: 38px;
+  }
+
+  .brand-name {
+    font-size: 1.2rem;
+  }
+
+  .appbar-actions {
+    gap: 0.5rem;
+  }
+
+  /* Account and book move to their own line rather than squeezing the bar. */
+  .appbar-meta {
+    flex-basis: 100%;
+    order: 3;
+    gap: 0.75rem;
+  }
+
+  .account-name,
+  .current-book,
+  .sync-status {
+    max-width: 9rem;
+  }
 }
 
 /* ---------- Buttons ---------- */
@@ -891,10 +1002,6 @@ body {
     gap: 0;
   }
 
-  .masthead {
-    padding-top: 2.5rem;
-  }
-
   .container {
     padding-top: 1.5rem;
   }
@@ -974,10 +1081,26 @@ body.gated .signin-view {
 }
 
 /* Signed out, the app itself is out of the way entirely. */
-body.gated .masthead,
+body.gated .appbar,
 body.gated .container,
 body.gated .app-footer {
   display: none;
+}
+
+/* The display wordmark now lives only on the sign-in screen. */
+.app-title {
+  margin: 0;
+  font-family: var(--serif);
+  font-weight: 380;
+  font-size: clamp(2.6rem, 7vw, 4.25rem);
+  line-height: 1.05;
+  letter-spacing: -0.01em;
+}
+
+.app-title em {
+  font-style: italic;
+  font-weight: 340;
+  color: var(--accent);
 }
 
 .signin-card {
@@ -1273,13 +1396,6 @@ body.gated .app-footer {
   margin: 0 auto 1.5rem;
 }
 
-.masthead-logo {
-  width: 78px;
-  height: auto;
-  display: block;
-  margin: 0 auto 1rem;
-}
-
 .legal-logo {
   width: 28px;
   height: auto;
@@ -1292,7 +1408,7 @@ body.gated .app-footer {
    disc — it reads as a printed seal rather than a pasted rectangle. */
 @media (prefers-color-scheme: dark) {
   .signin-logo,
-  .masthead-logo,
+  .brand-logo,
   .legal-logo {
     background: #f4f1e4;
     border-radius: 50%;
@@ -1305,9 +1421,6 @@ body.gated .app-footer {
     width: 152px;
   }
 
-  .masthead-logo {
-    width: 84px;
-  }
 }
 
 @media (prefers-reduced-motion: no-preference) {
@@ -1325,4 +1438,35 @@ body.gated .app-footer {
     opacity: 1;
     transform: none;
   }
+}
+
+.book-rename {
+  font-size: 0.9rem;
+  line-height: 1;
+  width: 1.6rem;
+  height: 1.6rem;
+  border: none;
+  background: none;
+  color: var(--ink-faint);
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.book-rename:hover {
+  color: var(--accent);
+}
+
+.book-rename-input {
+  flex: 1;
+  font-family: var(--serif);
+  font-size: 1.05rem;
+  padding: 0.2rem 0.4rem;
+  border: 1px solid var(--accent);
+  background: var(--paper);
+  color: var(--ink);
+  min-width: 0;
+}
+
+.book-rename-input:focus-visible {
+  outline: none;
 }

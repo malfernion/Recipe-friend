@@ -137,12 +137,13 @@
      * Resolve which book this session syncs with, preferring the one the
      * user was last using on this device.
      */
-    async resolveBook(userId, preferredId) {
+    async resolveBook(userId, preferredId, displayName) {
       this.userId = userId;
       const books = await this.listBooks();
       if (books.length === 0) {
         // The signup trigger normally creates one; make our own if not.
-        const book = await this.createBook("My recipes");
+        const who = String(displayName || "").trim().slice(0, 60);
+        const book = await this.createBook(who ? `${who}'s recipes` : "Recipes");
         this.bookId = book.id;
         return this.bookId;
       }
@@ -150,6 +151,19 @@
       const owned = books.find((b) => b.role === "owner");
       this.bookId = (preferred || owned || books[0]).id;
       return this.bookId;
+    }
+
+    /**
+     * Move a recipe into another book. The row keeps its id and simply
+     * changes book — RLS allows it because the check runs against both the
+     * old and the new book, and you must belong to both.
+     */
+    async moveRecipe(recipeId, targetBookId) {
+      const { error } = await this.client
+        .from("recipes")
+        .update({ book_id: targetBookId, updated_at: new Date().toISOString() })
+        .eq("id", recipeId);
+      if (error) throw error;
     }
 
     /** Point sync at a different book; the caller swaps the local cache. */

@@ -202,6 +202,23 @@
       this.state = load(this.key);
     }
 
+    /**
+     * Forget a recipe locally without tombstoning it. Used when a recipe
+     * moves to another book: the row still exists, so marking it deleted
+     * would destroy it in its new home.
+     */
+    removeLocal(id) {
+      const before = this.state.recipes.length;
+      this.state.recipes = this.state.recipes.filter((r) => r.id !== id);
+      if (this.state.recipes.length < before) {
+        this._applying = true; // not a local edit to push
+        this._persist();
+        this._applying = false;
+        return true;
+      }
+      return false;
+    }
+
     /** Drop any delete marker for an id being (re-)added. */
     _untomb(id) {
       this.state.tombstones = this.state.tombstones.filter((t) => t.id !== id);

@@ -411,6 +411,13 @@
       </ol>`;
   }
 
+  /** Only offer Move when the signed-in user has more than one book. */
+  function syncMoveButton() {
+    const btn = $("#detail-move-btn");
+    const cloud = window.RecipeCloud;
+    btn.hidden = !(cloud && cloud.books && cloud.books.books.length > 1);
+  }
+
   function openDetailDialog(recipe) {
     // Keep the scale when re-rendering the same open recipe (e.g. after a
     // favourite toggle); reset it when a different recipe opens.
@@ -418,6 +425,7 @@
     detailId = recipe.id;
     detailContent.innerHTML = recipeDetailHTML(recipe, "From your recipe box", true);
     syncDetailFavButton(recipe);
+    syncMoveButton();
     if (!detailDialog.open) detailDialog.showModal();
   }
 
@@ -667,6 +675,15 @@
     shareDialog.close();
   });
 
+  // Moving lives with books, so hand off to that layer. The button only
+  // appears once there is somewhere else to move to.
+  $("#detail-move-btn").addEventListener("click", () => {
+    const cloud = window.RecipeCloud;
+    if (!cloud || !cloud.books || !detailId) return;
+    detailDialog.close();
+    cloud.books.openMove(detailId);
+  });
+
   $("#detail-close-btn").addEventListener("click", () => detailDialog.close());
 
   $("#detail-fav-btn").addEventListener("click", () => {
@@ -696,6 +713,21 @@
   for (const dialog of [recipeDialog, detailDialog, shareDialog, prefsDialog]) {
     dialog.addEventListener("click", (event) => {
       if (event.target === dialog) dialog.close();
+    });
+  }
+
+  // --- Overflow menu ---
+  // <details> doesn't close on outside clicks or after choosing an item.
+  const moreMenu = $("#more-menu");
+  if (moreMenu) {
+    moreMenu.addEventListener("click", (event) => {
+      if (event.target.closest(".more-item")) moreMenu.open = false;
+    });
+    document.addEventListener("click", (event) => {
+      if (moreMenu.open && !moreMenu.contains(event.target)) moreMenu.open = false;
+    });
+    document.addEventListener("keydown", (event) => {
+      if (event.key === "Escape" && moreMenu.open) moreMenu.open = false;
     });
   }
 
