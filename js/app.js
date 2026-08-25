@@ -15,6 +15,7 @@
   let activeTag = null;
   let editingId = null; // recipe id being edited, or null when adding
   let detailId = null; // recipe id shown in the detail dialog
+  let pendingImage = ""; // data URI chosen via the file picker, pre-save
 
   // --- Elements ---
   const $ = (sel) => document.querySelector(sel);
@@ -94,6 +95,7 @@
     return `
       <article class="recipe-card" data-id="${escapeHTML(recipe.id)}" tabindex="0"
                role="button" aria-label="Open ${escapeHTML(recipe.name)}">
+        ${recipe.image ? `<img class="card-img" src="${escapeHTML(recipe.image)}" alt="" loading="lazy">` : ""}
         <span class="card-index">№ ${String(index + 1).padStart(2, "0")}</span>
         <div class="card-top">
           <h3 class="card-title">${escapeHTML(recipe.name)}</h3>
@@ -143,14 +145,56 @@
       const f = recipeForm.elements;
       f.name.value = recipe.name;
       f.description.value = recipe.description;
-      f.servings.value = recipe.servings ?? "";
+      // `|| ""` also blanks a legacy stored 0, which the servings min=1
+      // constraint would otherwise reject on re-save.
+      f.servings.value = recipe.servings || "";
       f.prepMinutes.value = recipe.prepMinutes ?? "";
       f.cookMinutes.value = recipe.cookMinutes ?? "";
       f.ingredients.value = recipe.ingredients.join("\n");
       f.steps.value = recipe.steps.join("\n");
       f.tags.value = recipe.tags.join(", ");
     }
+    // Restore photo state: URLs go back into the text field, data URIs into
+    // the pending slot.
+    const image = recipe ? recipe.image : "";
+    pendingImage = image.startsWith("data:") ? image : "";
+    recipeForm.elements.imageUrl.value = image.startsWith("http") ? image : "";
+    updatePhotoPreview();
     recipeDialog.showModal();
+  }
+
+  function currentFormImage() {
+    return pendingImage || recipeForm.elements.imageUrl.value.trim();
+  }
+
+  function updatePhotoPreview() {
+    const preview = $("#photo-preview");
+    const image = currentFormImage();
+    preview.src = image || "";
+    preview.hidden = !image;
+    $("#photo-remove-btn").hidden = !image;
+  }
+
+  /** Downscale a picked file to a storage-friendly JPEG data URI. */
+  function compressImageFile(file, maxDim = 1200, quality = 0.78) {
+    return new Promise((resolve, reject) => {
+      const objectUrl = URL.createObjectURL(file);
+      const img = new Image();
+      img.onload = () => {
+        URL.revokeObjectURL(objectUrl);
+        const scale = Math.min(1, maxDim / Math.max(img.width, img.height));
+        const canvas = document.createElement("canvas");
+        canvas.width = Math.max(1, Math.round(img.width * scale));
+        canvas.height = Math.max(1, Math.round(img.height * scale));
+        canvas.getContext("2d").drawImage(img, 0, 0, canvas.width, canvas.height);
+        resolve(canvas.toDataURL("image/jpeg", quality));
+      };
+      img.onerror = () => {
+        URL.revokeObjectURL(objectUrl);
+        reject(new Error("unreadable image"));
+      };
+      img.src = objectUrl;
+    });
   }
 
   function readRecipeForm() {
@@ -165,6 +209,7 @@
       ingredients: lines(f.ingredients.value),
       steps: lines(f.steps.value),
       tags: f.tags.value.split(",").map((s) => s.trim()).filter(Boolean),
+      image: currentFormImage(),
     };
   }
 
@@ -182,9 +227,40 @@
       return;
     }
     recipeDialog.close();
-    toast(editingId ? "Recipe updated." : `Added “${saved.name}”.`);
+    if (!store.persistOk) {
+      toast("Saved for this visit, but browser storage is full — try a smaller photo or export a backup.");
+    } else {
+      toast(editingId ? "Recipe updated." : `Added “${saved.name}”.`);
+    }
     editingId = null;
     render();
+  });
+
+  // --- Photo picker ---
+  $("#photo-pick-btn").addEventListener("click", () => $("#photo-file").click());
+
+  $("#photo-file").addEventListener("change", async (event) => {
+    const file = event.target.files[0];
+    event.target.value = "";
+    if (!file) return;
+    try {
+      pendingImage = await compressImageFile(file);
+      recipeForm.elements.imageUrl.value = "";
+      updatePhotoPreview();
+    } catch {
+      toast("Couldn't read that image file.");
+    }
+  });
+
+  recipeForm.elements.imageUrl.addEventListener("input", () => {
+    if (recipeForm.elements.imageUrl.value.trim()) pendingImage = "";
+    updatePhotoPreview();
+  });
+
+  $("#photo-remove-btn").addEventListener("click", () => {
+    pendingImage = "";
+    recipeForm.elements.imageUrl.value = "";
+    updatePhotoPreview();
   });
 
   // --- Detail dialog ---
@@ -203,6 +279,7 @@
       <h2 class="detail-title">${escapeHTML(recipe.name)}
         ${recipe.favorite ? '<span class="detail-fav" title="Favourite">★</span>' : ""}
       </h2>
+      ${recipe.image ? `<img class="detail-img" src="${escapeHTML(recipe.image)}" alt="Photo of ${escapeHTML(recipe.name)}">` : ""}
       ${recipe.description ? `<p class="detail-desc">${escapeHTML(recipe.description)}</p>` : ""}
       ${metaBits.length ? `<p class="card-meta">${escapeHTML(metaBits.join(" · "))}</p>` : ""}
       ${

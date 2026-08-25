@@ -9,6 +9,8 @@ build step.
 
 - **Add, edit, and delete recipes** — name, description, servings, prep/cook
   times, ingredients, steps, and tags.
+- **Photos** — attach an image from your device (automatically downscaled to
+  fit browser storage) or link one by URL.
 - **Search and filter** — full-text search across names, ingredients, and
   tags; filter by tag or favorites.
 - **Favorites** — star the recipes you keep coming back to.

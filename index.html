@@ -100,6 +100,17 @@
         <input type="text" name="tags" maxlength="200" placeholder="dinner, quick, vegetarian">
       </label>
 
+      <div class="field">
+        <span class="field-label">Photo <small>(optional)</small></span>
+        <div class="photo-row">
+          <button type="button" class="btn btn-ghost" id="photo-pick-btn">Choose image…</button>
+          <input type="url" name="imageUrl" class="photo-url" placeholder="or paste an image URL">
+          <button type="button" class="btn btn-ghost" id="photo-remove-btn" hidden>Remove</button>
+        </div>
+        <img id="photo-preview" class="photo-preview" alt="Recipe photo preview" hidden>
+        <input type="file" id="photo-file" accept="image/*" hidden>
+      </div>
+
       <div class="dialog-actions">
         <button type="button" class="btn btn-ghost" id="cancel-dialog-btn">Cancel</button>
         <button type="submit" class="btn btn-primary" id="save-recipe-btn">Save recipe</button>
