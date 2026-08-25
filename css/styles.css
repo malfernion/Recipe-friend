@@ -1264,3 +1264,65 @@ body.gated .app-footer {
   color: var(--accent);
   border-bottom-color: var(--accent);
 }
+
+/* ---------- Logo ---------- */
+.signin-logo {
+  width: 176px;
+  height: auto;
+  display: block;
+  margin: 0 auto 1.5rem;
+}
+
+.masthead-logo {
+  width: 60px;
+  height: auto;
+  display: block;
+  margin: 0 auto 0.9rem;
+}
+
+.legal-logo {
+  width: 28px;
+  height: auto;
+  vertical-align: -0.55em;
+  margin-right: 0.35rem;
+}
+
+/* The mark is transparent so it sits on the page's own paper. On a dark
+   ground its deep greens would lose contrast, so give it back a paper
+   disc — it reads as a printed seal rather than a pasted rectangle. */
+@media (prefers-color-scheme: dark) {
+  .signin-logo,
+  .masthead-logo,
+  .legal-logo {
+    background: #f4f1e4;
+    border-radius: 50%;
+    padding: 4%;
+  }
+}
+
+@media (max-width: 480px) {
+  .signin-logo {
+    width: 132px;
+  }
+
+  .masthead-logo {
+    width: 48px;
+  }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .signin-logo {
+    animation: logo-settle 0.5s ease-out both;
+  }
+}
+
+@keyframes logo-settle {
+  from {
+    opacity: 0;
+    transform: translateY(-6px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
