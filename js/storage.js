@@ -167,6 +167,21 @@
       return recipe;
     }
 
+    /**
+     * Add a recipe received via a share link. The sender's id is kept, so
+     * opening the same link twice never duplicates.
+     * Returns {recipe, existed} or null for an unusable payload.
+     */
+    addShared(raw) {
+      const recipe = sanitizeRecipe(raw);
+      if (!recipe) return null;
+      const existing = this.getById(recipe.id);
+      if (existing) return { recipe: existing, existed: true };
+      this.state.recipes.unshift(recipe);
+      this._persist();
+      return { recipe, existed: false };
+    }
+
     /** All distinct tags across recipes, sorted alphabetically. */
     allTags() {
       const tags = new Set();
@@ -267,6 +282,9 @@
       for (const s of samples) this.add(s);
     }
   }
+
+  // Exposed so the UI can sanitize a shared payload for preview before saving.
+  RecipeStore.sanitizeRecipe = sanitizeRecipe;
 
   global.RecipeStore = RecipeStore;
 })(window);

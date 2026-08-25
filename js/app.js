@@ -264,8 +264,7 @@
   });
 
   // --- Detail dialog ---
-  function openDetailDialog(recipe) {
-    detailId = recipe.id;
+  function recipeDetailHTML(recipe, kicker) {
     const time = totalTime(recipe);
     const metaBits = [
       recipe.servings ? `Serves ${recipe.servings}` : null,
@@ -274,8 +273,8 @@
       time && recipe.prepMinutes && recipe.cookMinutes ? `Total ${time}` : null,
     ].filter(Boolean);
 
-    detailContent.innerHTML = `
-      <p class="detail-kicker">From your recipe box</p>
+    return `
+      <p class="detail-kicker">${escapeHTML(kicker)}</p>
       <h2 class="detail-title">${escapeHTML(recipe.name)}
         ${recipe.favorite ? '<span class="detail-fav" title="Favourite">★</span>' : ""}
       </h2>
@@ -297,6 +296,11 @@
       <ol class="detail-steps">
         ${recipe.steps.map((s) => `<li>${escapeHTML(s)}</li>`).join("")}
       </ol>`;
+  }
+
+  function openDetailDialog(recipe) {
+    detailId = recipe.id;
+    detailContent.innerHTML = recipeDetailHTML(recipe, "From your recipe box");
     syncDetailFavButton(recipe);
     if (!detailDialog.open) detailDialog.showModal();
   }
@@ -389,6 +393,57 @@
     if (recipe) openDetailDialog(recipe);
   });
 
+  // --- Share links ---
+  const shareDialog = $("#share-dialog");
+  let incomingShare = null; // raw payload awaiting the user's decision
+
+  $("#detail-share-btn").addEventListener("click", async () => {
+    const recipe = store.getById(detailId);
+    if (!recipe) return;
+    const encoded = await RecipeShare.encodeRecipeShare(recipe);
+    const url = `${location.origin}${location.pathname}#add=${encoded}`;
+    const note = recipe.image.startsWith("data:") ? " Photo not included — photos are too big for links." : "";
+    try {
+      await navigator.clipboard.writeText(url);
+      toast(`Share link copied.${note}`);
+    } catch {
+      window.prompt("Copy this share link:", url);
+    }
+  });
+
+  async function handleIncomingShare() {
+    const match = location.hash.match(/^#add=(.+)$/);
+    if (!match) return;
+    // Clear the fragment so reloads and copied URLs don't re-trigger.
+    history.replaceState(null, "", location.pathname + location.search);
+    const raw = await RecipeShare.decodeRecipeShare(match[1]);
+    const preview = raw && RecipeStore.sanitizeRecipe(raw);
+    if (!preview) {
+      toast("That share link couldn't be read.");
+      return;
+    }
+    incomingShare = raw;
+    $("#share-content").innerHTML = recipeDetailHTML(preview, "A recipe shared with you");
+    shareDialog.showModal();
+  }
+
+  $("#share-save-btn").addEventListener("click", () => {
+    const result = incomingShare && store.addShared(incomingShare);
+    incomingShare = null;
+    shareDialog.close();
+    if (!result) {
+      toast("That share link couldn't be read.");
+      return;
+    }
+    toast(result.existed ? "Already in your recipe box." : `Saved “${result.recipe.name}”.`);
+    render();
+  });
+
+  $("#share-dismiss-btn").addEventListener("click", () => {
+    incomingShare = null;
+    shareDialog.close();
+  });
+
   $("#detail-close-btn").addEventListener("click", () => detailDialog.close());
 
   $("#detail-fav-btn").addEventListener("click", () => {
@@ -415,11 +470,14 @@
   });
 
   // Close dialogs when clicking the backdrop.
-  for (const dialog of [recipeDialog, detailDialog]) {
+  for (const dialog of [recipeDialog, detailDialog, shareDialog]) {
     dialog.addEventListener("click", (event) => {
       if (event.target === dialog) dialog.close();
     });
   }
 
   render();
+  handleIncomingShare();
+  // A share link opened in an already-loaded tab only changes the fragment.
+  window.addEventListener("hashchange", handleIncomingShare);
 })();
