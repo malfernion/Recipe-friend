@@ -483,6 +483,24 @@
   $("#empty-add-btn").addEventListener("click", () => openRecipeDialog(null));
   $("#cancel-dialog-btn").addEventListener("click", () => recipeDialog.close());
 
+  // --- Measurement preferences ---
+  const prefsDialog = $("#prefs-dialog");
+
+  $("#prefs-btn").addEventListener("click", () => {
+    $("#mass-pref").value = store.prefs.mass;
+    $("#volume-pref").value = store.prefs.volume;
+    prefsDialog.showModal();
+  });
+
+  $("#prefs-close-btn").addEventListener("click", () => prefsDialog.close());
+
+  $("#prefs-save-btn").addEventListener("click", () => {
+    const changed = store.setPrefs({ mass: $("#mass-pref").value, volume: $("#volume-pref").value });
+    prefsDialog.close();
+    toast(changed > 0 ? `Preferences saved — ${changed} amount${changed === 1 ? "" : "s"} converted.` : "Preferences saved.");
+    render();
+  });
+
   $("#export-btn").addEventListener("click", exportRecipes);
   $("#import-btn").addEventListener("click", () => $("#import-file").click());
   $("#import-file").addEventListener("change", (event) => {
@@ -630,7 +648,7 @@
   });
 
   // Close dialogs when clicking the backdrop.
-  for (const dialog of [recipeDialog, detailDialog, shareDialog]) {
+  for (const dialog of [recipeDialog, detailDialog, shareDialog, prefsDialog]) {
     dialog.addEventListener("click", (event) => {
       if (event.target === dialog) dialog.close();
     });

@@ -480,6 +480,32 @@ body {
   color: var(--ink-faint);
 }
 
+.field select {
+  font-family: var(--sans);
+  font-size: 0.95rem;
+  width: 100%;
+  padding: 0.55rem 0.7rem;
+  border: 1px solid var(--rule);
+  border-radius: 0;
+  background: var(--paper);
+  color: var(--ink);
+  transition: border-color 0.15s ease;
+}
+
+.field select:focus-visible {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.prefs-hint {
+  font-family: var(--serif);
+  font-style: italic;
+  font-size: 0.88rem;
+  color: var(--ink-soft);
+  margin: 0.5rem 0 0;
+  max-width: 46ch;
+}
+
 .field input,
 .field textarea {
   font-family: var(--sans);

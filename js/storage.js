@@ -9,6 +9,7 @@
   "use strict";
 
   const STORAGE_KEY = "recipe-friend:v1";
+  const PREFS_KEY = "recipe-friend:prefs:v1";
 
   /** Shape persisted to localStorage. */
   const EMPTY_STATE = Object.freeze({ version: 1, recipes: [] });
@@ -30,7 +31,8 @@
     if (!raw || typeof raw !== "object") return null;
     const amountNum = Number(raw.amount);
     const amount = Number.isFinite(amountNum) && amountNum > 0 ? amountNum : null;
-    const unit = String(raw.unit || "").trim().slice(0, 24);
+    // Recognized unit aliases collapse to short labels ("Grams" -> "g").
+    const unit = global.RecipeUnits.normalizeLabel(String(raw.unit || "").slice(0, 24));
     const item = String(raw.item || "").trim().slice(0, 200);
     if (!item && !unit) return null;
     return { amount, unit, item };
@@ -118,9 +120,24 @@
     }
   }
 
+  function loadPrefs() {
+    let parsed;
+    try {
+      parsed = JSON.parse(global.localStorage.getItem(PREFS_KEY));
+    } catch {
+      parsed = null;
+    }
+    const pick = (v, allowed) => (allowed.includes(v) ? v : "");
+    return {
+      mass: pick(parsed && parsed.mass, ["metric", "imperial"]),
+      volume: pick(parsed && parsed.volume, ["metric", "us"]),
+    };
+  }
+
   class RecipeStore {
     constructor() {
       this.state = load();
+      this.prefs = loadPrefs();
       // False when the latest write failed (storage full or blocked), so the
       // UI can warn that changes are in memory only.
       this.persistOk = true;
@@ -129,6 +146,34 @@
     _persist() {
       this.persistOk = persist(this.state);
       return this.persistOk;
+    }
+
+    _convert(recipe) {
+      global.RecipeUnits.applyPrefs(recipe, this.prefs);
+      return recipe;
+    }
+
+    /**
+     * Save measurement preferences and convert the whole collection so it
+     * is consistently in the preferred units. Returns how many ingredient
+     * amounts changed.
+     */
+    setPrefs(prefs) {
+      this.prefs = {
+        mass: prefs.mass === "metric" || prefs.mass === "imperial" ? prefs.mass : "",
+        volume: prefs.volume === "metric" || prefs.volume === "us" ? prefs.volume : "",
+      };
+      try {
+        global.localStorage.setItem(PREFS_KEY, JSON.stringify(this.prefs));
+      } catch (err) {
+        console.warn("Recipe Friend: could not save preferences.", err);
+      }
+      let changed = 0;
+      for (const recipe of this.state.recipes) {
+        changed += global.RecipeUnits.applyPrefs(recipe, this.prefs);
+      }
+      if (changed > 0) this._persist();
+      return changed;
     }
 
     get recipes() {
@@ -143,6 +188,7 @@
     add(input) {
       const recipe = sanitizeRecipe({ ...input, id: null, createdAt: Date.now() });
       if (!recipe) return null;
+      this._convert(recipe);
       this.state.recipes.unshift(recipe);
       this._persist();
       return recipe;
@@ -161,6 +207,7 @@
         updatedAt: Date.now(),
       });
       if (!merged) return null;
+      this._convert(merged);
       Object.assign(existing, merged);
       this._persist();
       return existing;
@@ -193,6 +240,7 @@
       if (!recipe) return null;
       const existing = this.getById(recipe.id);
       if (existing) return { recipe: existing, existed: true };
+      this._convert(recipe);
       this.state.recipes.unshift(recipe);
       this._persist();
       return { recipe, existed: false };
@@ -239,6 +287,7 @@
           continue;
         }
         existingIds.add(recipe.id);
+        this._convert(recipe);
         this.state.recipes.push(recipe);
         imported++;
       }

@@ -16,6 +16,12 @@ build step.
 - **Structured ingredients** — each ingredient is entered as amount · unit ·
   item (leave the amount empty for "to taste" lines), so scaling is exact
   arithmetic rather than text parsing.
+- **Measurement preferences** — pick your units (grams/kilograms vs
+  ounces/pounds, millilitres/litres vs cups/fluid ounces) and everything you
+  add, import, or save from a share link is converted before storing;
+  changing preference converts the recipes already in your box. Teaspoons
+  and tablespoons are left alone, and unrecognised units ("cloves", "pinch",
+  "can") are never converted.
 - **Portion scaling** — a Portions stepper in the recipe view rescales
   ingredient amounts on the fly with kitchen-friendly fractions ("1½ tbsp"
   halves to "¾ tbsp"). Display-only; the saved recipe is untouched.

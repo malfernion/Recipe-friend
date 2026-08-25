@@ -21,6 +21,8 @@
       <span class="action-sep" aria-hidden="true">·</span>
       <button id="import-btn" class="btn btn-ghost" title="Import recipes from a JSON file">Import</button>
       <span class="action-sep" aria-hidden="true">·</span>
+      <button id="prefs-btn" class="btn btn-ghost" title="Measurement preferences">Units</button>
+      <span class="action-sep" aria-hidden="true">·</span>
       <button id="add-recipe-btn" class="btn btn-primary">New recipe</button>
     </div>
     <input type="file" id="import-file" accept="application/json,.json" hidden>
@@ -149,6 +151,34 @@
     </div>
   </dialog>
 
+  <!-- Measurement preferences -->
+  <dialog id="prefs-dialog" class="recipe-dialog">
+    <h2>Measurement preferences</h2>
+    <label class="field">
+      <span>Weights</span>
+      <select name="massPref" id="mass-pref">
+        <option value="">Keep as entered</option>
+        <option value="metric">Grams &amp; kilograms</option>
+        <option value="imperial">Ounces &amp; pounds</option>
+      </select>
+    </label>
+    <label class="field">
+      <span>Liquid volumes</span>
+      <select name="volumePref" id="volume-pref">
+        <option value="">Keep as entered</option>
+        <option value="metric">Millilitres &amp; litres</option>
+        <option value="us">Cups &amp; fluid ounces</option>
+      </select>
+    </label>
+    <p class="prefs-hint">Applies to everything you add, import, or save from a share link —
+       and converts the recipes already in your box. Teaspoons and tablespoons stay as
+       they are, and units we don't recognise ("cloves", "pinch", "can") are never converted.</p>
+    <div class="dialog-actions">
+      <button type="button" class="btn btn-ghost" id="prefs-close-btn">Cancel</button>
+      <button type="button" class="btn btn-primary" id="prefs-save-btn">Save preferences</button>
+    </div>
+  </dialog>
+
   <!-- Incoming shared recipe -->
   <dialog id="share-dialog" class="recipe-dialog detail-dialog">
     <div id="share-content"></div>
@@ -162,6 +192,8 @@
   <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
 
   <script src="js/scale.js"></script>
+  <!-- units.js before storage.js: sanitize normalizes unit labels with it -->
+  <script src="js/units.js"></script>
   <script src="js/storage.js"></script>
   <script src="js/share.js"></script>
   <script src="js/app.js"></script>
