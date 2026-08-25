@@ -1,9 +1,10 @@
 # 🍲 Recipe Friend
 
-A personal recipe box that lives entirely in your browser. No accounts, no
-server, no database — recipes are persisted locally with `localStorage`, and
-the site is plain HTML/CSS/JS so it deploys straight to GitHub Pages with no
-build step.
+A personal recipe box that syncs across the devices you cook from. Sign in
+with Google, and your recipes follow you; the browser keeps a local copy so
+the app stays instant and works offline. The site is plain HTML/CSS/JS with
+no build step, deployed to GitHub Pages, with Supabase behind it for
+accounts and sync.
 
 ## Features
 
@@ -19,7 +20,8 @@ build step.
 - **Measurement preferences** — pick your units (grams/kilograms vs
   ounces/pounds, millilitres/litres vs cups/fluid ounces) and everything you
   add, import, or save from a share link is converted before storing;
-  changing preference converts the recipes already in your box. Teaspoons
+  changing preference converts the recipes already in your box. Preferences
+  are stored on your profile, so they follow you between devices. Teaspoons
   and tablespoons are left alone, and unrecognised units ("cloves", "pinch",
   "can") are never converted.
 - **Portion scaling** — a Portions stepper in the recipe view rescales
@@ -29,9 +31,9 @@ build step.
   them rise to the top, best matches first, with each card showing which of
   your ingredients it uses.
 - **Favorites** — star the recipes you keep coming back to.
-- **Local persistence** — everything is saved in your browser under a
-  versioned `localStorage` key (`recipe-friend:v1`), so your recipes survive
-  page reloads and browser restarts.
+- **Sync across devices** — recipes live with your account and sync in the
+  background; localStorage stays the working copy, so the app renders
+  instantly and keeps working offline.
 - **Share links** — share a single recipe as a URL: the recipe travels
   compressed inside the link's `#` fragment, so no server ever sees it. The
   recipient gets a preview and a "Save to my recipe box" button, and opening
@@ -109,16 +111,23 @@ The site will be published at `https://<username>.github.io/Recipe-friend/`.
 ## Project structure
 
 ```
-index.html                     App shell and dialogs
+index.html                     App shell, sign-in gate, and dialogs
 css/styles.css                 Styling (light + dark themes)
-js/storage.js                  RecipeStore — localStorage persistence layer
+js/storage.js                  RecipeStore — local persistence and sanitisation
 js/app.js                      UI: rendering, search/filter, dialogs, import/export
+js/scale.js                    Quantity parsing, formatting, portion scaling
+js/units.js                    Measurement preferences and unit conversion
+js/share.js                    Encode/decode single-recipe share links
+js/account.js                  Google sign-in, session, sync bootstrap
+js/sync.js                     Two-way sync with Supabase (last-write-wins)
+js/config.js                   Supabase project URL and publishable key
+supabase/schema.sql            Tables, RLS policies, triggers, functions
 .github/workflows/deploy-pages.yml   GitHub Pages deployment
 ```
 
 ## Notes on storage
 
-Recipes are stored only in the browser you use — they don't sync between
-devices or browsers. Use **Export** regularly to back up your collection, and
-**Import** to restore it or move it elsewhere. Clearing site data for the page
-will delete your recipes.
+Signed in, your recipes live in your account and sync between devices; the
+browser copy is a cache, so clearing site data is harmless. **Export** still
+gives you your own portable JSON copy at any time, and **Import** merges a
+file back in without creating duplicates.
