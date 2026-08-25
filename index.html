@@ -21,6 +21,8 @@
       <span class="action-sep" aria-hidden="true">·</span>
       <button id="import-btn" class="btn btn-ghost" title="Import recipes from a JSON file">Import</button>
       <span class="action-sep" aria-hidden="true">·</span>
+      <button id="books-btn" class="btn btn-ghost" title="Recipe books and sharing" hidden>Books</button>
+      <span class="action-sep book-sep" aria-hidden="true" hidden>·</span>
       <button id="prefs-btn" class="btn btn-ghost" title="Measurement preferences">Units</button>
       <span class="action-sep" aria-hidden="true">·</span>
       <button id="account-btn" class="btn btn-ghost" title="Sign in with Google">Sign in</button>
@@ -29,6 +31,7 @@
     </div>
     <div class="account-row">
       <span id="account-name" class="account-name" hidden></span>
+      <span id="current-book" class="current-book" hidden></span>
       <span id="sync-status" class="sync-status" role="status" aria-live="polite" hidden></span>
     </div>
     <input type="file" id="import-file" accept="application/json,.json" hidden>
@@ -169,6 +172,33 @@
     </div>
   </dialog>
 
+  <!-- Recipe books, members, and invites -->
+  <dialog id="books-dialog" class="recipe-dialog">
+    <h2>Recipe books</h2>
+
+    <h3 class="books-heading">Your books</h3>
+    <ul id="book-list" class="book-list"></ul>
+
+    <div class="book-new">
+      <input type="text" id="new-book-name" maxlength="80" placeholder="New book name — e.g. Household">
+      <button type="button" class="btn btn-ghost" id="create-book-btn">Create</button>
+    </div>
+
+    <h3 class="books-heading">Sharing <span id="sharing-book-name" class="sharing-book-name"></span></h3>
+    <ul id="member-list" class="member-list"></ul>
+    <div class="invite-row">
+      <button type="button" class="btn btn-ghost" id="invite-btn">Create invite link</button>
+      <button type="button" class="btn btn-danger" id="leave-book-btn">Leave this book</button>
+    </div>
+    <p id="invite-out" class="invite-out" hidden></p>
+    <p class="books-hint">Anyone with an invite link can join this book and add or edit its
+       recipes. Links expire after 7 days.</p>
+
+    <div class="dialog-actions">
+      <button type="button" class="btn btn-primary" id="books-close-btn">Done</button>
+    </div>
+  </dialog>
+
   <!-- Measurement preferences -->
   <dialog id="prefs-dialog" class="recipe-dialog">
     <h2>Measurement preferences</h2>
@@ -218,6 +248,7 @@
   <script src="js/vendor/supabase.js"></script>
   <script src="js/config.js"></script>
   <script src="js/sync.js"></script>
+  <script src="js/books.js"></script>
   <script src="js/account.js"></script>
 </body>
 </html>

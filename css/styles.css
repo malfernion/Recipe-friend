@@ -1005,3 +1005,162 @@ body.gated .app-footer {
   text-transform: uppercase;
   color: var(--ink-faint);
 }
+
+/* ---------- Recipe books ---------- */
+.current-book {
+  font-size: 0.68rem;
+  font-weight: 600;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+  margin-left: 0.9rem;
+}
+
+.current-book::before {
+  content: "▤ ";
+  color: var(--accent);
+}
+
+.books-heading {
+  margin: 1.75rem 0 0.6rem;
+  font-size: 0.7rem;
+  font-weight: 600;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: var(--ink-soft);
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+}
+
+.sharing-book-name {
+  font-family: var(--serif);
+  font-style: italic;
+  font-size: 0.9rem;
+  letter-spacing: 0;
+  text-transform: none;
+  color: var(--ink-faint);
+}
+
+.book-list,
+.member-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.book-item,
+.member-item {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.5rem 0;
+  border-bottom: 1px solid var(--rule);
+}
+
+.book-item:last-child,
+.member-item:last-child {
+  border-bottom: none;
+}
+
+.book-pick {
+  flex: 1;
+  text-align: left;
+  font-family: var(--serif);
+  font-size: 1.05rem;
+  background: none;
+  border: none;
+  color: var(--ink);
+  cursor: pointer;
+  padding: 0.15rem 0;
+}
+
+.book-pick:hover {
+  color: var(--accent);
+}
+
+.book-current .book-pick {
+  color: var(--accent);
+}
+
+.book-current .book-pick::before {
+  content: "▸ ";
+}
+
+.book-role,
+.member-role {
+  font-size: 0.64rem;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+}
+
+.member-name {
+  flex: 1;
+  font-family: var(--serif);
+  font-size: 1rem;
+}
+
+.member-remove {
+  font-size: 1.05rem;
+  line-height: 1;
+  width: 1.6rem;
+  height: 1.6rem;
+  border: none;
+  background: none;
+  color: var(--ink-faint);
+  cursor: pointer;
+}
+
+.member-remove:hover {
+  color: var(--danger);
+}
+
+.book-new {
+  display: flex;
+  gap: 0.6rem;
+  margin-top: 0.9rem;
+}
+
+.book-new input {
+  flex: 1;
+  font-family: var(--sans);
+  font-size: 0.95rem;
+  padding: 0.5rem 0.7rem;
+  border: 1px solid var(--rule);
+  background: var(--paper);
+  color: var(--ink);
+}
+
+.book-new input:focus-visible {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.invite-row {
+  display: flex;
+  gap: 1.1rem;
+  align-items: center;
+  margin-top: 0.9rem;
+  flex-wrap: wrap;
+}
+
+.invite-out {
+  font-family: var(--mono, ui-monospace, monospace);
+  font-size: 0.72rem;
+  word-break: break-all;
+  background: var(--paper);
+  border: 1px solid var(--rule);
+  padding: 0.6rem 0.7rem;
+  margin: 0.75rem 0 0;
+  color: var(--ink-soft);
+}
+
+.books-hint {
+  font-family: var(--serif);
+  font-style: italic;
+  font-size: 0.85rem;
+  color: var(--ink-faint);
+  margin: 0.9rem 0 0;
+}

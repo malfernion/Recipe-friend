@@ -101,10 +101,10 @@
     };
   }
 
-  function load() {
+  function load(key) {
     let parsed;
     try {
-      parsed = JSON.parse(global.localStorage.getItem(STORAGE_KEY));
+      parsed = JSON.parse(global.localStorage.getItem(key || STORAGE_KEY));
     } catch (err) {
       // Private browsing, disabled storage, or corrupted JSON — start fresh
       // in memory rather than crashing the app.
@@ -124,9 +124,9 @@
     };
   }
 
-  function persist(state) {
+  function persist(state, key) {
     try {
-      global.localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+      global.localStorage.setItem(key || STORAGE_KEY, JSON.stringify(state));
       return true;
     } catch (err) {
       console.warn("Recipe Friend: could not save recipes.", err);
@@ -150,7 +150,10 @@
 
   class RecipeStore {
     constructor() {
-      this.state = load();
+      // Signed out (or before a book is known) the cache is unnamespaced;
+      // each book then gets its own key so switching never mixes books.
+      this.key = STORAGE_KEY;
+      this.state = load(this.key);
       this.prefs = loadPrefs();
       // False when the latest write failed (storage full or blocked), so the
       // UI can warn that changes are in memory only.
@@ -158,7 +161,7 @@
     }
 
     _persist() {
-      this.persistOk = persist(this.state);
+      this.persistOk = persist(this.state, this.key);
       // Sync listens here to push local edits. Suppressed while applying
       // remote data so merges don't echo straight back to the server.
       if (this.onChange && !this._applying) this.onChange();
@@ -167,6 +170,36 @@
 
     get tombstones() {
       return this.state.tombstones;
+    }
+
+    /**
+     * Point the local cache at a book. Each book keeps its own cache, so
+     * switching books never pushes one book's recipes into another. The
+     * very first switch adopts anything sitting in the pre-account cache,
+     * so a box built before signing in isn't stranded.
+     */
+    useBook(bookId) {
+      const nextKey = bookId ? `${STORAGE_KEY}:book:${bookId}` : STORAGE_KEY;
+      if (nextKey === this.key) return;
+      let stored = null;
+      try {
+        stored = global.localStorage.getItem(nextKey);
+      } catch {
+        stored = null;
+      }
+      if (stored === null && this.key === STORAGE_KEY && this.state.recipes.length > 0) {
+        // Adopt the pre-account box into this book, then retire the old key.
+        this.key = nextKey;
+        this._persist();
+        try {
+          global.localStorage.removeItem(STORAGE_KEY);
+        } catch {
+          /* leaving it behind is harmless */
+        }
+        return;
+      }
+      this.key = nextKey;
+      this.state = load(this.key);
     }
 
     /** Drop any delete marker for an id being (re-)added. */

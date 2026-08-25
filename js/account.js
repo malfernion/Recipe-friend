@@ -26,6 +26,44 @@
   window.RecipeCloud = { client, session: null, sync: null };
 
   const statusEl = document.getElementById("sync-status");
+  let books = null;
+
+  // An invite link may arrive before sign-in; hold the code across the
+  // round trip so the invite isn't lost at the gate.
+  const PENDING_JOIN_KEY = "recipe-friend:pending-join";
+
+  function captureJoinCode() {
+    const match = location.hash.match(/^#join=(.+)$/);
+    if (!match) return;
+    history.replaceState(null, "", location.pathname + location.search);
+    try {
+      sessionStorage.setItem(PENDING_JOIN_KEY, match[1]);
+    } catch {
+      /* held only for this page load */
+    }
+  }
+
+  async function handlePendingJoin() {
+    let code = null;
+    try {
+      code = sessionStorage.getItem(PENDING_JOIN_KEY);
+    } catch {
+      code = null;
+    }
+    if (!code || !books) return;
+    try {
+      sessionStorage.removeItem(PENDING_JOIN_KEY);
+    } catch {
+      /* best effort */
+    }
+    await books.join(code);
+  }
+
+  captureJoinCode();
+  window.addEventListener("hashchange", async () => {
+    captureJoinCode();
+    if (window.RecipeCloud.session) await handlePendingJoin();
+  });
 
   const STATUS_TEXT = {
     syncing: "Syncing…",
@@ -70,7 +108,17 @@
     // Local edits from here on push automatically (debounced).
     app.store.onChange = () => sync.schedulePush();
     try {
-      await sync.resolveBook(session.user.id);
+      const remembered =
+        window.RecipeBooks && window.RecipeBooks.rememberedSelection(session.user.id);
+      await sync.resolveBook(session.user.id, remembered);
+      // The local cache is per book, so point it at this one before syncing.
+      app.store.useBook(sync.bookId);
+      if (window.RecipeBooks) {
+        window.RecipeBooks.rememberSelection(session.user.id, sync.bookId);
+        books = new window.RecipeBooks.BooksUI(sync, app);
+        window.RecipeCloud.books = books;
+        books.wire();
+      }
       try {
         await reconcilePrefs(sync, app.store);
       } catch (err) {
@@ -78,6 +126,10 @@
       }
       await sync.syncNow();
       app.render();
+      if (books) {
+        books.refresh().catch((err) => console.warn("Recipe Friend: books unavailable.", err));
+      }
+      await handlePendingJoin();
       if (app.showPendingShare) app.showPendingShare();
     } catch (err) {
       console.warn("Recipe Friend: could not start sync.", err);
@@ -87,6 +139,14 @@
 
   function stopSync() {
     const app = window.RecipeApp;
+    const booksBtn = document.getElementById("books-btn");
+    const bookLabel = document.getElementById("current-book");
+    const bookSep = document.querySelector(".book-sep");
+    if (booksBtn) booksBtn.hidden = true;
+    if (bookSep) bookSep.hidden = true;
+    if (bookLabel) bookLabel.hidden = true;
+    books = null;
+    window.RecipeCloud.books = null;
     if (app) app.store.onChange = null;
     if (window.RecipeCloud.sync) window.RecipeCloud.sync.stop();
     window.RecipeCloud.sync = null;
