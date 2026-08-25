@@ -124,6 +124,12 @@
       if (leaveBtn) leaveBtn.hidden = !current || current.role === "owner";
       const inviteBtn = $("#invite-btn");
       if (inviteBtn) inviteBtn.hidden = !current || current.role !== "owner";
+      // Deleting is for owners, and never for the last book standing —
+      // there would be nowhere to put new recipes.
+      const deleteBtn = $("#delete-book-btn");
+      if (deleteBtn) {
+        deleteBtn.hidden = !current || current.role !== "owner" || this.books.length < 2;
+      }
     }
 
     async switchTo(bookId) {
@@ -234,6 +240,52 @@
           console.warn("Recipe Friend: could not remove member.", err);
           this.app.toast("Couldn't remove that person.");
         }
+      });
+
+      $("#delete-book-btn").addEventListener("click", async () => {
+        const current = this.currentBook();
+        if (!current || current.role !== "owner") return;
+        if (this.books.length < 2) {
+          this.app.toast("This is your only book — create another one first.");
+          return;
+        }
+        // Spell out exactly what is about to be destroyed, for everyone.
+        let recipeCount = null;
+        try {
+          recipeCount = await this.sync.countRecipes(current.id);
+        } catch {
+          recipeCount = null;
+        }
+        const others = this.members.filter((m) => !m.isMe).length;
+        const parts = [`Delete “${current.name}” for good?`];
+        parts.push(
+          recipeCount === null
+            ? "Its recipes will be deleted."
+            : `Its ${recipeCount} recipe${recipeCount === 1 ? "" : "s"} will be deleted.`
+        );
+        if (others > 0) {
+          parts.push(`${others} other member${others === 1 ? "" : "s"} will lose it too.`);
+        }
+        parts.push("This cannot be undone — export first if you want a copy.");
+        if (!confirm(parts.join("\n\n"))) return;
+
+        try {
+          await this.sync.deleteBook(current.id);
+        } catch (err) {
+          console.warn("Recipe Friend: could not delete book.", err);
+          this.app.toast("Couldn't delete that book.");
+          return;
+        }
+        this.app.store.forgetBook(current.id);
+        this.books = this.books.filter((b) => b.id !== current.id);
+        const next = this.books[0];
+        this.sync.setBook(next ? next.id : null);
+        this.app.store.useBook(next ? next.id : null);
+        if (next) rememberSelection(this.sync.userId, next.id);
+        if (next) await this.sync.syncNow();
+        this.app.render();
+        await this.refresh();
+        this.app.toast(`Deleted “${current.name}”.`);
       });
 
       $("#leave-book-btn").addEventListener("click", async () => {

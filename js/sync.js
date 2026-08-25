@@ -124,6 +124,26 @@
       if (error) throw error;
     }
 
+    /** How many live recipes a book holds — used to warn before deleting. */
+    async countRecipes(bookId) {
+      const { data, error } = await this.client
+        .from("recipes")
+        .select("id")
+        .eq("book_id", bookId)
+        .is("deleted_at", null);
+      if (error) throw error;
+      return (data || []).length;
+    }
+
+    /**
+     * Delete a book. Its recipes, members and invites cascade away in the
+     * database, so this destroys the collection for everyone in it.
+     */
+    async deleteBook(bookId) {
+      const { error } = await this.client.from("books").delete().eq("id", bookId);
+      if (error) throw error;
+    }
+
     async removeMember(bookId, userId) {
       const { error } = await this.client
         .from("book_members")

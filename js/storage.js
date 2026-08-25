@@ -202,6 +202,15 @@
       this.state = load(this.key);
     }
 
+    /** Drop a book's local cache — used when the book itself is deleted. */
+    forgetBook(bookId) {
+      try {
+        global.localStorage.removeItem(`${STORAGE_KEY}:book:${bookId}`);
+      } catch {
+        /* nothing to clear */
+      }
+    }
+
     /**
      * Forget a recipe locally without tombstoning it. Used when a recipe
      * moves to another book: the row still exists, so marking it deleted
