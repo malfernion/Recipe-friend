@@ -62,6 +62,26 @@
       return this.bookId;
     }
 
+    /** The signed-in user's stored unit preferences, or null if unset. */
+    async pullPrefs() {
+      const { data, error } = await this.client
+        .from("profiles")
+        .select("unit_prefs")
+        .eq("user_id", this.userId);
+      if (error) throw error;
+      const row = data && data[0];
+      return (row && row.unit_prefs) || null;
+    }
+
+    /** Preferences follow the person, not the recipe book. */
+    async pushPrefs(prefs) {
+      const { error } = await this.client
+        .from("profiles")
+        .update({ unit_prefs: { mass: prefs.mass || "", volume: prefs.volume || "" } })
+        .eq("user_id", this.userId);
+      if (error) throw error;
+    }
+
     /**
      * Merge server rows with the local box, then push whatever the server
      * is missing or has an older copy of.

@@ -11,11 +11,11 @@
   <link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,300..600;1,9..144,300..600&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="css/styles.css">
 </head>
-<body>
+<body class="gated">
   <header class="masthead">
     <p class="masthead-kicker">A personal recipe box</p>
     <h1 class="app-title">Recipe <em>Friend</em></h1>
-    <p class="masthead-note">kept entirely in this browser · no accounts, no cloud</p>
+    <p class="masthead-note">your recipes, on every device you cook from</p>
     <div class="header-actions">
       <button id="export-btn" class="btn btn-ghost" title="Download all recipes as a JSON file">Export</button>
       <span class="action-sep" aria-hidden="true">·</span>
@@ -33,6 +33,18 @@
     </div>
     <input type="file" id="import-file" accept="application/json,.json" hidden>
   </header>
+
+
+  <section class="signin-view">
+    <div class="signin-card">
+      <p class="masthead-kicker">A personal recipe box</p>
+      <h1 class="app-title">Recipe <em>Friend</em></h1>
+      <p class="signin-blurb">Your recipes, on every device you cook from.<br>
+         Keep a private book of your own, or share one with the household.</p>
+      <button id="signin-cta" class="btn btn-primary signin-cta">Sign in with Google</button>
+      <p class="signin-foot">We only ever see your name and email address.</p>
+    </div>
+  </section>
 
   <main class="container">
     <section class="toolbar" aria-label="Search and filter">
@@ -57,14 +69,14 @@
       <p class="empty-emoji">🥕</p>
       <h2>Nothing on the menu yet</h2>
       <p>Add your first recipe, or import a collection from a JSON file.<br>
-         Everything is saved locally in this browser — no account needed.</p>
+         Everything you save syncs to the devices you cook from.</p>
       <button class="btn btn-primary" id="empty-add-btn">Add your first recipe</button>
     </div>
   </main>
 
   <footer class="app-footer">
-    <p>Recipes are stored only in this browser via localStorage.<br>
-       Use Export to back them up or move them to another device.</p>
+    <p>Your recipes sync to your account and stay available offline.<br>
+       Use Export any time you want your own copy.</p>
   </footer>
 
   <!-- Add / edit recipe -->

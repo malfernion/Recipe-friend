@@ -208,7 +208,12 @@
       }
       let changed = 0;
       for (const recipe of this.state.recipes) {
-        changed += global.RecipeUnits.applyPrefs(recipe, this.prefs);
+        const n = global.RecipeUnits.applyPrefs(recipe, this.prefs);
+        if (n > 0) {
+          // The stored amounts really changed, so mark it for sync.
+          recipe.updatedAt = Date.now();
+          changed += n;
+        }
       }
       if (changed > 0) this._persist();
       return changed;
@@ -343,57 +348,6 @@
       return { imported, skipped };
     }
 
-    /** Seed a couple of starter recipes on first ever visit. */
-    seedIfEmpty() {
-      if (this.state.recipes.length > 0) return;
-      if (global.localStorage.getItem(STORAGE_KEY) !== null) return; // user deleted everything on purpose
-      const samples = [
-        {
-          name: "Weeknight tomato pasta",
-          description: "Fast, pantry-friendly, and better than it has any right to be.",
-          servings: 2,
-          prepMinutes: 5,
-          cookMinutes: 15,
-          ingredients: [
-            { amount: 200, unit: "g", item: "spaghetti" },
-            { amount: 2, unit: "tbsp", item: "olive oil" },
-            { amount: 3, unit: "cloves", item: "garlic, sliced" },
-            { amount: 1, unit: "can", item: "crushed tomatoes (400g)" },
-            { amount: null, unit: "", item: "pinch of chili flakes" },
-            { amount: null, unit: "", item: "salt, pepper, and grated parmesan" },
-          ],
-          steps: [
-            "Cook the spaghetti in well-salted water until just shy of al dente.",
-            "Meanwhile, warm the olive oil and gently fry the garlic and chili flakes.",
-            "Add the tomatoes, season, and simmer 8–10 minutes.",
-            "Toss the pasta through the sauce with a splash of pasta water.",
-            "Serve with parmesan.",
-          ],
-          tags: ["dinner", "quick", "vegetarian"],
-        },
-        {
-          name: "Overnight oats",
-          description: "Assemble tonight, breakfast appears tomorrow.",
-          servings: 1,
-          prepMinutes: 5,
-          cookMinutes: 0,
-          ingredients: [
-            { amount: 50, unit: "g", item: "rolled oats" },
-            { amount: 120, unit: "ml", item: "milk (any kind)" },
-            { amount: 1, unit: "tbsp", item: "yogurt" },
-            { amount: 1, unit: "tsp", item: "honey or maple syrup" },
-            { amount: null, unit: "", item: "berries or banana to top" },
-          ],
-          steps: [
-            "Stir the oats, milk, yogurt, and honey together in a jar.",
-            "Cover and refrigerate overnight.",
-            "Top with fruit and eat straight from the jar.",
-          ],
-          tags: ["breakfast", "no-cook"],
-        },
-      ];
-      for (const s of samples) this.add(s);
-    }
   }
 
   // Exposed so the UI can sanitize a shared payload for preview before saving.
