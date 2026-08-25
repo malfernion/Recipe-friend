@@ -13,6 +13,12 @@ build step.
   fit browser storage) or link one by URL.
 - **Search and filter** — full-text search across names, ingredients, and
   tags; filter by tag or favorites.
+- **Portion scaling** — a Portions stepper in the recipe view rescales
+  ingredient quantities on the fly (fractions included: "1½ tbsp" halves to
+  "¾ tbsp"). Display-only; the saved recipe is untouched.
+- **"What can I cook?"** — list the ingredients you have and recipes using
+  them rise to the top, best matches first, with each card showing which of
+  your ingredients it uses.
 - **Favorites** — star the recipes you keep coming back to.
 - **Local persistence** — everything is saved in your browser under a
   versioned `localStorage` key (`recipe-friend:v1`), so your recipes survive

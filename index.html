@@ -32,7 +32,14 @@
              placeholder="Search recipes, ingredients, tags…" aria-label="Search recipes">
       <div class="filter-row">
         <button id="favorites-filter" class="chip chip-fav" aria-pressed="false">★ Favourites</button>
+        <button id="pantry-toggle" class="chip" aria-pressed="false" aria-controls="pantry-panel">What can I cook?</button>
         <div id="tag-filters" class="tag-filter-list"></div>
+      </div>
+      <div id="pantry-panel" class="pantry-panel" hidden>
+        <input type="text" id="pantry-input" class="search-input"
+               placeholder="Ingredients you have — e.g. chicken, tomatoes, rice"
+               aria-label="Ingredients you have">
+        <p class="pantry-hint">Recipes using any of these rise to the top, best matches first.</p>
       </div>
     </section>
 
@@ -145,6 +152,7 @@
 
   <script src="js/storage.js"></script>
   <script src="js/share.js"></script>
+  <script src="js/scale.js"></script>
   <script src="js/app.js"></script>
 </body>
 </html>

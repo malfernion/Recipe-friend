@@ -16,6 +16,9 @@
   let editingId = null; // recipe id being edited, or null when adding
   let detailId = null; // recipe id shown in the detail dialog
   let pendingImage = ""; // data URI chosen via the file picker, pre-save
+  let pantryOn = false;
+  let pantryTerms = []; // normalized "what can I cook?" ingredients
+  let detailScale = 1; // display-only scaling factor for the open detail view
 
   // --- Elements ---
   const $ = (sel) => document.querySelector(sel);
@@ -65,7 +68,18 @@
         .toLowerCase();
       if (!haystack.includes(searchQuery)) return false;
     }
+    if (pantryOn && pantryTerms.length > 0 && pantryMatches(recipe).length === 0) return false;
     return true;
+  }
+
+  /** Which of the user's pantry terms this recipe's ingredients mention. */
+  function pantryMatches(recipe) {
+    const lines = recipe.ingredients.map((i) => i.toLowerCase());
+    return pantryTerms.filter((term) => {
+      // Also try a crude singular so "tomatoes" finds "tomato purée" and vice versa.
+      const singular = term.replace(/(es|s)$/, "");
+      return lines.some((l) => l.includes(term) || (singular.length >= 3 && l.includes(singular)));
+    });
   }
 
   // --- Rendering ---
@@ -92,6 +106,7 @@
       .filter(Boolean)
       .join(" · ");
 
+    const matched = pantryOn && pantryTerms.length > 0 ? pantryMatches(recipe) : [];
     return `
       <article class="recipe-card" data-id="${escapeHTML(recipe.id)}" tabindex="0"
                role="button" aria-label="Open ${escapeHTML(recipe.name)}">
@@ -108,6 +123,11 @@
         ${recipe.description ? `<p class="card-desc">${escapeHTML(recipe.description)}</p>` : ""}
         <p class="card-meta">${escapeHTML(meta)}</p>
         ${
+          matched.length
+            ? `<p class="card-matches">Has ${matched.map((t) => escapeHTML(t)).join(" · ")}</p>`
+            : ""
+        }
+        ${
           recipe.tags.length
             ? `<div class="card-tags">${recipe.tags
                 .map((t) => `<span class="tag">${escapeHTML(t)}</span>`)
@@ -118,7 +138,14 @@
   }
 
   function render() {
-    const visible = store.recipes.filter(matchesFilters);
+    let visible = store.recipes.filter(matchesFilters);
+    if (pantryOn && pantryTerms.length > 0) {
+      // Best matches first; stable within equal counts.
+      visible = visible
+        .map((r, i) => ({ r, i, n: pantryMatches(r).length }))
+        .sort((a, b) => b.n - a.n || a.i - b.i)
+        .map((x) => x.r);
+    }
     listEl.innerHTML = visible.map((r, i) => recipeCard(r, i)).join("");
 
     const hasAny = store.recipes.length > 0;
@@ -264,7 +291,24 @@
   });
 
   // --- Detail dialog ---
-  function recipeDetailHTML(recipe, kicker) {
+  /** scalable: render the portion-scaling controls and apply detailScale. */
+  function recipeDetailHTML(recipe, kicker, scalable) {
+    const factor = scalable ? detailScale : 1;
+    const scaledServings = recipe.servings ? Math.round(recipe.servings * factor * 10) / 10 : null;
+    const scaleValue = recipe.servings
+      ? `Serves ${scaledServings}`
+      : `× ${RecipeScale.formatQuantity(factor)}`;
+    const scaleControls = scalable
+      ? `
+      <div class="scale-row" role="group" aria-label="Scale portions">
+        <span class="scale-label">Portions</span>
+        <button type="button" class="scale-btn" data-scale="down" aria-label="Fewer portions">−</button>
+        <span class="scale-value">${escapeHTML(scaleValue)}</span>
+        <button type="button" class="scale-btn" data-scale="up" aria-label="More portions">+</button>
+        ${factor !== 1 ? '<button type="button" class="scale-reset" data-scale="reset">Reset</button>' : ""}
+      </div>
+      ${factor !== 1 ? '<p class="scale-note">Quantities below are scaled; timings and the method are not.</p>' : ""}`
+      : "";
     const time = totalTime(recipe);
     const metaBits = [
       recipe.servings ? `Serves ${recipe.servings}` : null,
@@ -288,9 +332,12 @@
               .join("")}</div>`
           : ""
       }
+      ${scaleControls}
       <h3>Ingredients</h3>
       <ul class="detail-ingredients">
-        ${recipe.ingredients.map((i) => `<li>${escapeHTML(i)}</li>`).join("")}
+        ${recipe.ingredients
+          .map((i) => `<li>${escapeHTML(RecipeScale.scaleIngredient(i, factor))}</li>`)
+          .join("")}
       </ul>
       <h3>Steps</h3>
       <ol class="detail-steps">
@@ -299,11 +346,35 @@
   }
 
   function openDetailDialog(recipe) {
+    // Keep the scale when re-rendering the same open recipe (e.g. after a
+    // favourite toggle); reset it when a different recipe opens.
+    if (detailId !== recipe.id || !detailDialog.open) detailScale = 1;
     detailId = recipe.id;
-    detailContent.innerHTML = recipeDetailHTML(recipe, "From your recipe box");
+    detailContent.innerHTML = recipeDetailHTML(recipe, "From your recipe box", true);
     syncDetailFavButton(recipe);
     if (!detailDialog.open) detailDialog.showModal();
   }
+
+  // Portion stepper: with known servings, step one serving at a time;
+  // without, step the multiplier by ½.
+  detailContent.addEventListener("click", (event) => {
+    const btn = event.target.closest("[data-scale]");
+    if (!btn) return;
+    const recipe = store.getById(detailId);
+    if (!recipe) return;
+    const action = btn.dataset.scale;
+    if (action === "reset") {
+      detailScale = 1;
+    } else if (recipe.servings) {
+      const current = Math.round(recipe.servings * detailScale);
+      const next = action === "up" ? current + 1 : Math.max(1, current - 1);
+      detailScale = next / recipe.servings;
+    } else {
+      const next = action === "up" ? detailScale + 0.5 : detailScale - 0.5;
+      detailScale = Math.min(8, Math.max(0.5, next));
+    }
+    detailContent.innerHTML = recipeDetailHTML(recipe, "From your recipe box", true);
+  });
 
   function syncDetailFavButton(recipe) {
     const btn = $("#detail-fav-btn");
@@ -360,6 +431,28 @@
 
   favoritesBtn.addEventListener("click", () => {
     favoritesOnly = !favoritesOnly;
+    render();
+  });
+
+  // --- "What can I cook?" pantry mode ---
+  const pantryToggle = $("#pantry-toggle");
+  const pantryPanel = $("#pantry-panel");
+  const pantryInput = $("#pantry-input");
+
+  pantryToggle.addEventListener("click", () => {
+    pantryOn = !pantryOn;
+    pantryPanel.hidden = !pantryOn;
+    pantryToggle.classList.toggle("chip-active", pantryOn);
+    pantryToggle.setAttribute("aria-pressed", String(pantryOn));
+    if (pantryOn) pantryInput.focus();
+    render();
+  });
+
+  pantryInput.addEventListener("input", () => {
+    pantryTerms = pantryInput.value
+      .split(",")
+      .map((s) => s.trim().toLowerCase())
+      .filter((s) => s.length >= 2);
     render();
   });
 
