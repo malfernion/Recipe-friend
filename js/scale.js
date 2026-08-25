@@ -1,10 +1,10 @@
 /**
- * scale.js — portion scaling for free-text ingredient lines.
+ * scale.js — quantity helpers for structured ingredients.
  *
- * Only the leading quantity of a line is scaled ("200g spaghetti",
- * "1½ tbsp oil", "2-3 carrots"); lines with no leading number ("flaked sea
- * salt") pass through unchanged. Scaled values render as kitchen-friendly
- * fractions where they land near one, decimals otherwise.
+ * An ingredient is {amount: number|null, unit: string, item: string}.
+ * Scaling multiplies the amount field — no free-text parsing at render
+ * time. The legacy line parser lives on only to migrate old string
+ * ingredients ("200g spaghetti") into the structured shape once.
  */
 (function (global) {
   "use strict";
@@ -16,13 +16,13 @@
   };
   const FRACTION_CHARS = Object.keys(UNICODE_FRACTIONS).join("");
 
-  // One quantity: "1 1/2", "1½", "1/2", "½", "1.5", "200"
-  const QTY = `(?:\\d+(?:\\.\\d+)?(?:\\s*(?:\\d+\\s*\\/\\s*\\d+|[${FRACTION_CHARS}]))?|\\d+\\s*\\/\\s*\\d+|[${FRACTION_CHARS}])`;
-  // Leading quantity, optionally a range ("2-3", "2 – 3")
-  const LEADING = new RegExp(`^(\\s*)(${QTY})(\\s*[-–]\\s*(${QTY}))?`);
-
+  /**
+   * Parse a quantity string a person would type into the amount field:
+   * "200", "1.5", "1/2", "1 1/2", "½", "1½". Returns a number or null.
+   */
   function quantityToNumber(text) {
-    let s = text.trim();
+    let s = String(text).trim();
+    if (!s) return null;
     let total = 0;
     const mixed = s.match(new RegExp(`^(\\d+(?:\\.\\d+)?)\\s*(\\d+\\s*\\/\\s*\\d+|[${FRACTION_CHARS}])$`));
     if (mixed) {
@@ -30,13 +30,13 @@
       s = mixed[2];
     }
     const slash = s.match(/^(\d+)\s*\/\s*(\d+)$/);
-    if (slash) return total + Number(slash[1]) / Number(slash[2]);
+    if (slash && Number(slash[2]) !== 0) return total + Number(slash[1]) / Number(slash[2]);
     if (s in UNICODE_FRACTIONS) return total + UNICODE_FRACTIONS[s];
-    return total + Number(s);
+    const n = Number(s);
+    return Number.isFinite(n) && n > 0 ? total + n : null;
   }
 
-  // Fractions people actually measure with — fifths and sixths parse fine
-  // but never render ("⅘ litres" helps nobody; that shows as 0.8).
+  // Fractions people actually measure with — others render as decimals.
   const DISPLAY_FRACTIONS = ["½", "⅓", "⅔", "¼", "¾", "⅛", "⅜", "⅝", "⅞"];
 
   /** Render a number as a kitchen quantity: 0.5 → "½", 1.5 → "1½", 2.67 → "2.7". */
@@ -54,21 +54,57 @@
     if (frac < 0.03) return String(whole);
     if (frac > 0.97) return String(whole + 1);
     if (best) return (whole ? whole : "") + best.ch;
-    const rounded = Math.round(value * 10) / 10;
-    return String(rounded);
+    return String(Math.round(value * 10) / 10);
   }
 
-  /** Scale the leading quantity of one ingredient line. */
-  function scaleIngredient(line, factor) {
-    if (factor === 1) return line;
-    const match = line.match(LEADING);
-    if (!match) return line;
-    const [full, lead, first, , second] = match;
-    const scaledFirst = formatQuantity(quantityToNumber(first) * factor);
-    let replacement = lead + scaledFirst;
-    if (second) replacement += "–" + formatQuantity(quantityToNumber(second) * factor);
-    return replacement + line.slice(full.length);
+  /** One display line for an ingredient, scaled by factor. */
+  function ingredientText(ing, factor = 1) {
+    const parts = [];
+    if (ing.amount !== null && ing.amount !== undefined) {
+      parts.push(formatQuantity(ing.amount * factor));
+    }
+    if (ing.unit) parts.push(ing.unit);
+    if (ing.item) parts.push(ing.item);
+    return parts.join(" ");
   }
 
-  global.RecipeScale = { scaleIngredient, formatQuantity, quantityToNumber };
+  // --- Legacy migration only below this line ---
+
+  const KNOWN_UNITS = new Set([
+    "g", "kg", "mg", "ml", "cl", "dl", "l", "litre", "litres", "liter", "liters",
+    "tsp", "tbsp", "teaspoon", "teaspoons", "tablespoon", "tablespoons",
+    "cup", "cups", "oz", "lb", "stick", "sticks", "clove", "cloves",
+    "can", "cans", "tin", "tins", "slice", "slices", "bunch", "bunches",
+    "pinch", "pinches", "handful", "handfuls", "sprig", "sprigs",
+    "knob", "sheet", "sheets", "rasher", "rashers", "fillet", "fillets",
+  ]);
+
+  const LEADING_QTY = new RegExp(
+    `^\\s*(\\d+(?:\\.\\d+)?(?:\\s*(?:\\d+\\s*\\/\\s*\\d+|[${FRACTION_CHARS}]))?|\\d+\\s*\\/\\s*\\d+|[${FRACTION_CHARS}])\\s*`
+  );
+
+  /**
+   * Best-effort split of a legacy free-text line into {amount, unit, item}.
+   * Anything ambiguous lands whole in `item` for the user to tidy by hand.
+   */
+  function parseLegacyIngredient(line) {
+    const text = String(line).trim();
+    if (!text) return null;
+    const match = text.match(LEADING_QTY);
+    if (!match) return { amount: null, unit: "", item: text };
+    let rest = text.slice(match[0].length);
+    // A range ("2-3 carrots") doesn't fit a single amount — keep it as text.
+    if (/^[-–]/.test(rest)) return { amount: null, unit: "", item: text };
+    const amount = quantityToNumber(match[1]);
+    if (amount === null) return { amount: null, unit: "", item: text };
+    const firstWord = (rest.match(/^([A-Za-z]+)\b/) || [])[1];
+    let unit = "";
+    if (firstWord && KNOWN_UNITS.has(firstWord.toLowerCase())) {
+      unit = firstWord;
+      rest = rest.slice(firstWord.length).replace(/^\s+/, "");
+    }
+    return { amount, unit, item: rest.trim() };
+  }
+
+  global.RecipeScale = { quantityToNumber, formatQuantity, ingredientText, parseLegacyIngredient };
 })(window);

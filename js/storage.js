@@ -26,6 +26,29 @@
   }
 
   /**
+   * Ingredients are structured: {amount: number|null, unit, item}.
+   * Legacy free-text lines (old stored data, exports, share links) are
+   * migrated via a one-time best-effort split; whatever it can't place
+   * lands whole in `item` for hand-tidying in the editor.
+   */
+  function sanitizeIngredient(raw) {
+    if (raw === null || raw === undefined) return null;
+    if (typeof raw === "string") return global.RecipeScale.parseLegacyIngredient(raw);
+    if (typeof raw !== "object") return null;
+    const amountNum = Number(raw.amount);
+    const amount = Number.isFinite(amountNum) && amountNum > 0 ? amountNum : null;
+    const unit = String(raw.unit || "").trim().slice(0, 24);
+    const item = String(raw.item || "").trim().slice(0, 200);
+    if (!item && !unit) return null;
+    return { amount, unit, item };
+  }
+
+  function normalizeIngredients(value) {
+    if (!Array.isArray(value)) return [];
+    return value.map(sanitizeIngredient).filter(Boolean);
+  }
+
+  /**
    * A recipe image is either a browser-generated data URI (bounded so a
    * single photo can't eat the whole localStorage quota) or an http(s) URL.
    */
@@ -46,7 +69,7 @@
   function sanitizeRecipe(raw) {
     if (!raw || typeof raw !== "object") return null;
     const name = String(raw.name || "").trim();
-    const ingredients = normalizeStringList(raw.ingredients);
+    const ingredients = normalizeIngredients(raw.ingredients);
     const steps = normalizeStringList(raw.steps);
     if (!name || ingredients.length === 0 || steps.length === 0) return null;
 
@@ -242,12 +265,12 @@
           prepMinutes: 5,
           cookMinutes: 15,
           ingredients: [
-            "200g spaghetti",
-            "2 tbsp olive oil",
-            "3 cloves garlic, sliced",
-            "1 can (400g) crushed tomatoes",
-            "Pinch of chili flakes",
-            "Salt, pepper, and grated parmesan",
+            { amount: 200, unit: "g", item: "spaghetti" },
+            { amount: 2, unit: "tbsp", item: "olive oil" },
+            { amount: 3, unit: "cloves", item: "garlic, sliced" },
+            { amount: 1, unit: "can", item: "crushed tomatoes (400g)" },
+            { amount: null, unit: "", item: "pinch of chili flakes" },
+            { amount: null, unit: "", item: "salt, pepper, and grated parmesan" },
           ],
           steps: [
             "Cook the spaghetti in well-salted water until just shy of al dente.",
@@ -265,11 +288,11 @@
           prepMinutes: 5,
           cookMinutes: 0,
           ingredients: [
-            "50g rolled oats",
-            "120ml milk (any kind)",
-            "1 tbsp yogurt",
-            "1 tsp honey or maple syrup",
-            "Berries or banana to top",
+            { amount: 50, unit: "g", item: "rolled oats" },
+            { amount: 120, unit: "ml", item: "milk (any kind)" },
+            { amount: 1, unit: "tbsp", item: "yogurt" },
+            { amount: 1, unit: "tsp", item: "honey or maple syrup" },
+            { amount: null, unit: "", item: "berries or banana to top" },
           ],
           steps: [
             "Stir the oats, milk, yogurt, and honey together in a jar.",

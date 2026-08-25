@@ -90,11 +90,22 @@
         </label>
       </div>
 
-      <label class="field">
-        <span>Ingredients * <small>(one per line)</small></span>
-        <textarea name="ingredients" rows="6" required
-                  placeholder="200g noodles&#10;2 eggs&#10;1 tbsp soy sauce"></textarea>
-      </label>
+      <div class="field">
+        <span class="field-label">Ingredients * <small>(amount · unit · ingredient; leave amount empty for "to taste" lines)</small></span>
+        <div id="ingredient-rows" class="ingredient-rows"></div>
+        <button type="button" class="btn btn-ghost" id="add-ingredient-btn">+ Add ingredient</button>
+        <datalist id="unit-list">
+          <option value="g"></option><option value="kg"></option>
+          <option value="ml"></option><option value="l"></option>
+          <option value="tsp"></option><option value="tbsp"></option>
+          <option value="cup"></option><option value="cups"></option>
+          <option value="cloves"></option><option value="can"></option>
+          <option value="tin"></option><option value="bunch"></option>
+          <option value="pinch"></option><option value="handful"></option>
+          <option value="slices"></option><option value="sprigs"></option>
+          <option value="oz"></option><option value="lb"></option>
+        </datalist>
+      </div>
 
       <label class="field">
         <span>Steps * <small>(one per line)</small></span>
@@ -150,9 +161,10 @@
 
   <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
 
+  <!-- scale.js first: storage.js uses it to migrate legacy ingredients -->
+  <script src="js/scale.js"></script>
   <script src="js/storage.js"></script>
   <script src="js/share.js"></script>
-  <script src="js/scale.js"></script>
   <script src="js/app.js"></script>
 </body>
 </html>

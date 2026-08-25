@@ -505,6 +505,70 @@ body {
   gap: 1rem;
 }
 
+.ingredient-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+  margin-bottom: 0.6rem;
+}
+
+.ing-row {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+}
+
+.ing-row input {
+  font-family: var(--sans);
+  font-size: 0.95rem;
+  padding: 0.5rem 0.6rem;
+  border: 1px solid var(--rule);
+  border-radius: 0;
+  background: var(--paper);
+  color: var(--ink);
+  transition: border-color 0.15s ease;
+  min-width: 0;
+}
+
+.ing-row input:focus-visible {
+  outline: none;
+  border-color: var(--accent);
+}
+
+/* .field input sets width:100%; these need the extra specificity to win. */
+.ing-row .ing-amount {
+  width: 4.5rem;
+  flex: none;
+  text-align: right;
+}
+
+.ing-row .ing-unit {
+  width: 5.5rem;
+  flex: none;
+}
+
+.ing-row .ing-item {
+  width: auto;
+  flex: 1;
+}
+
+.ing-remove {
+  font-size: 1.15rem;
+  line-height: 1;
+  width: 1.8rem;
+  height: 1.8rem;
+  flex-shrink: 0;
+  border: none;
+  background: none;
+  color: var(--ink-faint);
+  cursor: pointer;
+  transition: color 0.15s ease;
+}
+
+.ing-remove:hover {
+  color: var(--danger);
+}
+
 .photo-row {
   display: flex;
   align-items: center;
@@ -797,6 +861,18 @@ body {
   .dialog-actions {
     flex-wrap: wrap;
     gap: 0.75rem 1rem;
+  }
+
+  .ing-row {
+    gap: 0.35rem;
+  }
+
+  .ing-row .ing-amount {
+    width: 3.4rem;
+  }
+
+  .ing-row .ing-unit {
+    width: 4.2rem;
   }
 }
 

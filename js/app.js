@@ -63,7 +63,12 @@
     if (favoritesOnly && !recipe.favorite) return false;
     if (activeTag && !recipe.tags.includes(activeTag)) return false;
     if (searchQuery) {
-      const haystack = [recipe.name, recipe.description, ...recipe.ingredients, ...recipe.tags]
+      const haystack = [
+        recipe.name,
+        recipe.description,
+        ...recipe.ingredients.map((i) => RecipeScale.ingredientText(i)),
+        ...recipe.tags,
+      ]
         .join("\n")
         .toLowerCase();
       if (!haystack.includes(searchQuery)) return false;
@@ -74,7 +79,7 @@
 
   /** Which of the user's pantry terms this recipe's ingredients mention. */
   function pantryMatches(recipe) {
-    const lines = recipe.ingredients.map((i) => i.toLowerCase());
+    const lines = recipe.ingredients.map((i) => `${i.item} ${i.unit}`.toLowerCase());
     return pantryTerms.filter((term) => {
       // Also try a crude singular so "tomatoes" finds "tomato purée" and vice versa.
       const singular = term.replace(/(es|s)$/, "");
@@ -162,6 +167,63 @@
     renderTagFilters();
   }
 
+  // --- Ingredient row editor ---
+  const ingredientRowsEl = $("#ingredient-rows");
+
+  function addIngredientRow(ing) {
+    const row = document.createElement("div");
+    row.className = "ing-row";
+    row.innerHTML = `
+      <input type="text" class="ing-amount" inputmode="decimal" placeholder="200"
+             aria-label="Amount" value="${ing && ing.amount !== null ? escapeHTML(RecipeScale.formatQuantity(ing.amount)) : ""}">
+      <input type="text" class="ing-unit" list="unit-list" placeholder="g" maxlength="24"
+             aria-label="Unit" value="${ing ? escapeHTML(ing.unit) : ""}">
+      <input type="text" class="ing-item" placeholder="spaghetti" maxlength="200"
+             aria-label="Ingredient" value="${ing ? escapeHTML(ing.item) : ""}">
+      <button type="button" class="ing-remove" aria-label="Remove ingredient" title="Remove">×</button>`;
+    ingredientRowsEl.appendChild(row);
+    return row;
+  }
+
+  function fillIngredientRows(ingredients) {
+    ingredientRowsEl.innerHTML = "";
+    for (const ing of ingredients) addIngredientRow(ing);
+    if (ingredients.length === 0) addIngredientRow(null);
+  }
+
+  /**
+   * Read the rows back. Blank rows are skipped; a row with an amount the
+   * quantity parser can't read aborts with {error} so nothing saves wrong.
+   */
+  function readIngredientRows() {
+    const ingredients = [];
+    for (const row of ingredientRowsEl.querySelectorAll(".ing-row")) {
+      const amountText = row.querySelector(".ing-amount").value.trim();
+      const unit = row.querySelector(".ing-unit").value.trim();
+      const item = row.querySelector(".ing-item").value.trim();
+      if (!amountText && !unit && !item) continue; // blank row
+      let amount = null;
+      if (amountText) {
+        amount = RecipeScale.quantityToNumber(amountText);
+        if (amount === null) return { error: amountText };
+      }
+      ingredients.push({ amount, unit, item });
+    }
+    return { ingredients };
+  }
+
+  $("#add-ingredient-btn").addEventListener("click", () => {
+    const row = addIngredientRow(null);
+    row.querySelector(".ing-amount").focus();
+  });
+
+  ingredientRowsEl.addEventListener("click", (event) => {
+    const btn = event.target.closest(".ing-remove");
+    if (!btn) return;
+    btn.closest(".ing-row").remove();
+    if (ingredientRowsEl.children.length === 0) addIngredientRow(null);
+  });
+
   // --- Add / edit dialog ---
   function openRecipeDialog(recipe) {
     editingId = recipe ? recipe.id : null;
@@ -177,10 +239,10 @@
       f.servings.value = recipe.servings || "";
       f.prepMinutes.value = recipe.prepMinutes ?? "";
       f.cookMinutes.value = recipe.cookMinutes ?? "";
-      f.ingredients.value = recipe.ingredients.join("\n");
       f.steps.value = recipe.steps.join("\n");
       f.tags.value = recipe.tags.join(", ");
     }
+    fillIngredientRows(recipe ? recipe.ingredients : []);
     // Restore photo state: URLs go back into the text field, data URIs into
     // the pending slot.
     const image = recipe ? recipe.image : "";
@@ -224,7 +286,7 @@
     });
   }
 
-  function readRecipeForm() {
+  function readRecipeForm(ingredients) {
     const f = recipeForm.elements;
     const lines = (v) => v.split("\n").map((s) => s.trim()).filter(Boolean);
     return {
@@ -233,7 +295,7 @@
       servings: f.servings.value || null,
       prepMinutes: f.prepMinutes.value || null,
       cookMinutes: f.cookMinutes.value || null,
-      ingredients: lines(f.ingredients.value),
+      ingredients,
       steps: lines(f.steps.value),
       tags: f.tags.value.split(",").map((s) => s.trim()).filter(Boolean),
       image: currentFormImage(),
@@ -243,7 +305,12 @@
   recipeForm.addEventListener("submit", (event) => {
     event.preventDefault();
     if (!recipeForm.reportValidity()) return;
-    const input = readRecipeForm();
+    const rows = readIngredientRows();
+    if (rows.error) {
+      toast(`Couldn't read the amount “${rows.error}” — use numbers like 250, 1.5 or ½.`);
+      return;
+    }
+    const input = readRecipeForm(rows.ingredients);
     if (input.ingredients.length === 0 || input.steps.length === 0) {
       toast("A recipe needs at least one ingredient and one step.");
       return;
@@ -336,7 +403,7 @@
       <h3>Ingredients</h3>
       <ul class="detail-ingredients">
         ${recipe.ingredients
-          .map((i) => `<li>${escapeHTML(RecipeScale.scaleIngredient(i, factor))}</li>`)
+          .map((i) => `<li>${escapeHTML(RecipeScale.ingredientText(i, factor))}</li>`)
           .join("")}
       </ul>
       <h3>Steps</h3>
