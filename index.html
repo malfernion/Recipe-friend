@@ -23,7 +23,12 @@
       <span class="action-sep" aria-hidden="true">·</span>
       <button id="prefs-btn" class="btn btn-ghost" title="Measurement preferences">Units</button>
       <span class="action-sep" aria-hidden="true">·</span>
+      <button id="account-btn" class="btn btn-ghost" title="Sign in with Google">Sign in</button>
+      <span class="action-sep" aria-hidden="true">·</span>
       <button id="add-recipe-btn" class="btn btn-primary">New recipe</button>
+    </div>
+    <div class="account-row">
+      <span id="account-name" class="account-name" hidden></span>
     </div>
     <input type="file" id="import-file" accept="application/json,.json" hidden>
   </header>
@@ -197,5 +202,8 @@
   <script src="js/storage.js"></script>
   <script src="js/share.js"></script>
   <script src="js/app.js"></script>
+  <script src="js/vendor/supabase.js"></script>
+  <script src="js/config.js"></script>
+  <script src="js/account.js"></script>
 </body>
 </html>

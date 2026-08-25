@@ -115,6 +115,23 @@ body {
   color: var(--rule-strong);
 }
 
+.account-row {
+  margin-top: 0.6rem;
+}
+
+.account-name {
+  font-size: 0.68rem;
+  font-weight: 600;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+}
+
+.account-name::before {
+  content: "◆ ";
+  color: var(--accent);
+}
+
 /* ---------- Buttons ---------- */
 .btn {
   font-family: var(--sans);
