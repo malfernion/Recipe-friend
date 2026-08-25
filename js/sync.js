@@ -14,6 +14,7 @@
   "use strict";
 
   const PUSH_DEBOUNCE_MS = 1200;
+  const PHOTO_BUCKET = "recipe-photos";
 
   const toMillis = (iso) => (iso ? new Date(iso).getTime() : 0);
   const toIso = (ms) => new Date(ms || Date.now()).toISOString();
@@ -183,6 +184,30 @@
         .from("recipes")
         .update({ book_id: targetBookId, updated_at: new Date().toISOString() })
         .eq("id", recipeId);
+      if (error) throw error;
+    }
+
+    /**
+     * Put a recipe photo in Storage and return its public URL. Keyed by
+     * book and recipe, so re-saving a photo replaces the old one rather
+     * than accumulating orphans.
+     */
+    async uploadPhoto(bookId, recipeId, blob) {
+      const path = `${bookId}/${recipeId}.jpg`;
+      const { error } = await this.client.storage
+        .from(PHOTO_BUCKET)
+        .upload(path, blob, { contentType: "image/jpeg", upsert: true, cacheControl: "3600" });
+      if (error) throw error;
+      const { data } = this.client.storage.from(PHOTO_BUCKET).getPublicUrl(path);
+      // Cache-bust so a replaced photo doesn't show the old one.
+      return `${data.publicUrl}?v=${Date.now().toString(36)}`;
+    }
+
+    /** Remove a recipe's photo. Best effort — a leftover file is harmless. */
+    async deletePhoto(bookId, recipeId) {
+      const { error } = await this.client.storage
+        .from(PHOTO_BUCKET)
+        .remove([`${bookId}/${recipeId}.jpg`]);
       if (error) throw error;
     }
 

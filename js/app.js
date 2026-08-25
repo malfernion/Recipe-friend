@@ -278,6 +278,33 @@
     $("#photo-remove-btn").hidden = !image;
   }
 
+  /** Turn a data URI back into bytes for upload. */
+  function dataUrlToBlob(dataUrl) {
+    const [head, body] = String(dataUrl).split(",");
+    const mime = (head.match(/data:([^;]+)/) || [])[1] || "image/jpeg";
+    const binary = atob(body);
+    const bytes = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+    return new Blob([bytes], { type: mime });
+  }
+
+  /**
+   * Signed in, a picked photo goes to Storage and the recipe keeps only
+   * the URL — that keeps the database small and lets share links carry
+   * the photo. Signed out (or if the upload fails) the data URI stays, so
+   * a photo is never silently lost.
+   */
+  async function uploadPendingPhoto(recipeId, image) {
+    const cloud = window.RecipeCloud;
+    if (!image.startsWith("data:") || !cloud || !cloud.sync || !cloud.sync.bookId) return image;
+    try {
+      return await cloud.sync.uploadPhoto(cloud.sync.bookId, recipeId, dataUrlToBlob(image));
+    } catch (err) {
+      console.warn("Recipe Friend: photo upload failed, keeping it on this device.", err);
+      return image;
+    }
+  }
+
   /** Downscale a picked file to a storage-friendly JPEG data URI. */
   function compressImageFile(file, maxDim = 1200, quality = 0.78) {
     return new Promise((resolve, reject) => {
@@ -333,6 +360,15 @@
     if (!saved) {
       toast("Could not save that recipe — check the name, ingredients, and steps.");
       return;
+    }
+    // The recipe needs an id before its photo can be filed under one.
+    if (saved.image.startsWith("data:")) {
+      uploadPendingPhoto(saved.id, saved.image).then((url) => {
+        if (url !== saved.image) {
+          store.update(saved.id, { image: url });
+          render();
+        }
+      });
     }
     recipeDialog.close();
     if (!store.persistOk) {
@@ -723,6 +759,14 @@
     const recipe = store.getById(detailId);
     if (!recipe) return;
     if (!confirm(`Delete “${recipe.name}”? This can't be undone.`)) return;
+    // Take the stored photo with it. Best effort — an orphaned file costs
+    // a little quota, a failed delete shouldn't block removing the recipe.
+    const cloud = window.RecipeCloud;
+    if (recipe.image.startsWith("http") && cloud && cloud.sync && cloud.sync.bookId) {
+      cloud.sync
+        .deletePhoto(cloud.sync.bookId, recipe.id)
+        .catch((err) => console.warn("Recipe Friend: could not remove the photo.", err));
+    }
     store.remove(detailId);
     detailDialog.close();
     toast("Recipe deleted.");

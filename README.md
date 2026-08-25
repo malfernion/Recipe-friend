@@ -10,8 +10,12 @@ accounts and sync.
 
 - **Add, edit, and delete recipes** — name, description, servings, prep/cook
   times, ingredients, steps, and tags.
-- **Photos** — attach an image from your device (automatically downscaled to
-  fit browser storage) or link one by URL.
+- **Photos** — attach an image from your device (downscaled in the browser
+  to around 150KB) or link one by URL. Signed in, photos are uploaded to
+  Supabase Storage and the recipe keeps only the URL, which keeps the
+  database small and means share links can carry the photo. Signed out, or
+  if an upload fails, the image stays on the device instead — a photo is
+  never silently lost.
 - **Search and filter** — full-text search across names, ingredients, and
   tags; filter by tag or favorites.
 - **Structured ingredients** — each ingredient is entered as amount · unit ·
@@ -43,8 +47,8 @@ accounts and sync.
 - **Share links** — share a single recipe as a URL: the recipe travels
   compressed inside the link's `#` fragment, so no server ever sees it. The
   recipient gets a preview and a "Save to my recipe box" button, and opening
-  the same link twice never duplicates. Uploaded photos are excluded (too
-  large for URLs); linked image URLs are kept.
+  the same link twice never duplicates. Photos come along whenever they
+  have a URL — which, signed in, they now do.
 - **Export / import** — download your whole collection as JSON for backup, or
   import it on another device. Imports merge by recipe id, so re-importing
   never creates duplicates.
@@ -169,6 +173,7 @@ js/books.js                    Recipe books, members, and invite links
 js/config.js                   Supabase project URL and publishable key
 supabase/schema.sql            Tables, RLS policies, triggers, functions
 supabase/migrations/           Additive schema changes, run in order
+                               (004 creates the photo storage bucket)
 .github/workflows/deploy-pages.yml   GitHub Pages deployment
 ```
 
