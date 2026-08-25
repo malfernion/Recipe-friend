@@ -9,6 +9,7 @@
   "use strict";
 
   const STORAGE_KEY = "recipe-friend:v1";
+  const PREFS_KEY = "recipe-friend:prefs:v1";
 
   /** Shape persisted to localStorage. */
   const EMPTY_STATE = Object.freeze({ version: 1, recipes: [] });
@@ -23,6 +24,23 @@
   function normalizeStringList(value) {
     if (!Array.isArray(value)) return [];
     return value.map((s) => String(s).trim()).filter(Boolean);
+  }
+
+  /** Ingredients are structured: {amount: number|null, unit, item}. */
+  function sanitizeIngredient(raw) {
+    if (!raw || typeof raw !== "object") return null;
+    const amountNum = Number(raw.amount);
+    const amount = Number.isFinite(amountNum) && amountNum > 0 ? amountNum : null;
+    // Recognized unit aliases collapse to short labels ("Grams" -> "g").
+    const unit = global.RecipeUnits.normalizeLabel(String(raw.unit || "").slice(0, 24));
+    const item = String(raw.item || "").trim().slice(0, 200);
+    if (!item && !unit) return null;
+    return { amount, unit, item };
+  }
+
+  function normalizeIngredients(value) {
+    if (!Array.isArray(value)) return [];
+    return value.map(sanitizeIngredient).filter(Boolean);
   }
 
   /**
@@ -46,7 +64,7 @@
   function sanitizeRecipe(raw) {
     if (!raw || typeof raw !== "object") return null;
     const name = String(raw.name || "").trim();
-    const ingredients = normalizeStringList(raw.ingredients);
+    const ingredients = normalizeIngredients(raw.ingredients);
     const steps = normalizeStringList(raw.steps);
     if (!name || ingredients.length === 0 || steps.length === 0) return null;
 
@@ -102,9 +120,24 @@
     }
   }
 
+  function loadPrefs() {
+    let parsed;
+    try {
+      parsed = JSON.parse(global.localStorage.getItem(PREFS_KEY));
+    } catch {
+      parsed = null;
+    }
+    const pick = (v, allowed) => (allowed.includes(v) ? v : "");
+    return {
+      mass: pick(parsed && parsed.mass, ["metric", "imperial"]),
+      volume: pick(parsed && parsed.volume, ["metric", "us"]),
+    };
+  }
+
   class RecipeStore {
     constructor() {
       this.state = load();
+      this.prefs = loadPrefs();
       // False when the latest write failed (storage full or blocked), so the
       // UI can warn that changes are in memory only.
       this.persistOk = true;
@@ -113,6 +146,34 @@
     _persist() {
       this.persistOk = persist(this.state);
       return this.persistOk;
+    }
+
+    _convert(recipe) {
+      global.RecipeUnits.applyPrefs(recipe, this.prefs);
+      return recipe;
+    }
+
+    /**
+     * Save measurement preferences and convert the whole collection so it
+     * is consistently in the preferred units. Returns how many ingredient
+     * amounts changed.
+     */
+    setPrefs(prefs) {
+      this.prefs = {
+        mass: prefs.mass === "metric" || prefs.mass === "imperial" ? prefs.mass : "",
+        volume: prefs.volume === "metric" || prefs.volume === "us" ? prefs.volume : "",
+      };
+      try {
+        global.localStorage.setItem(PREFS_KEY, JSON.stringify(this.prefs));
+      } catch (err) {
+        console.warn("Recipe Friend: could not save preferences.", err);
+      }
+      let changed = 0;
+      for (const recipe of this.state.recipes) {
+        changed += global.RecipeUnits.applyPrefs(recipe, this.prefs);
+      }
+      if (changed > 0) this._persist();
+      return changed;
     }
 
     get recipes() {
@@ -127,6 +188,7 @@
     add(input) {
       const recipe = sanitizeRecipe({ ...input, id: null, createdAt: Date.now() });
       if (!recipe) return null;
+      this._convert(recipe);
       this.state.recipes.unshift(recipe);
       this._persist();
       return recipe;
@@ -145,6 +207,7 @@
         updatedAt: Date.now(),
       });
       if (!merged) return null;
+      this._convert(merged);
       Object.assign(existing, merged);
       this._persist();
       return existing;
@@ -177,6 +240,7 @@
       if (!recipe) return null;
       const existing = this.getById(recipe.id);
       if (existing) return { recipe: existing, existed: true };
+      this._convert(recipe);
       this.state.recipes.unshift(recipe);
       this._persist();
       return { recipe, existed: false };
@@ -223,6 +287,7 @@
           continue;
         }
         existingIds.add(recipe.id);
+        this._convert(recipe);
         this.state.recipes.push(recipe);
         imported++;
       }
@@ -242,12 +307,12 @@
           prepMinutes: 5,
           cookMinutes: 15,
           ingredients: [
-            "200g spaghetti",
-            "2 tbsp olive oil",
-            "3 cloves garlic, sliced",
-            "1 can (400g) crushed tomatoes",
-            "Pinch of chili flakes",
-            "Salt, pepper, and grated parmesan",
+            { amount: 200, unit: "g", item: "spaghetti" },
+            { amount: 2, unit: "tbsp", item: "olive oil" },
+            { amount: 3, unit: "cloves", item: "garlic, sliced" },
+            { amount: 1, unit: "can", item: "crushed tomatoes (400g)" },
+            { amount: null, unit: "", item: "pinch of chili flakes" },
+            { amount: null, unit: "", item: "salt, pepper, and grated parmesan" },
           ],
           steps: [
             "Cook the spaghetti in well-salted water until just shy of al dente.",
@@ -265,11 +330,11 @@
           prepMinutes: 5,
           cookMinutes: 0,
           ingredients: [
-            "50g rolled oats",
-            "120ml milk (any kind)",
-            "1 tbsp yogurt",
-            "1 tsp honey or maple syrup",
-            "Berries or banana to top",
+            { amount: 50, unit: "g", item: "rolled oats" },
+            { amount: 120, unit: "ml", item: "milk (any kind)" },
+            { amount: 1, unit: "tbsp", item: "yogurt" },
+            { amount: 1, unit: "tsp", item: "honey or maple syrup" },
+            { amount: null, unit: "", item: "berries or banana to top" },
           ],
           steps: [
             "Stir the oats, milk, yogurt, and honey together in a jar.",

@@ -247,6 +247,20 @@ body {
   color: var(--ink-soft);
 }
 
+.pantry-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.pantry-hint {
+  margin: 0;
+  font-family: var(--serif);
+  font-style: italic;
+  font-size: 0.82rem;
+  color: var(--ink-faint);
+}
+
 /* ---------- Recipe grid ---------- */
 .recipe-grid {
   display: grid;
@@ -375,6 +389,14 @@ body {
   margin-right: 0.55rem;
 }
 
+.card-matches {
+  margin: 0;
+  font-size: 0.78rem;
+  font-family: var(--serif);
+  font-style: italic;
+  color: var(--accent);
+}
+
 .no-results {
   grid-column: 1 / -1;
   text-align: center;
@@ -458,6 +480,32 @@ body {
   color: var(--ink-faint);
 }
 
+.field select {
+  font-family: var(--sans);
+  font-size: 0.95rem;
+  width: 100%;
+  padding: 0.55rem 0.7rem;
+  border: 1px solid var(--rule);
+  border-radius: 0;
+  background: var(--paper);
+  color: var(--ink);
+  transition: border-color 0.15s ease;
+}
+
+.field select:focus-visible {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.prefs-hint {
+  font-family: var(--serif);
+  font-style: italic;
+  font-size: 0.88rem;
+  color: var(--ink-soft);
+  margin: 0.5rem 0 0;
+  max-width: 46ch;
+}
+
 .field input,
 .field textarea {
   font-family: var(--sans);
@@ -481,6 +529,70 @@ body {
 .field-row {
   display: flex;
   gap: 1rem;
+}
+
+.ingredient-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+  margin-bottom: 0.6rem;
+}
+
+.ing-row {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+}
+
+.ing-row input {
+  font-family: var(--sans);
+  font-size: 0.95rem;
+  padding: 0.5rem 0.6rem;
+  border: 1px solid var(--rule);
+  border-radius: 0;
+  background: var(--paper);
+  color: var(--ink);
+  transition: border-color 0.15s ease;
+  min-width: 0;
+}
+
+.ing-row input:focus-visible {
+  outline: none;
+  border-color: var(--accent);
+}
+
+/* .field input sets width:100%; these need the extra specificity to win. */
+.ing-row .ing-amount {
+  width: 4.5rem;
+  flex: none;
+  text-align: right;
+}
+
+.ing-row .ing-unit {
+  width: 5.5rem;
+  flex: none;
+}
+
+.ing-row .ing-item {
+  width: auto;
+  flex: 1;
+}
+
+.ing-remove {
+  font-size: 1.15rem;
+  line-height: 1;
+  width: 1.8rem;
+  height: 1.8rem;
+  flex-shrink: 0;
+  border: none;
+  background: none;
+  color: var(--ink-faint);
+  cursor: pointer;
+  transition: color 0.15s ease;
+}
+
+.ing-remove:hover {
+  color: var(--danger);
 }
 
 .photo-row {
@@ -624,6 +736,79 @@ body {
   color: var(--accent);
 }
 
+/* ---------- Portion scaling ---------- */
+.scale-row {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin-top: 1.5rem;
+  padding: 0.55rem 0.9rem;
+  border: 1px solid var(--rule);
+  background: var(--paper);
+  width: fit-content;
+}
+
+.scale-label {
+  font-size: 0.66rem;
+  font-weight: 600;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--ink-soft);
+}
+
+.scale-btn {
+  font: inherit;
+  font-size: 1.05rem;
+  line-height: 1;
+  width: 1.9rem;
+  height: 1.9rem;
+  border: 1px solid var(--rule-strong);
+  background: none;
+  color: var(--ink);
+  cursor: pointer;
+  transition: border-color 0.15s ease, color 0.15s ease;
+}
+
+.scale-btn:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.scale-value {
+  font-family: var(--serif);
+  font-style: italic;
+  font-size: 1rem;
+  min-width: 5.5rem;
+  text-align: center;
+}
+
+.scale-reset {
+  font-family: var(--sans);
+  font-size: 0.66rem;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  border: none;
+  border-bottom: 1px solid var(--rule-strong);
+  background: none;
+  color: var(--ink-soft);
+  cursor: pointer;
+  padding: 0.15rem 0;
+}
+
+.scale-reset:hover {
+  color: var(--accent);
+  border-bottom-color: var(--accent);
+}
+
+.scale-note {
+  margin: 0.5rem 0 0;
+  font-family: var(--serif);
+  font-style: italic;
+  font-size: 0.82rem;
+  color: var(--ink-faint);
+}
+
 /* ---------- Toast ---------- */
 .toast {
   position: fixed;
@@ -702,6 +887,18 @@ body {
   .dialog-actions {
     flex-wrap: wrap;
     gap: 0.75rem 1rem;
+  }
+
+  .ing-row {
+    gap: 0.35rem;
+  }
+
+  .ing-row .ing-amount {
+    width: 3.4rem;
+  }
+
+  .ing-row .ing-unit {
+    width: 4.2rem;
   }
 }
 

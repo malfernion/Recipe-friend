@@ -16,6 +16,9 @@
   let editingId = null; // recipe id being edited, or null when adding
   let detailId = null; // recipe id shown in the detail dialog
   let pendingImage = ""; // data URI chosen via the file picker, pre-save
+  let pantryOn = false;
+  let pantryTerms = []; // normalized "what can I cook?" ingredients
+  let detailScale = 1; // display-only scaling factor for the open detail view
 
   // --- Elements ---
   const $ = (sel) => document.querySelector(sel);
@@ -60,12 +63,28 @@
     if (favoritesOnly && !recipe.favorite) return false;
     if (activeTag && !recipe.tags.includes(activeTag)) return false;
     if (searchQuery) {
-      const haystack = [recipe.name, recipe.description, ...recipe.ingredients, ...recipe.tags]
+      const haystack = [
+        recipe.name,
+        recipe.description,
+        ...recipe.ingredients.map((i) => RecipeScale.ingredientText(i)),
+        ...recipe.tags,
+      ]
         .join("\n")
         .toLowerCase();
       if (!haystack.includes(searchQuery)) return false;
     }
+    if (pantryOn && pantryTerms.length > 0 && pantryMatches(recipe).length === 0) return false;
     return true;
+  }
+
+  /** Which of the user's pantry terms this recipe's ingredients mention. */
+  function pantryMatches(recipe) {
+    const lines = recipe.ingredients.map((i) => `${i.item} ${i.unit}`.toLowerCase());
+    return pantryTerms.filter((term) => {
+      // Also try a crude singular so "tomatoes" finds "tomato purée" and vice versa.
+      const singular = term.replace(/(es|s)$/, "");
+      return lines.some((l) => l.includes(term) || (singular.length >= 3 && l.includes(singular)));
+    });
   }
 
   // --- Rendering ---
@@ -92,6 +111,7 @@
       .filter(Boolean)
       .join(" · ");
 
+    const matched = pantryOn && pantryTerms.length > 0 ? pantryMatches(recipe) : [];
     return `
       <article class="recipe-card" data-id="${escapeHTML(recipe.id)}" tabindex="0"
                role="button" aria-label="Open ${escapeHTML(recipe.name)}">
@@ -108,6 +128,11 @@
         ${recipe.description ? `<p class="card-desc">${escapeHTML(recipe.description)}</p>` : ""}
         <p class="card-meta">${escapeHTML(meta)}</p>
         ${
+          matched.length
+            ? `<p class="card-matches">Has ${matched.map((t) => escapeHTML(t)).join(" · ")}</p>`
+            : ""
+        }
+        ${
           recipe.tags.length
             ? `<div class="card-tags">${recipe.tags
                 .map((t) => `<span class="tag">${escapeHTML(t)}</span>`)
@@ -118,7 +143,14 @@
   }
 
   function render() {
-    const visible = store.recipes.filter(matchesFilters);
+    let visible = store.recipes.filter(matchesFilters);
+    if (pantryOn && pantryTerms.length > 0) {
+      // Best matches first; stable within equal counts.
+      visible = visible
+        .map((r, i) => ({ r, i, n: pantryMatches(r).length }))
+        .sort((a, b) => b.n - a.n || a.i - b.i)
+        .map((x) => x.r);
+    }
     listEl.innerHTML = visible.map((r, i) => recipeCard(r, i)).join("");
 
     const hasAny = store.recipes.length > 0;
@@ -135,6 +167,63 @@
     renderTagFilters();
   }
 
+  // --- Ingredient row editor ---
+  const ingredientRowsEl = $("#ingredient-rows");
+
+  function addIngredientRow(ing) {
+    const row = document.createElement("div");
+    row.className = "ing-row";
+    row.innerHTML = `
+      <input type="text" class="ing-amount" inputmode="decimal" placeholder="200"
+             aria-label="Amount" value="${ing && ing.amount !== null ? escapeHTML(RecipeScale.formatQuantity(ing.amount)) : ""}">
+      <input type="text" class="ing-unit" list="unit-list" placeholder="g" maxlength="24"
+             aria-label="Unit" value="${ing ? escapeHTML(ing.unit) : ""}">
+      <input type="text" class="ing-item" placeholder="spaghetti" maxlength="200"
+             aria-label="Ingredient" value="${ing ? escapeHTML(ing.item) : ""}">
+      <button type="button" class="ing-remove" aria-label="Remove ingredient" title="Remove">×</button>`;
+    ingredientRowsEl.appendChild(row);
+    return row;
+  }
+
+  function fillIngredientRows(ingredients) {
+    ingredientRowsEl.innerHTML = "";
+    for (const ing of ingredients) addIngredientRow(ing);
+    if (ingredients.length === 0) addIngredientRow(null);
+  }
+
+  /**
+   * Read the rows back. Blank rows are skipped; a row with an amount the
+   * quantity parser can't read aborts with {error} so nothing saves wrong.
+   */
+  function readIngredientRows() {
+    const ingredients = [];
+    for (const row of ingredientRowsEl.querySelectorAll(".ing-row")) {
+      const amountText = row.querySelector(".ing-amount").value.trim();
+      const unit = row.querySelector(".ing-unit").value.trim();
+      const item = row.querySelector(".ing-item").value.trim();
+      if (!amountText && !unit && !item) continue; // blank row
+      let amount = null;
+      if (amountText) {
+        amount = RecipeScale.quantityToNumber(amountText);
+        if (amount === null) return { error: amountText };
+      }
+      ingredients.push({ amount, unit, item });
+    }
+    return { ingredients };
+  }
+
+  $("#add-ingredient-btn").addEventListener("click", () => {
+    const row = addIngredientRow(null);
+    row.querySelector(".ing-amount").focus();
+  });
+
+  ingredientRowsEl.addEventListener("click", (event) => {
+    const btn = event.target.closest(".ing-remove");
+    if (!btn) return;
+    btn.closest(".ing-row").remove();
+    if (ingredientRowsEl.children.length === 0) addIngredientRow(null);
+  });
+
   // --- Add / edit dialog ---
   function openRecipeDialog(recipe) {
     editingId = recipe ? recipe.id : null;
@@ -150,10 +239,10 @@
       f.servings.value = recipe.servings || "";
       f.prepMinutes.value = recipe.prepMinutes ?? "";
       f.cookMinutes.value = recipe.cookMinutes ?? "";
-      f.ingredients.value = recipe.ingredients.join("\n");
       f.steps.value = recipe.steps.join("\n");
       f.tags.value = recipe.tags.join(", ");
     }
+    fillIngredientRows(recipe ? recipe.ingredients : []);
     // Restore photo state: URLs go back into the text field, data URIs into
     // the pending slot.
     const image = recipe ? recipe.image : "";
@@ -197,7 +286,7 @@
     });
   }
 
-  function readRecipeForm() {
+  function readRecipeForm(ingredients) {
     const f = recipeForm.elements;
     const lines = (v) => v.split("\n").map((s) => s.trim()).filter(Boolean);
     return {
@@ -206,7 +295,7 @@
       servings: f.servings.value || null,
       prepMinutes: f.prepMinutes.value || null,
       cookMinutes: f.cookMinutes.value || null,
-      ingredients: lines(f.ingredients.value),
+      ingredients,
       steps: lines(f.steps.value),
       tags: f.tags.value.split(",").map((s) => s.trim()).filter(Boolean),
       image: currentFormImage(),
@@ -216,7 +305,12 @@
   recipeForm.addEventListener("submit", (event) => {
     event.preventDefault();
     if (!recipeForm.reportValidity()) return;
-    const input = readRecipeForm();
+    const rows = readIngredientRows();
+    if (rows.error) {
+      toast(`Couldn't read the amount “${rows.error}” — use numbers like 250, 1.5 or ½.`);
+      return;
+    }
+    const input = readRecipeForm(rows.ingredients);
     if (input.ingredients.length === 0 || input.steps.length === 0) {
       toast("A recipe needs at least one ingredient and one step.");
       return;
@@ -264,7 +358,24 @@
   });
 
   // --- Detail dialog ---
-  function recipeDetailHTML(recipe, kicker) {
+  /** scalable: render the portion-scaling controls and apply detailScale. */
+  function recipeDetailHTML(recipe, kicker, scalable) {
+    const factor = scalable ? detailScale : 1;
+    const scaledServings = recipe.servings ? Math.round(recipe.servings * factor * 10) / 10 : null;
+    const scaleValue = recipe.servings
+      ? `Serves ${scaledServings}`
+      : `× ${RecipeScale.formatQuantity(factor)}`;
+    const scaleControls = scalable
+      ? `
+      <div class="scale-row" role="group" aria-label="Scale portions">
+        <span class="scale-label">Portions</span>
+        <button type="button" class="scale-btn" data-scale="down" aria-label="Fewer portions">−</button>
+        <span class="scale-value">${escapeHTML(scaleValue)}</span>
+        <button type="button" class="scale-btn" data-scale="up" aria-label="More portions">+</button>
+        ${factor !== 1 ? '<button type="button" class="scale-reset" data-scale="reset">Reset</button>' : ""}
+      </div>
+      ${factor !== 1 ? '<p class="scale-note">Quantities below are scaled; timings and the method are not.</p>' : ""}`
+      : "";
     const time = totalTime(recipe);
     const metaBits = [
       recipe.servings ? `Serves ${recipe.servings}` : null,
@@ -288,9 +399,12 @@
               .join("")}</div>`
           : ""
       }
+      ${scaleControls}
       <h3>Ingredients</h3>
       <ul class="detail-ingredients">
-        ${recipe.ingredients.map((i) => `<li>${escapeHTML(i)}</li>`).join("")}
+        ${recipe.ingredients
+          .map((i) => `<li>${escapeHTML(RecipeScale.ingredientText(i, factor))}</li>`)
+          .join("")}
       </ul>
       <h3>Steps</h3>
       <ol class="detail-steps">
@@ -299,11 +413,35 @@
   }
 
   function openDetailDialog(recipe) {
+    // Keep the scale when re-rendering the same open recipe (e.g. after a
+    // favourite toggle); reset it when a different recipe opens.
+    if (detailId !== recipe.id || !detailDialog.open) detailScale = 1;
     detailId = recipe.id;
-    detailContent.innerHTML = recipeDetailHTML(recipe, "From your recipe box");
+    detailContent.innerHTML = recipeDetailHTML(recipe, "From your recipe box", true);
     syncDetailFavButton(recipe);
     if (!detailDialog.open) detailDialog.showModal();
   }
+
+  // Portion stepper: with known servings, step one serving at a time;
+  // without, step the multiplier by ½.
+  detailContent.addEventListener("click", (event) => {
+    const btn = event.target.closest("[data-scale]");
+    if (!btn) return;
+    const recipe = store.getById(detailId);
+    if (!recipe) return;
+    const action = btn.dataset.scale;
+    if (action === "reset") {
+      detailScale = 1;
+    } else if (recipe.servings) {
+      const current = Math.round(recipe.servings * detailScale);
+      const next = action === "up" ? current + 1 : Math.max(1, current - 1);
+      detailScale = next / recipe.servings;
+    } else {
+      const next = action === "up" ? detailScale + 0.5 : detailScale - 0.5;
+      detailScale = Math.min(8, Math.max(0.5, next));
+    }
+    detailContent.innerHTML = recipeDetailHTML(recipe, "From your recipe box", true);
+  });
 
   function syncDetailFavButton(recipe) {
     const btn = $("#detail-fav-btn");
@@ -345,6 +483,24 @@
   $("#empty-add-btn").addEventListener("click", () => openRecipeDialog(null));
   $("#cancel-dialog-btn").addEventListener("click", () => recipeDialog.close());
 
+  // --- Measurement preferences ---
+  const prefsDialog = $("#prefs-dialog");
+
+  $("#prefs-btn").addEventListener("click", () => {
+    $("#mass-pref").value = store.prefs.mass;
+    $("#volume-pref").value = store.prefs.volume;
+    prefsDialog.showModal();
+  });
+
+  $("#prefs-close-btn").addEventListener("click", () => prefsDialog.close());
+
+  $("#prefs-save-btn").addEventListener("click", () => {
+    const changed = store.setPrefs({ mass: $("#mass-pref").value, volume: $("#volume-pref").value });
+    prefsDialog.close();
+    toast(changed > 0 ? `Preferences saved — ${changed} amount${changed === 1 ? "" : "s"} converted.` : "Preferences saved.");
+    render();
+  });
+
   $("#export-btn").addEventListener("click", exportRecipes);
   $("#import-btn").addEventListener("click", () => $("#import-file").click());
   $("#import-file").addEventListener("change", (event) => {
@@ -360,6 +516,28 @@
 
   favoritesBtn.addEventListener("click", () => {
     favoritesOnly = !favoritesOnly;
+    render();
+  });
+
+  // --- "What can I cook?" pantry mode ---
+  const pantryToggle = $("#pantry-toggle");
+  const pantryPanel = $("#pantry-panel");
+  const pantryInput = $("#pantry-input");
+
+  pantryToggle.addEventListener("click", () => {
+    pantryOn = !pantryOn;
+    pantryPanel.hidden = !pantryOn;
+    pantryToggle.classList.toggle("chip-active", pantryOn);
+    pantryToggle.setAttribute("aria-pressed", String(pantryOn));
+    if (pantryOn) pantryInput.focus();
+    render();
+  });
+
+  pantryInput.addEventListener("input", () => {
+    pantryTerms = pantryInput.value
+      .split(",")
+      .map((s) => s.trim().toLowerCase())
+      .filter((s) => s.length >= 2);
     render();
   });
 
@@ -470,7 +648,7 @@
   });
 
   // Close dialogs when clicking the backdrop.
-  for (const dialog of [recipeDialog, detailDialog, shareDialog]) {
+  for (const dialog of [recipeDialog, detailDialog, shareDialog, prefsDialog]) {
     dialog.addEventListener("click", (event) => {
       if (event.target === dialog) dialog.close();
     });
