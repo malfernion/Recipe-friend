@@ -68,6 +68,16 @@
   }
 
   /**
+   * A photo in Storage, referenced as "<book id>/<recipe id>.jpg". Stored
+   * as a path rather than a URL because the bucket is private — readable
+   * links are signed on demand and expire.
+   */
+  function sanitizePhotoPath(value) {
+    const s = String(value || "").trim();
+    return /^[0-9a-f-]{36}\/[0-9a-f-]{36}\.jpg$/i.test(s) ? s : "";
+  }
+
+  /**
    * Coerce an untrusted object (from storage or an imported file) into a
    * well-formed recipe, or return null if it is unusable.
    */
@@ -94,6 +104,7 @@
       ingredients,
       steps,
       image: sanitizeImage(raw.image),
+      imagePath: sanitizePhotoPath(raw.imagePath),
       tags: normalizeStringList(raw.tags).map((t) => t.toLowerCase().slice(0, 40)),
       favorite: Boolean(raw.favorite),
       createdAt: num(raw.createdAt) || Date.now(),

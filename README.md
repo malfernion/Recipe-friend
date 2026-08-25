@@ -11,11 +11,12 @@ accounts and sync.
 - **Add, edit, and delete recipes** — name, description, servings, prep/cook
   times, ingredients, steps, and tags.
 - **Photos** — attach an image from your device (downscaled in the browser
-  to around 150KB) or link one by URL. Signed in, photos are uploaded to
-  Supabase Storage and the recipe keeps only the URL, which keeps the
-  database small and means share links can carry the photo. Signed out, or
-  if an upload fails, the image stays on the device instead — a photo is
-  never silently lost.
+  to around 150KB) or link one by URL. Signed in, photos go to a **private**
+  Supabase Storage bucket and the recipe stores only their path, which keeps
+  the database small. Nothing in the bucket is publicly readable: the app
+  mints a short-lived signed link, and only members of the owning book can
+  do so. Signed out, or if an upload fails, the image stays on the device
+  instead — a photo is never silently lost.
 - **Search and filter** — full-text search across names, ingredients, and
   tags; filter by tag or favorites.
 - **Structured ingredients** — each ingredient is entered as amount · unit ·
@@ -47,8 +48,8 @@ accounts and sync.
 - **Share links** — share a single recipe as a URL: the recipe travels
   compressed inside the link's `#` fragment, so no server ever sees it. The
   recipient gets a preview and a "Save to my recipe box" button, and opening
-  the same link twice never duplicates. Photos come along whenever they
-  have a URL — which, signed in, they now do.
+  the same link twice never duplicates. Photos are deliberately left out:
+  stored photos are private to their book, and a link can't carry that.
 - **Export / import** — download your whole collection as JSON for backup, or
   import it on another device. Imports merge by recipe id, so re-importing
   never creates duplicates.
@@ -173,7 +174,7 @@ js/books.js                    Recipe books, members, and invite links
 js/config.js                   Supabase project URL and publishable key
 supabase/schema.sql            Tables, RLS policies, triggers, functions
 supabase/migrations/           Additive schema changes, run in order
-                               (004 creates the photo storage bucket)
+                               (004 creates the private photo bucket)
 .github/workflows/deploy-pages.yml   GitHub Pages deployment
 ```
 
