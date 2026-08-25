@@ -54,10 +54,8 @@
     renderHeader() {
       const label = $("#current-book");
       const btn = $("#books-btn");
-      const sep = document.querySelector(".book-sep");
       const book = this.currentBook();
       if (btn) btn.hidden = false;
-      if (sep) sep.hidden = false;
       if (!label) return;
       label.hidden = !book;
       if (book) label.textContent = book.name;
@@ -86,6 +84,12 @@
                   ${b.id === this.sync.bookId ? 'aria-current="true"' : ""}>
             ${esc(b.name)}
           </button>
+          ${
+            b.role === "owner"
+              ? `<button type="button" class="book-rename" data-rename="${esc(b.id)}"
+                   aria-label="Rename ${esc(b.name)}" title="Rename">✎</button>`
+              : ""
+          }
           <span class="book-role">${b.role === "owner" ? "yours" : "shared"}</span>
         </li>`
         )
@@ -148,8 +152,39 @@
       });
 
       $("#book-list").addEventListener("click", (event) => {
+        const renameBtn = event.target.closest("[data-rename]");
+        if (renameBtn) {
+          this.beginRename(renameBtn.dataset.rename);
+          return;
+        }
         const btn = event.target.closest("[data-book]");
         if (btn) this.switchTo(btn.dataset.book);
+      });
+
+      // --- Move a recipe between books ---
+      const moveDialog = $("#move-dialog");
+      $("#move-cancel-btn").addEventListener("click", () => moveDialog.close());
+      moveDialog.addEventListener("click", (event) => {
+        if (event.target === moveDialog) moveDialog.close();
+      });
+      $("#move-list").addEventListener("click", async (event) => {
+        const btn = event.target.closest("[data-target]");
+        if (!btn || !this.movingId) return;
+        const target = this.books.find((b) => b.id === btn.dataset.target);
+        const recipeId = this.movingId;
+        this.movingId = null;
+        moveDialog.close();
+        try {
+          await this.sync.moveRecipe(recipeId, btn.dataset.target);
+          // The row still exists, just in another book — forget it here
+          // without a tombstone, which would delete it in its new home.
+          this.app.store.removeLocal(recipeId);
+          this.app.render();
+          this.app.toast(`Moved to “${target ? target.name : "the other book"}”.`);
+        } catch (err) {
+          console.warn("Recipe Friend: could not move recipe.", err);
+          this.app.toast("Couldn't move that recipe.");
+        }
       });
 
       $("#create-book-btn").addEventListener("click", async () => {
@@ -225,6 +260,66 @@
           this.app.toast("Couldn't leave that book.");
         }
       });
+    }
+
+    /** Swap a book's name for an input, in place. */
+    beginRename(bookId) {
+      const book = this.books.find((b) => b.id === bookId);
+      const row = document.querySelector(`.book-item [data-book="${CSS.escape(bookId)}"]`);
+      if (!book || !row) return;
+      const input = document.createElement("input");
+      input.type = "text";
+      input.className = "book-rename-input";
+      input.maxLength = 80;
+      input.value = book.name;
+      input.setAttribute("aria-label", "Book name");
+      row.replaceWith(input);
+      input.focus();
+      input.select();
+
+      let done = false;
+      const commit = async (save) => {
+        if (done) return;
+        done = true;
+        const name = input.value.trim();
+        if (save && name && name !== book.name) {
+          try {
+            await this.sync.renameBook(bookId, name);
+            book.name = name.slice(0, 80);
+            this.app.toast("Book renamed.");
+          } catch (err) {
+            console.warn("Recipe Friend: could not rename book.", err);
+            this.app.toast("Couldn't rename that book.");
+          }
+        }
+        this.renderHeader();
+        this.renderDialog();
+      };
+      input.addEventListener("keydown", (event) => {
+        if (event.key === "Enter") { event.preventDefault(); commit(true); }
+        if (event.key === "Escape") { event.preventDefault(); commit(false); }
+      });
+      input.addEventListener("blur", () => commit(true));
+    }
+
+    /** Offer the other books this recipe could move to. */
+    openMove(recipeId) {
+      const others = this.books.filter((b) => b.id !== this.sync.bookId);
+      if (others.length === 0) {
+        this.app.toast("Create another book first, then you can move recipes into it.");
+        return;
+      }
+      this.movingId = recipeId;
+      $("#move-list").innerHTML = others
+        .map(
+          (b) => `
+        <li class="book-item">
+          <button type="button" class="book-pick" data-target="${esc(b.id)}">${esc(b.name)}</button>
+          <span class="book-role">${b.role === "owner" ? "yours" : "shared"}</span>
+        </li>`
+        )
+        .join("");
+      $("#move-dialog").showModal();
     }
 
     /** Redeem an invite code from a #join= link. */

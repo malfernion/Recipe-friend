@@ -15,29 +15,34 @@
   <link rel="stylesheet" href="css/styles.css">
 </head>
 <body class="gated">
-  <header class="masthead">
-    <img class="masthead-logo" src="assets/logo.png" width="512" height="512" alt="" aria-hidden="true">
-    <p class="masthead-kicker">A personal recipe box</p>
-    <h1 class="app-title">Recipe <em>Friend</em></h1>
-    <p class="masthead-note">your recipes, on every device you cook from</p>
-    <div class="header-actions">
-      <button id="export-btn" class="btn btn-ghost" title="Download all recipes as a JSON file">Export</button>
-      <span class="action-sep" aria-hidden="true">·</span>
-      <button id="import-btn" class="btn btn-ghost" title="Import recipes from a JSON file">Import</button>
-      <span class="action-sep" aria-hidden="true">·</span>
-      <button id="books-btn" class="btn btn-ghost" title="Recipe books and sharing" hidden>Books</button>
-      <span class="action-sep book-sep" aria-hidden="true" hidden>·</span>
-      <button id="prefs-btn" class="btn btn-ghost" title="Measurement preferences">Units</button>
-      <span class="action-sep" aria-hidden="true">·</span>
-      <button id="account-btn" class="btn btn-ghost" title="Sign in with Google">Sign in</button>
-      <span class="action-sep" aria-hidden="true">·</span>
-      <button id="add-recipe-btn" class="btn btn-primary">New recipe</button>
+  <header class="appbar">
+    <div class="brand">
+      <img class="brand-logo" src="assets/logo.png" width="512" height="512" alt="">
+      <span class="brand-name">Recipe <em>Friend</em></span>
     </div>
-    <div class="account-row">
+
+    <div class="appbar-meta">
       <span id="account-name" class="account-name" hidden></span>
       <span id="current-book" class="current-book" hidden></span>
       <span id="sync-status" class="sync-status" role="status" aria-live="polite" hidden></span>
     </div>
+
+    <nav class="appbar-actions" aria-label="Main">
+      <button id="books-btn" class="btn btn-ghost" title="Recipe books and sharing" hidden>Books</button>
+      <button id="add-recipe-btn" class="btn btn-primary">
+        <span class="label-long">New recipe</span><span class="label-short">New</span>
+      </button>
+      <details class="more-menu" id="more-menu">
+        <summary class="more-summary" title="More" aria-label="More actions">···</summary>
+        <div class="more-panel">
+          <button id="prefs-btn" class="more-item">Units</button>
+          <button id="export-btn" class="more-item">Export</button>
+          <button id="import-btn" class="more-item">Import</button>
+          <button id="account-btn" class="more-item">Sign in</button>
+        </div>
+      </details>
+    </nav>
+
     <input type="file" id="import-file" accept="application/json,.json" hidden>
   </header>
 
@@ -178,8 +183,19 @@
       <span class="dialog-actions-spacer"></span>
       <button type="button" class="btn btn-ghost" id="detail-fav-btn" aria-pressed="false">☆ Favourite</button>
       <button type="button" class="btn btn-ghost" id="detail-share-btn">Share</button>
+      <button type="button" class="btn btn-ghost" id="detail-move-btn" hidden>Move</button>
       <button type="button" class="btn btn-ghost" id="detail-close-btn">Close</button>
       <button type="button" class="btn btn-primary" id="detail-edit-btn">Edit</button>
+    </div>
+  </dialog>
+
+  <!-- Move a recipe to another book -->
+  <dialog id="move-dialog" class="recipe-dialog">
+    <h2>Move recipe</h2>
+    <p class="books-hint" id="move-intro">Choose where this recipe should live.</p>
+    <ul id="move-list" class="book-list"></ul>
+    <div class="dialog-actions">
+      <button type="button" class="btn btn-ghost" id="move-cancel-btn">Cancel</button>
     </div>
   </dialog>
 
