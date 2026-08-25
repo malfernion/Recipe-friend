@@ -34,32 +34,128 @@
       this.onStatus(state, detail);
     }
 
-    /** Resolve which book this session syncs with (M3 adds switching). */
-    async resolveBook(userId) {
-      this.userId = userId;
+    /** Every book this user belongs to: [{id, name, role}]. */
+    async listBooks() {
       const { data, error } = await this.client
         .from("book_members")
-        .select("book_id, role")
+        .select("book_id, role, books(name)")
+        .eq("user_id", this.userId);
+      if (error) throw error;
+      return (data || []).map((m) => ({
+        id: m.book_id,
+        role: m.role,
+        name: (m.books && m.books.name) || "Recipes",
+      }));
+    }
+
+    /** Create a book owned by this user and join it. */
+    async createBook(name) {
+      const { data: book, error } = await this.client
+        .from("books")
+        .insert({ name: String(name).trim().slice(0, 80) || "Recipes", owner: this.userId })
+        .select("id, name")
+        .single();
+      if (error) throw error;
+      const { error: memberErr } = await this.client
+        .from("book_members")
+        .insert({ book_id: book.id, user_id: this.userId, role: "owner" });
+      if (memberErr) throw memberErr;
+      return { id: book.id, name: book.name, role: "owner" };
+    }
+
+    async renameBook(bookId, name) {
+      const { error } = await this.client
+        .from("books")
+        .update({ name: String(name).trim().slice(0, 80) })
+        .eq("id", bookId);
+      if (error) throw error;
+    }
+
+    /** Everyone in a book, with display names where visible. */
+    async listMembers(bookId) {
+      const { data, error } = await this.client
+        .from("book_members")
+        .select("user_id, role, profiles(display_name)")
+        .eq("book_id", bookId);
+      if (error) throw error;
+      return (data || []).map((m) => ({
+        userId: m.user_id,
+        role: m.role,
+        name: (m.profiles && m.profiles.display_name) || "Someone",
+        isMe: m.user_id === this.userId,
+      }));
+    }
+
+    /**
+     * Mint an invite code. Generated client-side so it is URL-safe — the
+     * column default is base64, which can contain "+" and "/".
+     */
+    async createInvite(bookId) {
+      const bytes = new Uint8Array(12);
+      (global.crypto || {}).getRandomValues
+        ? global.crypto.getRandomValues(bytes)
+        : bytes.forEach((_, i) => (bytes[i] = Math.floor(Math.random() * 256)));
+      const code = btoa(String.fromCharCode(...bytes))
+        .replaceAll("+", "-")
+        .replaceAll("/", "_")
+        .replace(/=+$/, "");
+      const { error } = await this.client
+        .from("invites")
+        .insert({ code, book_id: bookId, created_by: this.userId });
+      if (error) throw error;
+      return code;
+    }
+
+    /** Join a book from an invite code (validated server-side). */
+    async redeemInvite(code) {
+      const { data, error } = await this.client.rpc("redeem_invite", { invite_code: code });
+      if (error) throw error;
+      const row = Array.isArray(data) ? data[0] : data;
+      if (!row) throw new Error("invalid or expired invite");
+      return { id: row.book_id, name: row.book_name };
+    }
+
+    async leaveBook(bookId) {
+      const { error } = await this.client
+        .from("book_members")
+        .delete()
+        .eq("book_id", bookId)
+        .eq("user_id", this.userId);
+      if (error) throw error;
+    }
+
+    async removeMember(bookId, userId) {
+      const { error } = await this.client
+        .from("book_members")
+        .delete()
+        .eq("book_id", bookId)
         .eq("user_id", userId);
       if (error) throw error;
-      if (!data || data.length === 0) {
+    }
+
+    /**
+     * Resolve which book this session syncs with, preferring the one the
+     * user was last using on this device.
+     */
+    async resolveBook(userId, preferredId) {
+      this.userId = userId;
+      const books = await this.listBooks();
+      if (books.length === 0) {
         // The signup trigger normally creates one; make our own if not.
-        const { data: book, error: bookErr } = await this.client
-          .from("books")
-          .insert({ name: "My recipes", owner: userId })
-          .select("id")
-          .single();
-        if (bookErr) throw bookErr;
-        const { error: memberErr } = await this.client
-          .from("book_members")
-          .insert({ book_id: book.id, user_id: userId, role: "owner" });
-        if (memberErr) throw memberErr;
+        const book = await this.createBook("My recipes");
         this.bookId = book.id;
         return this.bookId;
       }
-      const owned = data.find((m) => m.role === "owner");
-      this.bookId = (owned || data[0]).book_id;
+      const preferred = preferredId && books.find((b) => b.id === preferredId);
+      const owned = books.find((b) => b.role === "owner");
+      this.bookId = (preferred || owned || books[0]).id;
       return this.bookId;
+    }
+
+    /** Point sync at a different book; the caller swaps the local cache. */
+    setBook(bookId) {
+      clearTimeout(this.timer);
+      this.bookId = bookId;
     }
 
     /** The signed-in user's stored unit preferences, or null if unset. */

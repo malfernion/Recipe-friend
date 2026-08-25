@@ -34,6 +34,10 @@ accounts and sync.
 - **Sync across devices** — recipes live with your account and sync in the
   background; localStorage stays the working copy, so the app renders
   instantly and keeps working offline.
+- **Shared recipe books** — keep a private book of your own, or share one
+  with the household. Invite people with a link, see who's in a book, and
+  switch between books from the header. Each book keeps its own local
+  cache, so switching never mixes them.
 - **Share links** — share a single recipe as a URL: the recipe travels
   compressed inside the link's `#` fragment, so no server ever sees it. The
   recipient gets a preview and a "Save to my recipe box" button, and opening
@@ -66,6 +70,8 @@ design; all protection is row-level security). One-time setup:
    `supabase/schema.sql`, and run it. This creates the tables (profiles,
    books, members, recipes, invites), every RLS policy, the new-user
    bootstrap (profile + personal book), and the invite-redeem function.
+   Then run each file in `supabase/migrations/` in order — these are
+   additive changes made after the initial schema.
 2. **Google auth**: in Google Cloud, create an OAuth Web client with
    authorized origin `https://malfernion.github.io` and redirect URI
    `https://dveyxesgwohokenoomsf.supabase.co/auth/v1/callback`; paste the
@@ -79,6 +85,14 @@ design; all protection is row-level security). One-time setup:
 
 Signed out, the app shows a sign-in screen; recipes and preferences live
 with the account, not the browser.
+
+### Recipe books
+
+Everyone gets a personal book on first sign-in. From **Books** in the header
+you can create more, switch between them, and — in books you own — invite
+others with a link that works for 7 days. Anyone in a book can add and edit
+its recipes; owners can remove members, and members can leave. Recipes
+belong to the book, so leaving one takes nothing away from it.
 
 ### How sync behaves
 
@@ -120,8 +134,10 @@ js/units.js                    Measurement preferences and unit conversion
 js/share.js                    Encode/decode single-recipe share links
 js/account.js                  Google sign-in, session, sync bootstrap
 js/sync.js                     Two-way sync with Supabase (last-write-wins)
+js/books.js                    Recipe books, members, and invite links
 js/config.js                   Supabase project URL and publishable key
 supabase/schema.sql            Tables, RLS policies, triggers, functions
+supabase/migrations/           Additive schema changes, run in order
 .github/workflows/deploy-pages.yml   GitHub Pages deployment
 ```
 
