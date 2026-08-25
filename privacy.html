@@ -50,10 +50,15 @@
 
     <h2>Where it is stored</h2>
     <p>Your account and recipes are stored in a hosted PostgreSQL database provided
-       by <strong>Supabase</strong>, which also handles authentication. The website
-       itself is static and served by <strong>GitHub Pages</strong>. Sign-in is
-       provided by <strong>Google</strong>. These providers process data on our
-       behalf so the app can function; each has its own privacy policy.</p>
+       by <strong>Supabase</strong>, which also handles authentication and stores the
+       photos you attach. The website itself is static and served by
+       <strong>GitHub Pages</strong>. Sign-in is provided by <strong>Google</strong>.
+       These providers process data on our behalf so the app can function; each has
+       its own privacy policy.</p>
+    <p>Photos are kept in private storage. They are not published, not listed, and
+       cannot be opened by a plain web address; when you view a recipe the app requests
+       a temporary link that only members of that recipe's book can obtain, and which
+       stops working shortly afterwards.</p>
     <p>Your browser also keeps a local copy of your recipes so the app loads
        instantly and works offline. That copy lives only on your device and you can
        remove it by clearing the site's data in your browser.</p>

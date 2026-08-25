@@ -15,6 +15,7 @@
   let editingId = null; // recipe id being edited, or null when adding
   let detailId = null; // recipe id shown in the detail dialog
   let pendingImage = ""; // data URI chosen via the file picker, pre-save
+  let existingPhotoPath = ""; // photo already in Storage for the recipe being edited
   let pantryOn = false;
   let pantryTerms = []; // normalized "what can I cook?" ingredients
   let detailScale = 1; // display-only scaling factor for the open detail view
@@ -129,7 +130,10 @@
     return `
       <article class="recipe-card" data-id="${escapeHTML(recipe.id)}" tabindex="0"
                role="button" aria-label="Open ${escapeHTML(recipe.name)}">
-        ${recipe.image ? `<img class="card-img" src="${escapeHTML(recipe.image)}" alt="" loading="lazy">` : ""}
+        ${(() => {
+          const src = photoSrc(recipe);
+          return src ? `<img class="card-img" src="${escapeHTML(src)}" alt="" loading="lazy">` : "";
+        })()}
         <span class="card-index">№ ${String(index + 1).padStart(2, "0")}</span>
         <div class="card-top">
           <h3 class="card-title">${escapeHTML(recipe.name)}</h3>
@@ -258,9 +262,10 @@
     }
     fillIngredientRows(recipe ? recipe.ingredients : []);
     // Restore photo state: URLs go back into the text field, data URIs into
-    // the pending slot.
+    // the pending slot, and a stored photo is kept by reference.
     const image = recipe ? recipe.image : "";
     pendingImage = image.startsWith("data:") ? image : "";
+    existingPhotoPath = recipe ? recipe.imagePath : "";
     recipeForm.elements.imageUrl.value = image.startsWith("http") ? image : "";
     updatePhotoPreview();
     recipeDialog.showModal();
@@ -270,12 +275,91 @@
     return pendingImage || recipeForm.elements.imageUrl.value.trim();
   }
 
+  /** What the preview should show: a new pick, a typed URL, or what's stored. */
+  function currentPreviewSrc() {
+    const chosen = currentFormImage();
+    if (chosen) return chosen;
+    if (!existingPhotoPath) return "";
+    const hit = photoUrls.get(existingPhotoPath);
+    if (hit && hit.expiresAt > Date.now()) return hit.url;
+    resolvePhoto(existingPhotoPath);
+    return "";
+  }
+
   function updatePhotoPreview() {
     const preview = $("#photo-preview");
-    const image = currentFormImage();
-    preview.src = image || "";
-    preview.hidden = !image;
-    $("#photo-remove-btn").hidden = !image;
+    const src = currentPreviewSrc();
+    preview.src = src || "";
+    preview.hidden = !src;
+    $("#photo-remove-btn").hidden = !(src || existingPhotoPath);
+  }
+
+  // --- Private photos ---
+  // Stored photos live in a private bucket, so each one needs a signed URL
+  // that expires. Cache them per path and re-render once they arrive; a
+  // recipe's stored data only ever holds the path.
+  const photoUrls = new Map(); // path -> { url, expiresAt }
+  const photoPending = new Set();
+  const SIGNED_TTL_MS = 55 * 60 * 1000; // refresh inside the hour it's valid for
+  let photoRerender = null;
+
+  function photoSrc(recipe) {
+    if (recipe.imagePath) {
+      const hit = photoUrls.get(recipe.imagePath);
+      if (hit && hit.expiresAt > Date.now()) return hit.url;
+      resolvePhoto(recipe.imagePath);
+      return "";
+    }
+    return recipe.image || "";
+  }
+
+  function resolvePhoto(path) {
+    const cloud = window.RecipeCloud;
+    if (photoPending.has(path) || !cloud || !cloud.sync || !cloud.sync.userId) return;
+    photoPending.add(path);
+    cloud.sync
+      .signedPhotoUrl(path)
+      .then((url) => {
+        photoUrls.set(path, { url, expiresAt: Date.now() + SIGNED_TTL_MS });
+        // Coalesce: a grid of photos would otherwise redraw once each.
+        clearTimeout(photoRerender);
+        photoRerender = setTimeout(() => {
+          render();
+          if (detailDialog.open && detailId) {
+            const recipe = store.getById(detailId);
+            if (recipe) detailContent.innerHTML = recipeDetailHTML(recipe, "From your recipe box", true);
+          }
+        }, 60);
+      })
+      .catch((err) => console.warn("Recipe Friend: could not load a photo.", err))
+      .finally(() => photoPending.delete(path));
+  }
+
+  /** Turn a data URI back into bytes for upload. */
+  function dataUrlToBlob(dataUrl) {
+    const [head, body] = String(dataUrl).split(",");
+    const mime = (head.match(/data:([^;]+)/) || [])[1] || "image/jpeg";
+    const binary = atob(body);
+    const bytes = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+    return new Blob([bytes], { type: mime });
+  }
+
+  /**
+   * Signed in, a picked photo goes to Storage and the recipe keeps only
+   * the URL — that keeps the database small and lets share links carry
+   * the photo. Signed out (or if the upload fails) the data URI stays, so
+   * a photo is never silently lost.
+   */
+  async function uploadPendingPhoto(recipeId, image) {
+    const cloud = window.RecipeCloud;
+    if (!image.startsWith("data:") || !cloud || !cloud.sync || !cloud.sync.bookId) return "";
+    try {
+      return await cloud.sync.uploadPhoto(cloud.sync.bookId, recipeId, dataUrlToBlob(image));
+    } catch (err) {
+      console.warn("Recipe Friend: photo upload failed, keeping it on this device.", err);
+      return "";
+    }
   }
 
   /** Downscale a picked file to a storage-friendly JPEG data URI. */
@@ -313,6 +397,7 @@
       steps: lines(f.steps.value),
       tags: f.tags.value.split(",").map((s) => s.trim()).filter(Boolean),
       image: currentFormImage(),
+      imagePath: currentFormImage() ? "" : existingPhotoPath,
     };
   }
 
@@ -334,6 +419,17 @@
       toast("Could not save that recipe — check the name, ingredients, and steps.");
       return;
     }
+    // The recipe needs an id before its photo can be filed under one. On
+    // success the data URI is swapped for the storage path; on failure it
+    // stays put, so the photo is never silently lost.
+    if (saved.image.startsWith("data:")) {
+      uploadPendingPhoto(saved.id, saved.image).then((path) => {
+        if (path) {
+          store.update(saved.id, { image: "", imagePath: path });
+          render();
+        }
+      });
+    }
     recipeDialog.close();
     if (!store.persistOk) {
       toast("Saved for this visit, but browser storage is full — try a smaller photo or export a backup.");
@@ -354,6 +450,7 @@
     try {
       pendingImage = await compressImageFile(file);
       recipeForm.elements.imageUrl.value = "";
+      existingPhotoPath = ""; // replaced by the new pick
       updatePhotoPreview();
     } catch {
       toast("Couldn't read that image file.");
@@ -367,6 +464,7 @@
 
   $("#photo-remove-btn").addEventListener("click", () => {
     pendingImage = "";
+    existingPhotoPath = "";
     recipeForm.elements.imageUrl.value = "";
     updatePhotoPreview();
   });
@@ -403,7 +501,12 @@
       <h2 class="detail-title">${escapeHTML(recipe.name)}
         ${recipe.favorite ? '<span class="detail-fav" title="Favourite">★</span>' : ""}
       </h2>
-      ${recipe.image ? `<img class="detail-img" src="${escapeHTML(recipe.image)}" alt="Photo of ${escapeHTML(recipe.name)}">` : ""}
+      ${(() => {
+        const src = photoSrc(recipe);
+        return src
+          ? `<img class="detail-img" src="${escapeHTML(src)}" alt="Photo of ${escapeHTML(recipe.name)}">`
+          : "";
+      })()}
       ${recipe.description ? `<p class="detail-desc">${escapeHTML(recipe.description)}</p>` : ""}
       ${metaBits.length ? `<p class="card-meta">${escapeHTML(metaBits.join(" · "))}</p>` : ""}
       ${
@@ -613,7 +716,10 @@
     if (!recipe) return;
     const encoded = await RecipeShare.encodeRecipeShare(recipe);
     const url = `${location.origin}${location.pathname}#add=${encoded}`;
-    const note = recipe.image.startsWith("data:") ? " Photo not included — photos are too big for links." : "";
+    const note =
+      recipe.imagePath || recipe.image.startsWith("data:")
+        ? " The photo stays behind — shared links carry the recipe only."
+        : "";
     try {
       await navigator.clipboard.writeText(url);
       toast(`Share link copied.${note}`);
@@ -723,6 +829,14 @@
     const recipe = store.getById(detailId);
     if (!recipe) return;
     if (!confirm(`Delete “${recipe.name}”? This can't be undone.`)) return;
+    // Take the stored photo with it. Best effort — an orphaned file costs
+    // a little quota, a failed delete shouldn't block removing the recipe.
+    const cloud = window.RecipeCloud;
+    if (recipe.imagePath && cloud && cloud.sync && cloud.sync.bookId) {
+      cloud.sync
+        .deletePhoto(cloud.sync.bookId, recipe.id)
+        .catch((err) => console.warn("Recipe Friend: could not remove the photo.", err));
+    }
     store.remove(detailId);
     detailDialog.close();
     toast("Recipe deleted.");

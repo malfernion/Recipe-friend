@@ -14,6 +14,7 @@
   "use strict";
 
   const PUSH_DEBOUNCE_MS = 1200;
+  const PHOTO_BUCKET = "recipe-photos";
 
   const toMillis = (iso) => (iso ? new Date(iso).getTime() : 0);
   const toIso = (ms) => new Date(ms || Date.now()).toISOString();
@@ -183,6 +184,42 @@
         .from("recipes")
         .update({ book_id: targetBookId, updated_at: new Date().toISOString() })
         .eq("id", recipeId);
+      if (error) throw error;
+    }
+
+    /**
+     * Put a recipe photo in Storage and return its path. Keyed by book and
+     * recipe, so re-saving replaces the old file rather than accumulating
+     * orphans. The bucket is private, so a path — not a URL — is what gets
+     * stored on the recipe; readable links are minted on demand below.
+     */
+    async uploadPhoto(bookId, recipeId, blob) {
+      const path = `${bookId}/${recipeId}.jpg`;
+      const { error } = await this.client.storage
+        .from(PHOTO_BUCKET)
+        .upload(path, blob, { contentType: "image/jpeg", upsert: true, cacheControl: "3600" });
+      if (error) throw error;
+      return path;
+    }
+
+    /**
+     * A short-lived readable URL for a stored photo. Only members of the
+     * owning book can mint one, and it expires, so nothing about a photo
+     * is permanently public.
+     */
+    async signedPhotoUrl(path, expiresInSeconds = 3600) {
+      const { data, error } = await this.client.storage
+        .from(PHOTO_BUCKET)
+        .createSignedUrl(path, expiresInSeconds);
+      if (error) throw error;
+      return data.signedUrl;
+    }
+
+    /** Remove a recipe's photo. Best effort — a leftover file is harmless. */
+    async deletePhoto(bookId, recipeId) {
+      const { error } = await this.client.storage
+        .from(PHOTO_BUCKET)
+        .remove([`${bookId}/${recipeId}.jpg`]);
       if (error) throw error;
     }
 
