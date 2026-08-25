@@ -132,6 +132,19 @@ body {
   color: var(--accent);
 }
 
+.sync-status {
+  font-size: 0.68rem;
+  font-weight: 600;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+  margin-left: 0.9rem;
+}
+
+.sync-status.sync-error {
+  color: var(--danger);
+}
+
 /* ---------- Buttons ---------- */
 .btn {
   font-family: var(--sans);

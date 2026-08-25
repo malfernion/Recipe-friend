@@ -12,14 +12,24 @@
   const PREFS_KEY = "recipe-friend:prefs:v1";
 
   /** Shape persisted to localStorage. */
-  const EMPTY_STATE = Object.freeze({ version: 1, recipes: [] });
+  const EMPTY_STATE = Object.freeze({ version: 1, recipes: [], tombstones: [] });
 
+  // Deleted-recipe markers are kept this long so a delete syncs to other
+  // devices instead of the recipe resurrecting from their cache.
+  const TOMBSTONE_TTL_MS = 180 * 24 * 60 * 60 * 1000;
+
+  /** Always a real UUID: recipe ids are uuid primary keys in Postgres. */
   function uid() {
     if (global.crypto && typeof global.crypto.randomUUID === "function") {
       return global.crypto.randomUUID();
     }
-    return "r-" + Date.now().toString(36) + "-" + Math.random().toString(36).slice(2, 10);
+    return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, (c) => {
+      const r = (Math.random() * 16) | 0;
+      return (c === "x" ? r : (r & 0x3) | 0x8).toString(16);
+    });
   }
+
+  const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
   function normalizeStringList(value) {
     if (!Array.isArray(value)) return [];
@@ -75,7 +85,7 @@
     };
 
     return {
-      id: typeof raw.id === "string" && raw.id ? raw.id : uid(),
+      id: typeof raw.id === "string" && UUID_RE.test(raw.id) ? raw.id : uid(),
       name: name.slice(0, 120),
       description: String(raw.description || "").trim().slice(0, 500),
       servings: num(raw.servings),
@@ -99,14 +109,18 @@
       // Private browsing, disabled storage, or corrupted JSON — start fresh
       // in memory rather than crashing the app.
       console.warn("Recipe Friend: could not read saved recipes.", err);
-      return { ...EMPTY_STATE, recipes: [] };
+      return { ...EMPTY_STATE, recipes: [], tombstones: [] };
     }
     if (!parsed || !Array.isArray(parsed.recipes)) {
-      return { ...EMPTY_STATE, recipes: [] };
+      return { ...EMPTY_STATE, recipes: [], tombstones: [] };
     }
+    const cutoff = Date.now() - TOMBSTONE_TTL_MS;
     return {
       version: 1,
       recipes: parsed.recipes.map(sanitizeRecipe).filter(Boolean),
+      tombstones: (Array.isArray(parsed.tombstones) ? parsed.tombstones : [])
+        .filter((t) => t && UUID_RE.test(t.id) && Number(t.deletedAt) > cutoff)
+        .map((t) => ({ id: t.id, deletedAt: Number(t.deletedAt) })),
     };
   }
 
@@ -145,7 +159,31 @@
 
     _persist() {
       this.persistOk = persist(this.state);
+      // Sync listens here to push local edits. Suppressed while applying
+      // remote data so merges don't echo straight back to the server.
+      if (this.onChange && !this._applying) this.onChange();
       return this.persistOk;
+    }
+
+    get tombstones() {
+      return this.state.tombstones;
+    }
+
+    /** Drop any delete marker for an id being (re-)added. */
+    _untomb(id) {
+      this.state.tombstones = this.state.tombstones.filter((t) => t.id !== id);
+    }
+
+    /**
+     * Replace the local collection with the merged result of a sync.
+     * Does not notify onChange — the caller already knows.
+     */
+    applyMerge(recipes, tombstones) {
+      this._applying = true;
+      this.state.recipes = recipes;
+      this.state.tombstones = tombstones;
+      this._persist();
+      this._applying = false;
     }
 
     _convert(recipe) {
@@ -189,6 +227,7 @@
       const recipe = sanitizeRecipe({ ...input, id: null, createdAt: Date.now() });
       if (!recipe) return null;
       this._convert(recipe);
+      this._untomb(recipe.id);
       this.state.recipes.unshift(recipe);
       this._persist();
       return recipe;
@@ -217,7 +256,14 @@
       const before = this.state.recipes.length;
       this.state.recipes = this.state.recipes.filter((r) => r.id !== id);
       const removed = this.state.recipes.length < before;
-      if (removed) this._persist();
+      if (removed) {
+        // Tombstone, so the delete travels to other devices rather than
+        // the recipe coming back on their next sync.
+        this.state.tombstones = this.state.tombstones
+          .filter((t) => t.id !== id)
+          .concat({ id, deletedAt: Date.now() });
+        this._persist();
+      }
       return removed;
     }
 
@@ -241,6 +287,7 @@
       const existing = this.getById(recipe.id);
       if (existing) return { recipe: existing, existed: true };
       this._convert(recipe);
+      this._untomb(recipe.id);
       this.state.recipes.unshift(recipe);
       this._persist();
       return { recipe, existed: false };
@@ -288,6 +335,7 @@
         }
         existingIds.add(recipe.id);
         this._convert(recipe);
+        this._untomb(recipe.id);
         this.state.recipes.push(recipe);
         imported++;
       }
