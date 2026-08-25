@@ -54,6 +54,30 @@ python3 -m http.server 8000
 
 Or just open `index.html` directly in a browser.
 
+## Backend (Supabase) setup
+
+The app works fully signed-out and local-only. Optional sync uses Supabase
+(project coordinates in `js/config.js` — the publishable key is public by
+design; all protection is row-level security). One-time setup:
+
+1. **Schema**: open the Supabase dashboard → SQL Editor, paste all of
+   `supabase/schema.sql`, and run it. This creates the tables (profiles,
+   books, members, recipes, invites), every RLS policy, the new-user
+   bootstrap (profile + personal book), and the invite-redeem function.
+2. **Google auth**: in Google Cloud, create an OAuth Web client with
+   authorized origin `https://malfernion.github.io` and redirect URI
+   `https://dveyxesgwohokenoomsf.supabase.co/auth/v1/callback`; paste the
+   client ID and secret into Supabase → Authentication → Providers →
+   Google. Disable email auth. Add
+   `https://malfernion.github.io/Recipe-friend/` (and
+   `http://localhost:8000` for local dev) to Authentication → URL
+   Configuration → Redirect URLs.
+3. Sign in from the app's header. First sign-in auto-creates your profile
+   and a personal "My recipes" book.
+
+The `service_role` key is never used by the app and must never be
+committed.
+
 ## Deploying to GitHub Pages
 
 The included workflow (`.github/workflows/deploy-pages.yml`) deploys the site
