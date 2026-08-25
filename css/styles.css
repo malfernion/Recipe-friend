@@ -277,6 +277,15 @@ body {
   color: var(--accent-ink);
 }
 
+.card-img {
+  width: 100%;
+  aspect-ratio: 4 / 3;
+  object-fit: cover;
+  display: block;
+  margin-bottom: 0.35rem;
+  background: var(--rule);
+}
+
 .card-index {
   font-family: var(--serif);
   font-size: 0.8rem;
@@ -408,7 +417,9 @@ body {
   color: var(--ink);
   padding: 2.25rem 2.25rem 1.75rem;
   width: min(600px, calc(100vw - 2rem));
-  max-height: min(88vh, 960px);
+  max-height: min(88dvh, 960px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
   box-shadow: 0 24px 60px rgba(20, 15, 8, 0.28);
 }
 
@@ -472,6 +483,28 @@ body {
   gap: 1rem;
 }
 
+.photo-row {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.photo-row .photo-url {
+  flex: 1;
+  min-width: 170px;
+  width: auto;
+}
+
+.photo-preview {
+  margin-top: 0.7rem;
+  width: 100%;
+  max-height: 240px;
+  object-fit: cover;
+  border: 1px solid var(--rule);
+  display: block;
+}
+
 .field-row .field {
   flex: 1;
 }
@@ -513,6 +546,15 @@ body {
   font-size: 1.3rem;
   vertical-align: 0.15em;
   margin-left: 0.2rem;
+}
+
+.detail-img {
+  width: 100%;
+  aspect-ratio: 3 / 2;
+  object-fit: cover;
+  display: block;
+  margin: 0.75rem 0 1rem;
+  background: var(--rule);
 }
 
 .detail-desc {
@@ -615,6 +657,19 @@ body {
   margin-inline: auto;
 }
 
+/* ---------- Responsive ----------
+   Tuned for phones (~390px), iPad mini (744px portrait / 1133px landscape),
+   and desktop. The grid is fluid; these adjust density and touch comfort. */
+
+/* Tablet portrait: two comfortable columns, slightly tighter gutters */
+@media (max-width: 820px) {
+  .recipe-grid {
+    grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+    gap: 2rem 2rem;
+  }
+}
+
+/* Phones */
 @media (max-width: 480px) {
   .field-row {
     flex-direction: column;
@@ -625,11 +680,55 @@ body {
     padding-top: 2.5rem;
   }
 
+  .container {
+    padding-top: 1.5rem;
+  }
+
   .recipe-grid {
-    gap: 2rem;
+    grid-template-columns: 1fr;
+    gap: 1.9rem;
+  }
+
+  .toolbar {
+    margin-bottom: 1.9rem;
   }
 
   .recipe-dialog {
+    width: calc(100vw - 1rem);
+    max-height: calc(100dvh - 1rem);
     padding: 1.5rem 1.25rem 1.25rem;
+  }
+
+  .dialog-actions {
+    flex-wrap: wrap;
+    gap: 0.75rem 1rem;
+  }
+}
+
+/* Touch devices: larger tap targets, no hover-dependent affordances */
+@media (pointer: coarse) {
+  .fav-btn {
+    font-size: 1.45rem;
+    padding: 0.3rem 0.45rem;
+    margin: -0.2rem -0.2rem 0 0;
+  }
+
+  .btn,
+  .chip {
+    padding-top: 0.55rem;
+    padding-bottom: 0.55rem;
+  }
+
+  .btn-primary {
+    padding: 0.7rem 1.5rem;
+  }
+
+  .detail-ingredients li {
+    padding: 0.55rem 0;
+  }
+
+  .detail-steps li {
+    padding-top: 0.45rem;
+    padding-bottom: 0.45rem;
   }
 }

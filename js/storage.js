@@ -26,6 +26,20 @@
   }
 
   /**
+   * A recipe image is either a browser-generated data URI (bounded so a
+   * single photo can't eat the whole localStorage quota) or an http(s) URL.
+   */
+  function sanitizeImage(value) {
+    const s = String(value || "").trim();
+    if (!s) return "";
+    if (/^data:image\/(png|jpe?g|webp|gif|avif);base64,/i.test(s)) {
+      return s.length <= 900000 ? s : "";
+    }
+    if (/^https?:\/\//i.test(s)) return s.slice(0, 2048);
+    return "";
+  }
+
+  /**
    * Coerce an untrusted object (from storage or an imported file) into a
    * well-formed recipe, or return null if it is unusable.
    */
@@ -37,6 +51,7 @@
     if (!name || ingredients.length === 0 || steps.length === 0) return null;
 
     const num = (v) => {
+      if (v === null || v === undefined || v === "") return null;
       const n = Number(v);
       return Number.isFinite(n) && n >= 0 ? Math.round(n) : null;
     };
@@ -50,6 +65,7 @@
       cookMinutes: num(raw.cookMinutes),
       ingredients,
       steps,
+      image: sanitizeImage(raw.image),
       tags: normalizeStringList(raw.tags).map((t) => t.toLowerCase().slice(0, 40)),
       favorite: Boolean(raw.favorite),
       createdAt: num(raw.createdAt) || Date.now(),
@@ -89,6 +105,14 @@
   class RecipeStore {
     constructor() {
       this.state = load();
+      // False when the latest write failed (storage full or blocked), so the
+      // UI can warn that changes are in memory only.
+      this.persistOk = true;
+    }
+
+    _persist() {
+      this.persistOk = persist(this.state);
+      return this.persistOk;
     }
 
     get recipes() {
@@ -104,7 +128,7 @@
       const recipe = sanitizeRecipe({ ...input, id: null, createdAt: Date.now() });
       if (!recipe) return null;
       this.state.recipes.unshift(recipe);
-      persist(this.state);
+      this._persist();
       return recipe;
     }
 
@@ -122,7 +146,7 @@
       });
       if (!merged) return null;
       Object.assign(existing, merged);
-      persist(this.state);
+      this._persist();
       return existing;
     }
 
@@ -130,7 +154,7 @@
       const before = this.state.recipes.length;
       this.state.recipes = this.state.recipes.filter((r) => r.id !== id);
       const removed = this.state.recipes.length < before;
-      if (removed) persist(this.state);
+      if (removed) this._persist();
       return removed;
     }
 
@@ -139,8 +163,23 @@
       if (!recipe) return null;
       recipe.favorite = !recipe.favorite;
       recipe.updatedAt = Date.now();
-      persist(this.state);
+      this._persist();
       return recipe;
+    }
+
+    /**
+     * Add a recipe received via a share link. The sender's id is kept, so
+     * opening the same link twice never duplicates.
+     * Returns {recipe, existed} or null for an unusable payload.
+     */
+    addShared(raw) {
+      const recipe = sanitizeRecipe(raw);
+      if (!recipe) return null;
+      const existing = this.getById(recipe.id);
+      if (existing) return { recipe: existing, existed: true };
+      this.state.recipes.unshift(recipe);
+      this._persist();
+      return { recipe, existed: false };
     }
 
     /** All distinct tags across recipes, sorted alphabetically. */
@@ -187,7 +226,7 @@
         this.state.recipes.push(recipe);
         imported++;
       }
-      if (imported > 0) persist(this.state);
+      if (imported > 0) this._persist();
       return { imported, skipped };
     }
 
@@ -243,6 +282,9 @@
       for (const s of samples) this.add(s);
     }
   }
+
+  // Exposed so the UI can sanitize a shared payload for preview before saving.
+  RecipeStore.sanitizeRecipe = sanitizeRecipe;
 
   global.RecipeStore = RecipeStore;
 })(window);

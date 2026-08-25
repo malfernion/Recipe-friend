@@ -100,6 +100,17 @@
         <input type="text" name="tags" maxlength="200" placeholder="dinner, quick, vegetarian">
       </label>
 
+      <div class="field">
+        <span class="field-label">Photo <small>(optional)</small></span>
+        <div class="photo-row">
+          <button type="button" class="btn btn-ghost" id="photo-pick-btn">Choose image…</button>
+          <input type="url" name="imageUrl" class="photo-url" placeholder="or paste an image URL">
+          <button type="button" class="btn btn-ghost" id="photo-remove-btn" hidden>Remove</button>
+        </div>
+        <img id="photo-preview" class="photo-preview" alt="Recipe photo preview" hidden>
+        <input type="file" id="photo-file" accept="image/*" hidden>
+      </div>
+
       <div class="dialog-actions">
         <button type="button" class="btn btn-ghost" id="cancel-dialog-btn">Cancel</button>
         <button type="submit" class="btn btn-primary" id="save-recipe-btn">Save recipe</button>
@@ -114,14 +125,26 @@
       <button type="button" class="btn btn-danger" id="detail-delete-btn">Delete</button>
       <span class="dialog-actions-spacer"></span>
       <button type="button" class="btn btn-ghost" id="detail-fav-btn" aria-pressed="false">☆ Favourite</button>
+      <button type="button" class="btn btn-ghost" id="detail-share-btn">Share</button>
       <button type="button" class="btn btn-ghost" id="detail-close-btn">Close</button>
       <button type="button" class="btn btn-primary" id="detail-edit-btn">Edit</button>
+    </div>
+  </dialog>
+
+  <!-- Incoming shared recipe -->
+  <dialog id="share-dialog" class="recipe-dialog detail-dialog">
+    <div id="share-content"></div>
+    <div class="dialog-actions">
+      <button type="button" class="btn btn-ghost" id="share-dismiss-btn">Not now</button>
+      <span class="dialog-actions-spacer"></span>
+      <button type="button" class="btn btn-primary" id="share-save-btn">Save to my recipe box</button>
     </div>
   </dialog>
 
   <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
 
   <script src="js/storage.js"></script>
+  <script src="js/share.js"></script>
   <script src="js/app.js"></script>
 </body>
 </html>

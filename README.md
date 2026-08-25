@@ -9,12 +9,19 @@ build step.
 
 - **Add, edit, and delete recipes** — name, description, servings, prep/cook
   times, ingredients, steps, and tags.
+- **Photos** — attach an image from your device (automatically downscaled to
+  fit browser storage) or link one by URL.
 - **Search and filter** — full-text search across names, ingredients, and
   tags; filter by tag or favorites.
 - **Favorites** — star the recipes you keep coming back to.
 - **Local persistence** — everything is saved in your browser under a
   versioned `localStorage` key (`recipe-friend:v1`), so your recipes survive
   page reloads and browser restarts.
+- **Share links** — share a single recipe as a URL: the recipe travels
+  compressed inside the link's `#` fragment, so no server ever sees it. The
+  recipient gets a preview and a "Save to my recipe box" button, and opening
+  the same link twice never duplicates. Uploaded photos are excluded (too
+  large for URLs); linked image URLs are kept.
 - **Export / import** — download your whole collection as JSON for backup, or
   import it on another device. Imports merge by recipe id, so re-importing
   never creates duplicates.
