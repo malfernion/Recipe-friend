@@ -38,6 +38,8 @@
           <button id="prefs-btn" class="more-item">Units</button>
           <button id="export-btn" class="more-item">Export</button>
           <button id="import-btn" class="more-item">Import</button>
+          <button id="paste-btn" class="more-item">Paste a recipe</button>
+          <button id="ai-help-btn" class="more-item">Get help from AI</button>
           <button id="account-btn" class="more-item">Sign in</button>
         </div>
       </details>
@@ -253,6 +255,62 @@
     <div class="dialog-actions">
       <button type="button" class="btn btn-ghost" id="prefs-close-btn">Cancel</button>
       <button type="button" class="btn btn-primary" id="prefs-save-btn">Save preferences</button>
+    </div>
+  </dialog>
+
+  <!-- A prompt to paste into a chatbot, and the box its answer comes back into -->
+  <dialog id="ai-help-dialog" class="recipe-dialog">
+    <h2>Get help from AI</h2>
+    <p class="prefs-hint">Copy this into ChatGPT, Gemini, Claude or similar, then send it the
+       recipe — a link, a photo of a cookbook page, or typed-out text. It replies with a block
+       of JSON. Bring that back here with <strong>Paste a recipe</strong> below.</p>
+    <pre id="ai-prompt" class="ai-prompt">I want to add a recipe to Recipe Friend. I'll give you the recipe next — a link, a photo, or just text.
+
+Read it and reply with only a JSON object in this exact shape, in a code block, with nothing else around it:
+
+{
+  "name": "Coleslaw",
+  "description": "A quick creamy slaw.",
+  "servings": 4,
+  "prepMinutes": 10,
+  "cookMinutes": null,
+  "ingredients": [
+    {"amount": 250, "unit": "g", "item": "white cabbage, finely shredded"},
+    {"amount": 3, "unit": "tbsp", "item": "light mayonnaise"},
+    {"amount": null, "unit": "", "item": "salt and pepper, to taste"}
+  ],
+  "steps": ["Mix everything together in a bowl."],
+  "tags": ["side"]
+}
+
+Rules the app is strict about — it will reject a recipe that breaks one:
+
+- a name, at least one ingredient and at least one step are all required
+- amount is a number, or null for "to taste" — never 0, and halves are 0.5, never "1/2"
+- unit is "" when there isn't one. g, kg, oz, lb, ml, l, cup, fl oz, tsp and tbsp get converted to whatever units the reader prefers; anything else (clove, pinch, can) is kept as written
+- use what the source says, and leave anything it doesn't state as null
+
+If I ask for only part of a recipe, include only that part.</pre>
+    <div class="dialog-actions">
+      <button type="button" class="btn btn-ghost" id="ai-help-close-btn">Close</button>
+      <span class="dialog-actions-spacer"></span>
+      <button type="button" class="btn btn-ghost" id="ai-to-paste-btn">Paste a recipe</button>
+      <button type="button" class="btn btn-primary" id="ai-copy-btn">Copy prompt</button>
+    </div>
+  </dialog>
+
+  <!-- Paste a recipe an assistant wrote, or a share link -->
+  <dialog id="paste-dialog" class="recipe-dialog">
+    <h2>Paste a recipe</h2>
+    <p class="prefs-hint">Paste the JSON an assistant gave you — code fences and all, if it
+       used them. A share link works here too.</p>
+    <textarea id="paste-input" class="paste-input" rows="10" spellcheck="false"
+              placeholder='{&#10;  "name": "Coleslaw",&#10;  "ingredients": [...],&#10;  "steps": [...]&#10;}'></textarea>
+    <p id="paste-error" class="paste-error" hidden></p>
+    <div class="dialog-actions">
+      <button type="button" class="btn btn-ghost" id="paste-close-btn">Cancel</button>
+      <span class="dialog-actions-spacer"></span>
+      <button type="button" class="btn btn-primary" id="paste-save-btn">Add recipe</button>
     </div>
   </dialog>
 

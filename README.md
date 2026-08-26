@@ -176,6 +176,30 @@ supabase/schema.sql            Tables, RLS policies, triggers, functions
 supabase/migrations/           Additive schema changes, run in order
                                (004 creates the private photo bucket)
 .github/workflows/deploy-pages.yml   GitHub Pages deployment
+.claude/skills/recipe-share-link/     Agent skill: recipe -> share link
+```
+
+## Getting a recipe in with AI's help
+
+**Get help from AI** in the ··· menu hands you a prompt to paste into
+ChatGPT, Gemini, Claude or similar. Send that assistant a recipe — a URL, a
+photo of a cookbook page, or typed-out text — and it replies with a block of
+JSON. **Paste a recipe**, in the same menu or straight from the AI dialog,
+takes that reply and saves it: code fences, surrounding chatter and all. A
+share link can be pasted there too.
+
+The prompt asks only for JSON because most chatbots have no code execution
+and so cannot build a share link — asked for one, they produce a
+plausible-looking link that opens nothing. Encoding stays in the app, where
+it is code rather than prediction.
+
+For an agent working in this repo,
+`.claude/skills/recipe-share-link/` covers the same ground and does produce
+links, with a Python encoder that validates the recipe and round-trips the
+link before printing it:
+
+```bash
+python3 .claude/skills/recipe-share-link/scripts/recipe_link.py recipe.json
 ```
 
 ## Notes on storage

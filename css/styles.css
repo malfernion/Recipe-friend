@@ -1470,3 +1470,42 @@ body.gated .app-footer {
 .book-rename-input:focus-visible {
   outline: none;
 }
+
+/* The chatbot prompt: readable, scrollable, and selectable in one go. */
+.ai-prompt {
+  margin: 1rem 0 0;
+  padding: 0.9rem 1rem;
+  max-height: 40vh;
+  overflow: auto;
+  background: var(--paper);
+  border: 1px solid var(--rule);
+  border-radius: 4px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.78rem;
+  line-height: 1.55;
+  color: var(--ink-soft);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  user-select: all;
+}
+
+/* Where an assistant's JSON comes back in. */
+.paste-input {
+  width: 100%;
+  margin: 1rem 0 0;
+  padding: 0.8rem 0.9rem;
+  background: var(--paper);
+  border: 1px solid var(--rule);
+  border-radius: 4px;
+  color: var(--ink);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.8rem;
+  line-height: 1.5;
+  resize: vertical;
+}
+
+.paste-error {
+  margin: 0.7rem 0 0;
+  font-size: 0.85rem;
+  color: var(--danger);
+}
