@@ -33,8 +33,33 @@ If a line is cut off, blurred, or ambiguous (a torn edge, an amount you
 can't make out, a step that continues on a page you weren't given), say so
 and ask rather than guessing. A wrong quantity is worse than a missing one.
 
+**When the page won't load** — a blocked domain, a paywall, a login wall, or
+a page that renders only in JavaScript. Stop and ask the user to paste the
+recipe text or send a screenshot. Do **not** reconstruct the recipe from
+what you remember of it, and do not assemble it from search-result snippets
+or a different site's version of the same dish: those produce a recipe that
+looks right and has the wrong quantities, which is the one outcome worse
+than no link at all.
+
 **Never invent content.** If the source gives no servings or no timings,
 leave those `null` — do not estimate them.
+
+**Taking one part of a bigger recipe.** Pages often bundle several
+components ("For the dirty rice", "For the coleslaw") and a request may be
+for just one of them. Then:
+
+- Take only that group's ingredient lines, plus any from the top-level list
+  that the component actually uses.
+- Take only the method steps for that component — usually one or two
+  sentences that name it — and any storage tip that mentions it by name.
+- **Name it for what it is, not for the dish it came from.** A plain slaw
+  served alongside peri-peri chicken is not "peri-peri coleslaw"; call it a
+  coleslaw and put the provenance in the description. Naming it after the
+  headline dish misdescribes the food.
+- The page's yield covers the whole dish. Carry it across as-is — portion
+  scaling keys off it — and don't try to re-derive a yield for the part.
+- Timings usually belong to the whole dish too. If none is stated for the
+  component alone, leave them `null` rather than apportioning.
 
 ### 2. Write `recipe.json`
 
