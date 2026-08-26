@@ -119,13 +119,27 @@ catches a link mangled *after* encoding — by a copy, a wrap, or a paste.
 
 ### 5. Deliver it
 
-**Never retype or hand-copy the payload.** It is ~700–2000 characters of
-base64 and a single flipped character makes it unreadable. Pipe the script's
-output straight into wherever the link is going. If you must move it between
-files, `diff` the two copies before handing it over.
+**Only ever paste a link you can see in front of you.** The payload is
+~700–2000 characters of base64 with no readable structure, which makes it
+the easiest thing in the world to reproduce wrongly — and a single wrong
+character makes it unopenable.
+
+Two failures cause this, and the second is the dangerous one:
+
+1. **Retyping or hand-copying it.** Don't. Move it by pipe or by copy, and
+   `diff` the two copies if it passes through a file.
+2. **Never having seen it at all.** If you redirect the script's output
+   (`> link.txt`), the link never appears in your transcript — and writing
+   one out from there means inventing plausible-looking base64. `cat` the
+   file and copy the link from *that* output, or don't redirect in the first
+   place.
+
+So: before pasting a link anywhere, point at the exact tool output it came
+from. No output, no link.
 
 Give the user the raw link as text they can click or copy — not wrapped in a
-downloadable file, not truncated with an ellipsis, not split across lines.
+downloadable file, not truncated with an ellipsis, not split across lines,
+and not inside `**bold**` or other markup that a client might mangle.
 
 ## Things worth knowing
 
