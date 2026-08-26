@@ -1,0 +1,517 @@
+/**
+ * J2 photos, J4 cooking, J6 sharing — driven through the app itself.
+ *
+ * These go in the front door: pick a photo, save the form, open a recipe,
+ * press the Portions stepper, click Share. The interesting one is J2.8's
+ * failure path — a photo whose upload does not land has to survive on the
+ * recipe as data, because the alternative is losing someone's picture in
+ * silence.
+ *
+ * The browser bits the app leans on that the stub DOM has not got — a
+ * canvas, an Image, object URLs, a clock — are stood up here rather than in
+ * the shared helpers, since nothing else needs them.
+ */
+"use strict";
+
+const { test } = require("node:test");
+const assert = require("node:assert/strict");
+const { loadUI, aRecipe } = require("./helpers/load.js");
+const { makeElement } = require("./helpers/dom.js");
+
+// A book id and photo path in the shape Storage uses, "<book>/<recipe>.jpg".
+// The store rejects anything else, so a mis-built path shows up as a
+// recipe with no photo rather than as a passing test.
+const BOOK = "11111111-1111-4111-8111-111111111111";
+const RECIPE_UUID = "22222222-2222-4222-8222-222222222222";
+const STORED_PATH = `${BOOK}/${RECIPE_UUID}.jpg`;
+
+const PHOTO_BYTES = Buffer.from("jpeg-bytes-pretend-this-is-a-photo");
+const PHOTO_DATA_URI = "data:image/jpeg;base64," + PHOTO_BYTES.toString("base64");
+
+/** Let every queued promise callback run. setTimeout is a no-op in the stub. */
+const flush = () => new Promise((resolve) => setImmediate(resolve));
+
+/**
+ * The browser surface `compressImageFile` needs: an Image that loads, an
+ * object URL, and a canvas that records what it was asked to draw. The
+ * resampling itself is the browser's; what is checked here is the size and
+ * quality the app asks for.
+ */
+function installImageStubs(ui, dataUri, dims) {
+  const record = { canvas: null, drew: null, toDataURL: null, revoked: 0 };
+  const savedImage = globalThis.Image;
+  const savedCreate = Object.getOwnPropertyDescriptor(URL, "createObjectURL");
+  const savedRevoke = Object.getOwnPropertyDescriptor(URL, "revokeObjectURL");
+  const savedCreateElement = ui.win.document.createElement;
+
+  globalThis.Image = class FakeImage {
+    constructor() {
+      this.onload = null;
+      this.onerror = null;
+      this.width = dims.width;
+      this.height = dims.height;
+    }
+    set src(value) {
+      this._src = value;
+      queueMicrotask(() => this.onload && this.onload());
+    }
+    get src() {
+      return this._src;
+    }
+  };
+  URL.createObjectURL = () => "blob:fake";
+  URL.revokeObjectURL = () => {
+    record.revoked += 1;
+  };
+  ui.win.document.createElement = (tag) => {
+    const el = savedCreateElement.call(ui.win.document, tag);
+    if (tag !== "canvas") return el;
+    el.getContext = () => ({
+      drawImage: (img, x, y, w, h) => {
+        record.drew = { x, y, w, h };
+      },
+    });
+    el.toDataURL = (type, quality) => {
+      record.toDataURL = { type, quality, width: el.width, height: el.height };
+      return dataUri;
+    };
+    record.canvas = el;
+    return el;
+  };
+
+  record.restore = () => {
+    if (savedImage === undefined) delete globalThis.Image;
+    else globalThis.Image = savedImage;
+    if (savedCreate) Object.defineProperty(URL, "createObjectURL", savedCreate);
+    else delete URL.createObjectURL;
+    if (savedRevoke) Object.defineProperty(URL, "revokeObjectURL", savedRevoke);
+    else delete URL.revokeObjectURL;
+    ui.win.document.createElement = savedCreateElement;
+  };
+  return record;
+}
+
+/** Choose a photo from the device, the way the file input does. */
+async function pickPhoto(ui, dataUri = PHOTO_DATA_URI, dims = { width: 2400, height: 1200 }) {
+  const stubs = installImageStubs(ui, dataUri, dims);
+  try {
+    await ui.el("photo-file").fire("change", {
+      target: { files: [{ name: "photo.jpg" }], value: "unchanged" },
+    });
+    await flush();
+  } finally {
+    stubs.restore();
+  }
+  return stubs;
+}
+
+/**
+ * The ingredient editor builds real DOM rows, which the stub has not got.
+ * Stand in the rows the person typed so the form can be read back.
+ */
+function setIngredientRows(ui, ingredients) {
+  const rows = ingredients.map((ing) => {
+    const row = makeElement("ing-row");
+    const fields = {
+      ".ing-amount": Object.assign(makeElement("a"), { value: ing.amount }),
+      ".ing-unit": Object.assign(makeElement("u"), { value: ing.unit }),
+      ".ing-item": Object.assign(makeElement("i"), { value: ing.item }),
+    };
+    row.querySelector = (sel) => fields[sel];
+    return row;
+  });
+  ui.el("ingredient-rows").querySelectorAll = () => rows;
+}
+
+/** Open the empty new-recipe form. Opening it clears any photo held over. */
+function openNewRecipeForm(ui) {
+  ui.el("add-recipe-btn").fire("click");
+}
+
+/** Fill the open form in and press Save. */
+function submitRecipe(ui, { name = "Soup", ingredients, steps = ["Heat it."], servings = "" } = {}) {
+  const f = ui.el("recipe-form").elements;
+  f.name.value = name;
+  f.steps.value = steps.join("\n");
+  f.servings.value = String(servings);
+  setIngredientRows(ui, ingredients || [{ amount: "1", unit: "l", item: "stock" }]);
+  ui.el("recipe-form").fire("submit");
+}
+
+/** A signed-in app with a fake cloud whose photo calls are recorded. */
+function signedInApp({ uploadPhoto, signedPhotoUrl } = {}) {
+  const ui = loadUI();
+  const calls = { uploads: [], signed: [] };
+  ui.win.RecipeCloud = {
+    sync: {
+      userId: "user-1",
+      bookId: BOOK,
+      uploadPhoto: async (bookId, recipeId, blob) => {
+        calls.uploads.push({ bookId, recipeId, blob });
+        if (uploadPhoto) return uploadPhoto(bookId, recipeId, blob);
+        return `${bookId}/${recipeId}.jpg`;
+      },
+      signedPhotoUrl: async (path) => {
+        calls.signed.push(path);
+        return signedPhotoUrl ? signedPhotoUrl(path) : `https://signed.example/${path}?token=1`;
+      },
+    },
+  };
+  return { ...ui, calls };
+}
+
+/** Open a recipe the way clicking its card does. */
+function openDetail(ui, id) {
+  ui.el("recipe-list").fire("click", {
+    target: { closest: (sel) => (sel === ".recipe-card" ? { dataset: { id } } : null) },
+  });
+}
+
+/** Press the Portions stepper: "up", "down" or "reset". */
+function pressScale(ui, action) {
+  ui.el("detail-content").fire("click", {
+    target: { closest: (sel) => (sel === "[data-scale]" ? { dataset: { scale: action } } : null) },
+  });
+}
+
+/** The <li> texts of a named list in the detail view, in the order shown. */
+function listItems(html, className) {
+  const block = new RegExp(`<(ul|ol) class="${className}">([\\s\\S]*?)</\\1>`).exec(html);
+  if (!block) return null;
+  return [...block[2].matchAll(/<li>([\s\S]*?)<\/li>/g)].map((m) => m[1].trim());
+}
+
+function scaleValue(html) {
+  const m = /<span class="scale-value">([^<]*)<\/span>/.exec(html);
+  return m ? m[1] : null;
+}
+
+function imgSrc(html) {
+  const m = /<img class="(?:card-img|detail-img)" src="([^"]*)"/.exec(html);
+  return m ? m[1] : null;
+}
+
+// --- J2.7 · downscaling before it goes anywhere -------------------------
+
+test("J2.7 · a device photo is downscaled to 1200px at quality 0.78 before it goes anywhere", async () => {
+  const ui = loadUI();
+  openNewRecipeForm(ui);
+  const picked = await pickPhoto(ui, PHOTO_DATA_URI, { width: 2400, height: 1200 });
+
+  assert.deepEqual(
+    { width: picked.toDataURL.width, height: picked.toDataURL.height },
+    { width: 1200, height: 600 },
+    "the longest side is capped at 1200px and the aspect ratio is kept"
+  );
+  assert.equal(picked.toDataURL.type, "image/jpeg");
+  assert.equal(picked.toDataURL.quality, 0.78);
+  assert.deepEqual(picked.drew, { x: 0, y: 0, w: 1200, h: 600 }, "drawn at the reduced size");
+  // And the downscaled result is what the form now holds.
+  assert.equal(ui.el("photo-preview").src, PHOTO_DATA_URI);
+});
+
+test("J2.7 · a photo already under the cap is not enlarged", async () => {
+  const ui = loadUI();
+  openNewRecipeForm(ui);
+  const picked = await pickPhoto(ui, PHOTO_DATA_URI, { width: 640, height: 480 });
+  assert.deepEqual(
+    { width: picked.toDataURL.width, height: picked.toDataURL.height },
+    { width: 640, height: 480 }
+  );
+});
+
+// --- J2.8 · uploaded to private storage, or kept as data ----------------
+
+test("J2.8 · signed in, a device photo is uploaded and the recipe keeps only its path", async () => {
+  const ui = signedInApp();
+  openNewRecipeForm(ui);
+  await pickPhoto(ui);
+  submitRecipe(ui, { name: "Photographed Soup" });
+  await flush();
+
+  const saved = ui.store.recipes.find((r) => r.name === "Photographed Soup");
+  assert.equal(ui.calls.uploads.length, 1, "the photo was uploaded once");
+  const [upload] = ui.calls.uploads;
+  assert.equal(upload.bookId, BOOK);
+  assert.equal(upload.recipeId, saved.id, "filed under the recipe it belongs to");
+  assert.equal(upload.blob.type, "image/jpeg");
+  assert.equal(upload.blob.size, PHOTO_BYTES.length, "the downscaled bytes, not the original file");
+
+  assert.equal(saved.imagePath, `${BOOK}/${saved.id}.jpg`, "the recipe keeps the path");
+  assert.equal(saved.image, "", "and not the data URI");
+});
+
+test("J2.8 · a photo is never silently lost when the upload fails", async () => {
+  const ui = signedInApp({
+    uploadPhoto: async () => {
+      throw new Error("bucket unreachable");
+    },
+  });
+  openNewRecipeForm(ui);
+  await pickPhoto(ui);
+  submitRecipe(ui, { name: "Photographed Soup" });
+  await flush();
+
+  const saved = ui.store.recipes.find((r) => r.name === "Photographed Soup");
+  assert.ok(saved, "the recipe itself still saved");
+  assert.equal(ui.calls.uploads.length, 1, "the upload was attempted");
+  assert.equal(saved.image, PHOTO_DATA_URI, "the photo stays on the recipe as data");
+  assert.equal(saved.imagePath, "", "and no path was invented for a photo that isn't there");
+});
+
+test("J2.8 · with nowhere to upload to, the photo stays on the recipe as data", async () => {
+  const ui = loadUI(); // no RecipeCloud: signed out
+  openNewRecipeForm(ui);
+  await pickPhoto(ui);
+  submitRecipe(ui, { name: "Photographed Soup" });
+  await flush();
+
+  const saved = ui.store.recipes.find((r) => r.name === "Photographed Soup");
+  assert.equal(saved.image, PHOTO_DATA_URI);
+  assert.equal(saved.imagePath, "");
+});
+
+test("J2.8 · a stored photo is shown through a signed URL, fetched once and reused", async () => {
+  const ui = signedInApp();
+  const recipe = ui.store.add(aRecipe({ name: "Stored Photo", imagePath: STORED_PATH }));
+  const SIGNED = `https://signed.example/${STORED_PATH}?token=1`;
+
+  ui.app.render();
+  assert.equal(imgSrc(ui.el("recipe-list").innerHTML), null, "nothing is shown until a URL is signed");
+  assert.deepEqual(ui.calls.signed, [STORED_PATH], "the path was sent for signing");
+
+  // A second draw while the first request is still out must not start
+  // another one — a grid of photos would otherwise sign each one twice.
+  ui.app.render();
+  assert.equal(ui.calls.signed.length, 1, "a request already in flight is not repeated");
+
+  await flush();
+  ui.app.render();
+  assert.equal(imgSrc(ui.el("recipe-list").innerHTML), SIGNED, "the card shows the signed URL");
+
+  openDetail(ui, recipe.id);
+  assert.equal(imgSrc(ui.el("detail-content").innerHTML), SIGNED, "and so does the open recipe");
+
+  ui.app.render();
+  assert.equal(ui.calls.signed.length, 1, "a URL still in date is reused, not re-signed");
+});
+
+test("J2.8 · a signed URL that has expired is asked for again", async () => {
+  const ui = signedInApp();
+  ui.store.add(aRecipe({ name: "Stored Photo", imagePath: STORED_PATH }));
+
+  const realNow = Date.now;
+  let now = 1_700_000_000_000;
+  Date.now = () => now;
+  try {
+    ui.app.render();
+    await flush();
+    ui.app.render();
+    assert.equal(ui.calls.signed.length, 1);
+    assert.ok(imgSrc(ui.el("recipe-list").innerHTML), "shown while the URL is in date");
+
+    now += 56 * 60 * 1000; // past the 55-minute refresh window
+    ui.app.render();
+    assert.equal(imgSrc(ui.el("recipe-list").innerHTML), null, "an expired URL is not shown");
+    assert.equal(ui.calls.signed.length, 2, "a fresh one is requested");
+  } finally {
+    Date.now = realNow;
+  }
+});
+
+// --- J4 · Cooking from a recipe -----------------------------------------
+
+const DINNER = aRecipe({
+  name: "Dinner",
+  servings: 4,
+  ingredients: [
+    { amount: 1.5, unit: "tbsp", item: "olive oil" },
+    { amount: 400, unit: "g", item: "tomatoes" },
+    { amount: null, unit: "", item: "salt, to taste" },
+  ],
+  steps: ["Chop the tomatoes.", "Warm the oil.", "Simmer for twenty minutes."],
+});
+
+function openedDinner() {
+  const ui = loadUI();
+  const recipe = ui.store.add(DINNER);
+  ui.app.render();
+  openDetail(ui, recipe.id);
+  return { ...ui, recipe, html: () => ui.el("detail-content").innerHTML };
+}
+
+test("J4.1 · opening a recipe shows ingredients and steps in reading order", () => {
+  const ui = openedDinner();
+  assert.equal(ui.el("detail-dialog").open, true, "the recipe opened");
+  assert.deepEqual(listItems(ui.html(), "detail-ingredients"), [
+    "1½ tbsp olive oil",
+    "400 g tomatoes",
+    "salt, to taste",
+  ]);
+  assert.deepEqual(listItems(ui.html(), "detail-steps"), [
+    "Chop the tomatoes.",
+    "Warm the oil.",
+    "Simmer for twenty minutes.",
+  ]);
+});
+
+test("J4.2 · the Portions stepper rescales amounts using kitchen fractions", () => {
+  const ui = openedDinner();
+  assert.equal(scaleValue(ui.html()), "Serves 4");
+
+  pressScale(ui, "down");
+  pressScale(ui, "down"); // 4 servings down to 2: halved
+  assert.equal(scaleValue(ui.html()), "Serves 2");
+  assert.deepEqual(listItems(ui.html(), "detail-ingredients"), [
+    "¾ tbsp olive oil",
+    "200 g tomatoes",
+    "salt, to taste",
+  ]);
+
+  pressScale(ui, "up");
+  pressScale(ui, "up");
+  pressScale(ui, "up");
+  pressScale(ui, "up"); // back up to 6
+  assert.equal(scaleValue(ui.html()), "Serves 6");
+  assert.deepEqual(listItems(ui.html(), "detail-ingredients"), [
+    "2¼ tbsp olive oil",
+    "600 g tomatoes",
+    "salt, to taste",
+  ]);
+});
+
+test("J2.3, J4.2 · an ingredient with no amount is not scaled", () => {
+  const ui = openedDinner();
+  pressScale(ui, "up");
+  const shown = listItems(ui.html(), "detail-ingredients");
+  assert.equal(shown[2], "salt, to taste", "a 'to taste' line is kept as it is");
+});
+
+test("J4.3 · scaling is display-only — the saved recipe never changes", () => {
+  const ui = openedDinner();
+  const before = JSON.parse(JSON.stringify(ui.store.getById(ui.recipe.id)));
+
+  pressScale(ui, "up");
+  pressScale(ui, "up");
+  assert.equal(scaleValue(ui.html()), "Serves 6", "the display did change");
+
+  assert.deepEqual(
+    ui.store.getById(ui.recipe.id),
+    before,
+    "the stored recipe is byte-for-byte what it was"
+  );
+});
+
+test("J4.3 · closing the recipe forgets the scale", () => {
+  const ui = openedDinner();
+  pressScale(ui, "up");
+  pressScale(ui, "up");
+  assert.equal(scaleValue(ui.html()), "Serves 6");
+
+  ui.el("detail-close-btn").fire("click");
+  assert.equal(ui.el("detail-dialog").open, false);
+  openDetail(ui, ui.recipe.id);
+
+  assert.equal(scaleValue(ui.html()), "Serves 4", "reopening starts at the recipe as written");
+  assert.deepEqual(listItems(ui.html(), "detail-ingredients"), [
+    "1½ tbsp olive oil",
+    "400 g tomatoes",
+    "salt, to taste",
+  ]);
+});
+
+test("J4.3 · opening a different recipe does not inherit the last one's scale", () => {
+  const ui = loadUI();
+  const dinner = ui.store.add(DINNER);
+  const other = ui.store.add(aRecipe({ name: "Other", servings: 4 }));
+  ui.app.render();
+
+  openDetail(ui, dinner.id);
+  pressScale(ui, "up");
+  assert.equal(scaleValue(ui.el("detail-content").innerHTML), "Serves 5");
+
+  openDetail(ui, other.id);
+  assert.equal(scaleValue(ui.el("detail-content").innerHTML), "Serves 4");
+});
+
+test("J4.8 · the recipe as written is always one tap away at full portions", () => {
+  const ui = openedDinner();
+  assert.doesNotMatch(ui.html(), /data-scale="reset"/, "nothing to reset at full portions");
+
+  pressScale(ui, "down");
+  pressScale(ui, "down");
+  assert.match(ui.html(), /data-scale="reset"/, "a way back is offered once scaled");
+
+  pressScale(ui, "reset"); // one tap
+  assert.equal(scaleValue(ui.html()), "Serves 4");
+  assert.deepEqual(listItems(ui.html(), "detail-ingredients"), [
+    "1½ tbsp olive oil",
+    "400 g tomatoes",
+    "salt, to taste",
+  ]);
+});
+
+// --- J6 · Sharing a recipe out ------------------------------------------
+
+/** Click Share and hand back what reached the clipboard. */
+async function share(ui) {
+  let copied = null;
+  ui.win.navigator.clipboard.writeText = async (text) => {
+    copied = text;
+  };
+  await ui.el("detail-share-btn").fire("click");
+  return { copied, toast: ui.el("toast").textContent };
+}
+
+test("J6.1 · Share copies a link carrying the recipe in the URL fragment", async () => {
+  const ui = openedDinner();
+  const { copied } = await share(ui);
+
+  assert.ok(copied, "something reached the clipboard");
+  const prefix = `${ui.win.location.origin}${ui.win.location.pathname}#add=`;
+  assert.ok(copied.startsWith(prefix), `link points at this app's own origin: ${copied}`);
+
+  const payload = copied.slice(prefix.length);
+  assert.ok(payload.length > 0, "the fragment carries the recipe, not just a marker");
+  const decoded = await ui.win.RecipeShare.decodeRecipeShare(payload);
+  assert.ok(decoded, "the link decodes back to a recipe");
+  assert.equal(decoded.name, "Dinner");
+  assert.deepEqual(decoded.steps, ui.recipe.steps);
+  assert.deepEqual(decoded.ingredients, ui.recipe.ingredients);
+  assert.equal(decoded.servings, 4);
+});
+
+test("J6.1 · the link is copied, and the app says so", async () => {
+  const ui = openedDinner();
+  const { toast } = await share(ui);
+  assert.match(toast, /copied/i);
+});
+
+test("J6.2 · a stored photo stays behind, and the person is told", async () => {
+  const ui = signedInApp();
+  const recipe = ui.store.add(aRecipe({ name: "Stored Photo", imagePath: STORED_PATH }));
+  ui.app.render();
+  openDetail(ui, recipe.id);
+
+  const { copied, toast } = await share(ui);
+  assert.match(toast, /photo stays behind/i, "the loss is said out loud, not left to be found");
+
+  const decoded = await ui.win.RecipeShare.decodeRecipeShare(copied.split("#add=")[1]);
+  assert.equal(decoded.name, "Stored Photo");
+  assert.ok(!decoded.imagePath, "the private path does not travel");
+  assert.equal(decoded.image || "", "", "and neither does any photo data");
+});
+
+test("J6.1 · with no clipboard to write to, the link is offered rather than dropped", async () => {
+  const ui = openedDinner();
+  ui.win.navigator.clipboard.writeText = async () => {
+    throw new Error("blocked");
+  };
+  let offered = null;
+  ui.win.prompt = (_message, value) => {
+    offered = value;
+    return value;
+  };
+  await ui.el("detail-share-btn").fire("click");
+  assert.ok(offered && offered.includes("#add="), "the link is put somewhere it can be copied by hand");
+});
