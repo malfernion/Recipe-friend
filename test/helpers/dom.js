@@ -50,11 +50,23 @@ function makeElement(id) {
       listeners.get(type).push(fn);
     },
     removeEventListener() {},
-    /** Drive a listener the way a browser would. */
+    /**
+     * Drive a listener the way a browser would.
+     *
+     * A browser ignores what a listener returns, but an async one hands
+     * back a promise, and a test that does not await it reads the DOM
+     * before the handler has finished. So it is returned here — `await
+     * el.fire("click")` settles the handler, and a synchronous listener
+     * returns undefined as before.
+     */
     fire(type, event = {}) {
+      const results = [];
       for (const fn of listeners.get(type) || []) {
-        fn({ target: el, preventDefault() {}, stopPropagation() {}, ...event });
+        results.push(fn({ target: el, preventDefault() {}, stopPropagation() {}, ...event }));
       }
+      return results.some((r) => r && typeof r.then === "function")
+        ? Promise.all(results)
+        : undefined;
     },
   };
   return el;
