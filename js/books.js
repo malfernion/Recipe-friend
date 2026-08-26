@@ -63,7 +63,15 @@
     }
 
     async refresh() {
+      const previous = this.currentBook();
       this.books = await this.sync.listBooks();
+      // A list that came back without the current book is the only proof
+      // that the book has gone. listBooks throwing says nothing either way
+      // and is left to reject, so a network blip never looks like a delete.
+      if (this.sync.bookId && !this.books.some((b) => b.id === this.sync.bookId)) {
+        await this.bookVanished(previous);
+        return;
+      }
       try {
         this.members = await this.sync.listMembers(this.sync.bookId);
       } catch (err) {
@@ -188,6 +196,45 @@
       if (deleteBtn) deleteBtn.hidden = !iOwn || this.books.length < 2;
 
       this.renderInvites(iOwn);
+    }
+
+    /**
+     * The book we were reading isn't ours any more — its owner deleted it,
+     * or they took us out of it. Move to another of our books rather than
+     * leave recipes on screen that exist nowhere and a sync that can only
+     * fail, and drop the local copy that has outlived its book.
+     */
+    async bookVanished(lost) {
+      const lostId = this.sync.bookId;
+      const name = lost ? `“${lost.name}”` : "That book";
+      let next = this.books[0];
+      if (!next) {
+        // Someone whose only book was another person's is left with none,
+        // and new recipes still need somewhere to go. It is the first book
+        // they have of their own, so it is named like one (J1.3).
+        try {
+          next = await this.sync.createBook(global.RecipeSync.ownBookName(this.sync.displayName));
+          this.books = [next];
+        } catch (err) {
+          console.warn("Recipe Friend: could not replace the book that has gone.", err);
+        }
+      }
+      if (!next) {
+        // Offline, most likely. Stop syncing a book that isn't there and
+        // leave the next refresh to finish the job.
+        this.sync.setBook(null);
+        this.app.store.useBook(null);
+        this.app.store.forgetBook(lostId);
+        this.app.render();
+        this.renderHeader();
+        this.renderDialog();
+        this.app.toast(`${name} isn't available to you any more.`);
+        return;
+      }
+      await this.switchTo(next.id);
+      this.app.store.forgetBook(lostId);
+      await this.refresh();
+      this.app.toast(`${name} isn't available to you any more — you're in “${next.name}” now.`);
     }
 
     async switchTo(bookId) {
@@ -345,7 +392,12 @@
         if (others > 0) {
           parts.push(`${others} other member${others === 1 ? "" : "s"} will lose it too.`);
         }
-        parts.push("This cannot be undone — export first if you want a copy.");
+        // Export is the way out offered here, so be straight about what
+        // it carries: photos stay behind in the book (J10.3).
+        parts.push(
+          "This cannot be undone — export first if you want a copy. " +
+            "An export carries recipes, not photos."
+        );
         if (!confirm(parts.join("\n\n"))) return;
 
         try {
@@ -382,6 +434,11 @@
             this.app.store.useBook(next.id);
             rememberSelection(this.sync.userId, next.id);
             await this.sync.syncNow();
+          } else {
+            // Nothing left to sync with, and saying so keeps the refresh
+            // below from reading a book we walked out of as one that was
+            // deleted out from under us.
+            this.sync.setBook(null);
           }
           this.app.render();
           await this.refresh();

@@ -8,54 +8,37 @@ accounts and sync.
 
 ## Features
 
-- **Add, edit, and delete recipes** — name, description, servings, prep/cook
-  times, ingredients, steps, and tags.
-- **Photos** — attach an image from your device (downscaled in the browser
-  to around 150KB) or link one by URL. Signed in, photos go to a **private**
-  Supabase Storage bucket and the recipe stores only their path, which keeps
-  the database small. Nothing in the bucket is publicly readable: the app
-  mints a short-lived signed link, and only members of the owning book can
-  do so. Signed out, or if an upload fails, the image stays on the device
-  instead — a photo is never silently lost.
-- **Search and filter** — full-text search across names, ingredients, and
-  tags; filter by tag or favorites.
-- **Structured ingredients** — each ingredient is entered as amount · unit ·
-  item (leave the amount empty for "to taste" lines), so scaling is exact
-  arithmetic rather than text parsing.
-- **Measurement preferences** — pick your units (grams/kilograms vs
-  ounces/pounds, millilitres/litres vs cups/fluid ounces) and amounts are
-  shown that way wherever you read a recipe. Recipes are stored exactly as
-  entered and converted only for display, so two people sharing a book can
-  each keep their own setting without rewriting each other's data.
-  Preferences live on your profile and follow you between devices.
-  Teaspoons and tablespoons are left alone, and unrecognised units
-  ("cloves", "pinch", "can") are never converted.
-- **Portion scaling** — a Portions stepper in the recipe view rescales
-  ingredient amounts on the fly with kitchen-friendly fractions ("1½ tbsp"
-  halves to "¾ tbsp"). Display-only; the saved recipe is untouched.
-- **"What can I cook?"** — list the ingredients you have and recipes using
-  them rise to the top, best matches first, with each card showing which of
-  your ingredients it uses.
-- **Favorites** — star the recipes you keep coming back to.
-- **Sync across devices** — recipes live with your account and sync in the
-  background; localStorage stays the working copy, so the app renders
-  instantly and keeps working offline.
-- **Shared recipe books** — every book is the same kind of thing: one you
-  own and may invite others into, or one you were invited to. Your first
-  book is named after you and can be shared as-is, renamed, or joined by
-  others via an invite link. Recipes can be moved between books, and each
-  book keeps its own local cache so switching never mixes them.
-- **Share links** — **Share** in the recipe view copies a link to the
-  clipboard: the recipe travels compressed inside the link's `#` fragment,
-  so no server ever sees it. The recipient reviews it in the normal edit
-  form before saving, and opening the same link twice updates their copy
-  rather than adding a second — if it would replace a recipe they already
-  have, the form says which one by name. Photos are deliberately left out:
-  stored photos are private to their book, and a link can't carry that.
-- **Export / import** — download your whole collection as JSON for backup, or
-  import it on another device. Imports merge by recipe id, so re-importing
-  never creates duplicates.
+- **Recipes** — name, description, servings, prep/cook times, structured
+  ingredients (amount · unit · item), steps, tags, and a photo. Device
+  photos are downscaled in the browser and kept in private storage; nothing
+  in the bucket is publicly readable.
+- **Search and filter** — across names, ingredients and tags, plus tag chips
+  and favourites.
+- **"What can I cook?"** — list what you have and matching recipes rise to
+  the top.
+- **Portion scaling and measurement preferences** — amounts rescale on the
+  fly and appear in your own units, without ever editing the stored recipe.
+- **Shared recipe books** — invite a household into a book; everyone can add
+  and edit, while each person keeps their own units. Invite links are
+  single-use, expire in 48 hours, can be revoked, and never join anyone to
+  anything without their say-so.
+- **Sync across devices, offline-first** — the browser copy is the working
+  copy, so the app is instant and keeps working without a network.
+- **Share links** — **Share** copies a link carrying one recipe in the URL
+  fragment, so no server sees it. The recipient reviews it in the edit form
+  before saving, and is told by name if it would replace a recipe they
+  already have.
+- **AI assistance** — a prompt for the chatbot of your choice, and a paste
+  box that takes its answer back.
+- **Export / import** — your recipes as JSON, merging by id so nothing
+  duplicates.
 - **Dark mode** — follows your system preference.
+
+**What the app should do, in detail, is written down in
+[`docs/journeys.md`](docs/journeys.md)** — user journeys with numbered
+acceptance criteria, including the limits that are deliberate. That document
+is the reference for what counts as correct; this README is how to run and
+deploy it.
 
 ## Running locally
 
@@ -71,7 +54,8 @@ Or just open `index.html` directly in a browser.
 
 ## Backend (Supabase) setup
 
-The app works fully signed-out and local-only. Optional sync uses Supabase
+Signing in is required: the app shows a sign-in screen until you do, and
+recipes live with your account. Sync uses Supabase
 (project coordinates in `js/config.js` — the publishable key is public by
 design; all protection is row-level security). One-time setup:
 
@@ -95,45 +79,27 @@ design; all protection is row-level security). One-time setup:
 Signed out, the app shows a sign-in screen; recipes and preferences live
 with the account, not the browser.
 
-### Recipe books
+### Recipe books and sync
 
-Your first book is created on sign-in and named after you (for example
-"Dave's recipes"). There is no separate "personal" tier — that book can be
-shared exactly like any other, so inviting someone into your existing
-collection needs no copying. From **Books** in the header you can create
-more, rename ones you own, switch between them, and invite others with a
-link. A recipe can be moved to another book from its **Move** button.
-Anyone in a book can add and edit its recipes; owners can remove members,
-and members can leave. Recipes belong to the book, so leaving one takes
-nothing away from it.
+Your first book is created on sign-in and named after you. There is no
+separate "personal" tier — that book can be shared exactly like any other.
+From **Books** in the header you can create more, rename ones you own,
+switch between them, and invite others.
 
-An invite link is a key, not an announcement: whoever opens it can join.
-So each link is good for **one** person and expires after **48 hours**, and
-the Books dialog lists the links that are still live so you can revoke one
-that went astray. Opening an invite never joins you to anything on its own
-— the app names the book and its owner, spells out that everyone in a book
-can edit and delete its recipes, and waits for you to accept.
+An invite link is a key, not an announcement: whoever opens it can join. So
+each link is good for **one** person, expires after **48 hours**, and can be
+revoked from the Books dialog. Opening an invite never joins you to anything
+on its own — the app names the book and its owner, spells out that everyone
+in a book can edit and delete its recipes, and waits for you to accept.
 
-An owner can also delete a book outright, which permanently removes its
-recipes for every member — the app says how many recipes and how many
-other people will be affected before you confirm. You cannot delete your
-last remaining book, and **Export** is the way to keep a copy first.
+Signed in, recipes sync in the background and the most recently edited
+version of a recipe wins. Deletes travel as tombstones so a recipe deleted
+on one device doesn't reappear from another's cache. A status line under the
+header shows Saving… / Syncing… / Synced.
 
-### How sync behaves
-
-Signed in, the app syncs your recipes with your book in the background:
-recipes already on the device are pushed up on first sign-in, changes from
-other devices are pulled down, and per recipe the most recently edited
-version wins. Deletes travel as tombstones so a recipe deleted on one
-device doesn't reappear from another device's cache. localStorage remains
-the working copy, so the app still renders instantly and keeps working
-offline — a failed sync retries on the next change, when the tab regains
-focus, or when the network returns. A status line under the header shows
-Saving… / Syncing… / Synced. Measurement preferences follow the person
-rather than the device: they are stored on your profile, so signing in
-elsewhere applies the same units — and because conversion happens when a
-recipe is displayed rather than when it is saved, changing your units
-never edits the book.
+Ownership, invites, leaving, deleting and moving recipes between books are
+specified in [`docs/journeys.md`](docs/journeys.md) (J7), along with the
+sync guarantees (J9).
 
 The `service_role` key is never used by the app and must never be
 committed.
@@ -168,6 +134,7 @@ The site will be published at `https://<username>.github.io/Recipe-friend/`.
 ## Project structure
 
 ```
+docs/journeys.md               What the app should do: journeys + criteria
 index.html                     App shell, sign-in gate, and dialogs
 privacy.html, terms.html       Legal pages linked from the app and Google
 assets/                        Logo and favicons
@@ -221,7 +188,14 @@ python3 .claude/skills/recipe-share-link/scripts/recipe_link.py recipe.json
 
 ## Notes on storage
 
-Signed in, your recipes live in your account and sync between devices; the
-browser copy is a cache, so clearing site data is harmless. **Export** still
-gives you your own portable JSON copy at any time, and **Import** merges a
-file back in without creating duplicates.
+Your recipes live in your account and sync between devices; the browser copy
+is a cache, so clearing site data is harmless. **Export** gives you a
+portable JSON copy at any time, and **Import** merges a file back in without
+creating duplicates.
+
+One limit worth knowing: **an export carries recipes, not photos.** A photo
+taken in the app lives in private storage and the recipe holds only a
+reference that members of its book can read, so a recipe imported into a
+different account or book arrives without its picture. Photos that live on
+the recipe itself — one linked by URL, or one attached while signed out —
+travel with the export.

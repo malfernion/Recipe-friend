@@ -631,7 +631,14 @@
     a.download = `recipe-friend-export-${stamp}.json`;
     a.click();
     URL.revokeObjectURL(url);
-    toast(`Exported ${store.recipes.length} recipe${store.recipes.length === 1 ? "" : "s"}.`);
+    // Stored photos are private to the book and travel as a path only, so
+    // an export of them is a file of broken references (J10.3). Say so
+    // when there is actually a photo to lose.
+    const stored = store.recipes.filter((r) => r.imagePath).length;
+    toast(
+      `Exported ${store.recipes.length} recipe${store.recipes.length === 1 ? "" : "s"}.` +
+        (stored ? " Photos aren't included." : "")
+    );
   }
 
   function importRecipes(file) {

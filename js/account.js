@@ -87,6 +87,13 @@
     if (state === "synced" && detail && (detail.pushed || detail.pulled)) {
       window.RecipeApp && window.RecipeApp.render();
     }
+    // Sync failing over and over can mean the book itself is gone. Asking
+    // for the book list settles it — and if that call fails too, refresh
+    // simply rejects and we are none the wiser, which is the right answer
+    // for a network that is down.
+    if (state === "error" && books) {
+      books.refresh().catch((err) => console.warn("Recipe Friend: books unavailable.", err));
+    }
   }
 
   /**

@@ -214,16 +214,28 @@
     }
 
     /**
+     * What to call a book the app makes for someone rather than one they
+     * named themselves — their first (J1.3), and any later replacement for
+     * a book that has gone.
+     */
+    static ownBookName(displayName) {
+      const who = String(displayName || "").trim().slice(0, 60);
+      return who ? `${who}'s recipes` : "Recipes";
+    }
+
+    /**
      * Resolve which book this session syncs with, preferring the one the
      * user was last using on this device.
      */
     async resolveBook(userId, preferredId, displayName) {
       this.userId = userId;
+      // Kept because a replacement book may have to be named long after
+      // sign-in, when only the sync object is to hand.
+      this.displayName = displayName || "";
       const books = await this.listBooks();
       if (books.length === 0) {
         // The signup trigger normally creates one; make our own if not.
-        const who = String(displayName || "").trim().slice(0, 60);
-        const book = await this.createBook(who ? `${who}'s recipes` : "Recipes");
+        const book = await this.createBook(RecipeSync.ownBookName(displayName));
         this.bookId = book.id;
         return this.bookId;
       }
@@ -237,13 +249,79 @@
      * Move a recipe into another book. The row keeps its id and simply
      * changes book — RLS allows it because the check runs against both the
      * old and the new book, and you must belong to both.
+     *
+     * The photo has to travel with it. Storage policies authorise on the
+     * first segment of the path, so a file left under the old book is
+     * unreadable to anyone in the new one who isn't also in the old one —
+     * the recipe would arrive with no picture and no explanation. The copy
+     * goes first and the move is abandoned if it fails: a recipe that
+     * plainly stayed put is easier to live with than one that has quietly
+     * lost its photo, and the mover can try again.
+     *
+     * A recipe written moments ago may still be waiting inside the push
+     * debounce with no row on the server yet, and the caller drops the
+     * local copy as soon as this returns. So anything pending goes up
+     * first, and every step afterwards insists the row is really there:
+     * an update that matched nothing is not an error to PostgREST, and
+     * taking that silence for success would delete the only copy.
+     *
+     * Returns the recipe's photo path after the move ("" if it has none).
      */
     async moveRecipe(recipeId, targetBookId) {
-      const { error } = await this.client
+      const fromBookId = this.bookId;
+      // One round trip is a far better answer than "couldn't move that
+      // recipe" to someone who has just typed it in and moved it. Read
+      // the local copy afterwards, since the sync may have changed it.
+      if (this.pending) await this.syncNow();
+      const local = this.store.getById(recipeId);
+      const oldPath = (local && local.imagePath) || "";
+      const newPath = oldPath ? `${targetBookId}/${recipeId}.jpg` : "";
+
+      const patch = { book_id: targetBookId, updated_at: new Date().toISOString() };
+      if (newPath) {
+        // imagePath lives inside the row's data, and the local copy is
+        // dropped the moment this returns, so the new path has to go up
+        // with the move rather than wait for the next push. Patch the
+        // server's own data, so an edit made on another device survives.
+        const { data: row, error: readErr } = await this.client
+          .from("recipes")
+          .select("data")
+          .eq("id", recipeId)
+          .maybeSingle();
+        if (readErr) throw readErr;
+        // No row means the push above never landed — fail here, before
+        // any file is touched, so the caller keeps what it still has.
+        if (!row) throw new Error("that recipe hasn't reached the server yet");
+        patch.data = { ...(row.data || local), imagePath: newPath };
+      }
+      if (oldPath) {
+        const { error: copyErr } = await this.client.storage
+          .from(PHOTO_BUCKET)
+          .copy(oldPath, newPath);
+        if (copyErr) throw copyErr;
+      }
+
+      const { data: moved, error } = await this.client
         .from("recipes")
-        .update({ book_id: targetBookId, updated_at: new Date().toISOString() })
-        .eq("id", recipeId);
+        .update(patch)
+        .eq("id", recipeId)
+        .select("id");
       if (error) throw error;
+      if (!moved || moved.length === 0) {
+        throw new Error("that recipe hasn't reached the server yet");
+      }
+
+      // Only now is the old file safe to drop: until the row moved, it was
+      // still the photo the recipe pointed at. A leftover file costs a
+      // little quota, so a failure here isn't worth failing the move over.
+      if (oldPath) {
+        try {
+          await this.deletePhoto(fromBookId, recipeId);
+        } catch (err) {
+          console.warn("Recipe Friend: the moved recipe's old photo is left behind.", err);
+        }
+      }
+      return newPath;
     }
 
     /**
