@@ -45,10 +45,12 @@ accounts and sync.
   book is named after you and can be shared as-is, renamed, or joined by
   others via an invite link. Recipes can be moved between books, and each
   book keeps its own local cache so switching never mixes them.
-- **Share links** — share a single recipe as a URL: the recipe travels
-  compressed inside the link's `#` fragment, so no server ever sees it. The
-  recipient gets a preview and a "Save to my recipe box" button, and opening
-  the same link twice never duplicates. Photos are deliberately left out:
+- **Share links** — **Share** in the recipe view copies a link to the
+  clipboard: the recipe travels compressed inside the link's `#` fragment,
+  so no server ever sees it. The recipient reviews it in the normal edit
+  form before saving, and opening the same link twice updates their copy
+  rather than adding a second — if it would replace a recipe they already
+  have, the form says which one by name. Photos are deliberately left out:
   stored photos are private to their book, and a link can't carry that.
 - **Export / import** — download your whole collection as JSON for backup, or
   import it on another device. Imports merge by recipe id, so re-importing
