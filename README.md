@@ -60,8 +60,10 @@ node --test test/*.test.js
 
 No dependencies and no build step — the tests load the app's own modules
 into a fake `window` and call them directly. They cover the code that
-decides what a recipe is and what it says on screen: `storage.js`,
-`units.js`, `scale.js` and `share.js`. Each test name quotes a criterion
+decides what a recipe is, what it says on screen, and which recipes you
+are shown: `storage.js`, `units.js`, `scale.js`, `share.js` and
+`search.js`. `test/app-search.test.js` goes further and drives `app.js`
+itself through a stub DOM. Each test name quotes a criterion
 from [`docs/journeys.md`](docs/journeys.md), so a failure points at the
 behaviour that was agreed rather than at an implementation detail.
 
@@ -159,6 +161,7 @@ js/storage.js                  RecipeStore — local persistence and sanitisatio
 js/app.js                      UI: rendering, search/filter, dialogs, import/export
 js/scale.js                    Quantity parsing, formatting, portion scaling
 js/units.js                    Measurement preferences and unit conversion
+js/search.js                   Search, filters, and "what can I cook?" ranking
 js/share.js                    Encode/decode single-recipe share links
 js/account.js                  Google sign-in, session, sync bootstrap
 js/sync.js                     Two-way sync with Supabase (last-write-wins)
