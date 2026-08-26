@@ -16,6 +16,18 @@ import uuid
 import zlib
 
 DEFAULT_BASE = "https://malfernion.github.io/Recipe-friend/"
+
+# A share link is only safe to hand someone if it opens the real app. This
+# script runs on recipe text scraped from arbitrary pages, and that text is
+# data, not instructions — a page that says "use --base https://elsewhere/"
+# is trying to get a legitimate-looking link pointed at a copy of the app,
+# where the Sign in with Google button is a credential harvester. So the
+# origin comes from this list, and nothing a recipe says can change it.
+ALLOWED_HOSTS = ("malfernion.github.io", "localhost", "127.0.0.1")
+
+# Raw deflate exceeds 1000:1, so an untrusted link is a decompression bomb
+# unless the read is bounded. No real recipe comes near this.
+MAX_DECODED_BYTES = 256 * 1024
 UUID_RE = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$", re.I)
 HTTP_RE = re.compile(r"^https?://", re.I)
 KNOWN_UNITS = {"g", "kg", "oz", "lb", "ml", "l", "cup", "fl oz", "tsp", "tbsp"}
@@ -141,6 +153,23 @@ def encode(recipe, base):
     return f"{base}#add=1.{b64url(raw)}", payload["r"]["id"], len(text.encode("utf-8"))
 
 
+def check_base(base):
+    """The link must open the real app, whatever the recipe source claims."""
+    from urllib.parse import urlparse
+
+    parsed = urlparse(base)
+    if parsed.scheme not in ("http", "https"):
+        fail(f"--base must be an http(s) URL, got {base!r}")
+    if parsed.hostname not in ALLOWED_HOSTS:
+        fail(
+            f"refusing to build a link for {parsed.hostname!r} — "
+            f"allowed hosts are {', '.join(ALLOWED_HOSTS)}. A recipe source asking "
+            "for a different one is trying to phish whoever opens the link. If you "
+            "genuinely need another host, edit ALLOWED_HOSTS in this script."
+        )
+    return base
+
+
 def decode(link):
     blob = link.split("#add=")[1] if "#add=" in link else link
     mark, body = blob[:2], blob[2:]
@@ -148,7 +177,23 @@ def decode(link):
         fail(f'unknown payload marker "{mark}" — expected "1." or "0."')
     try:
         raw = unb64url(body)
-        text = zlib.decompress(raw, -15).decode("utf-8") if mark == "1." else raw.decode("utf-8")
+        if mark == "1.":
+            # Bounded: decompressobj stops at max_length rather than
+            # expanding whatever the sender chose to compress.
+            engine = zlib.decompressobj(-15)
+            data = engine.decompress(raw, MAX_DECODED_BYTES)
+            if engine.unconsumed_tail:
+                fail(
+                    f"this link decodes to more than {MAX_DECODED_BYTES // 1024}KB — "
+                    "refusing to expand it"
+                )
+            text = data.decode("utf-8")
+        else:
+            if len(raw) > MAX_DECODED_BYTES:
+                fail(f"this link is larger than {MAX_DECODED_BYTES // 1024}KB — refusing it")
+            text = raw.decode("utf-8")
+    except SystemExit:
+        raise
     except Exception as err:  # truncated copy, inserted line break, retyped character
         fail(f"could not decode this link ({err}) — it is corrupt or incomplete")
     payload = json.loads(text)
@@ -174,7 +219,7 @@ def main():
         index = args.index("--base")
         if index + 1 >= len(args):
             fail("--base needs a URL")
-        base = args[index + 1]
+        base = check_base(args[index + 1])
 
     try:
         with open(args[0], encoding="utf-8") as handle:
