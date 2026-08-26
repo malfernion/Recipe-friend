@@ -42,6 +42,7 @@
       this.app = app;
       this.books = [];
       this.members = [];
+      this.invites = [];
       this.dialog = $("#books-dialog");
       this.wired = false;
     }
@@ -69,8 +70,61 @@
         console.warn("Recipe Friend: could not load members.", err);
         this.members = [];
       }
+      // Only owners can read the invites table, so a failure here is the
+      // normal case for a book you were invited into, not an error.
+      const current = this.currentBook();
+      if (current && current.isOwner) {
+        try {
+          this.invites = await this.sync.listInvites(current.id);
+        } catch (err) {
+          console.warn("Recipe Friend: could not load invites.", err);
+          this.invites = [];
+        }
+      } else {
+        this.invites = [];
+      }
       this.renderHeader();
       this.renderDialog();
+    }
+
+    /**
+     * Outstanding invites, so an owner can see what is live in their name
+     * and tear one up. An invite is a bearer token — anyone holding the
+     * link can walk in — so leaving one live and unaccounted for is the
+     * thing to avoid.
+     */
+    renderInvites(iOwn) {
+      const list = $("#invite-list");
+      const empty = $("#invite-empty");
+      if (!list) return;
+      if (!iOwn) {
+        list.innerHTML = "";
+        if (empty) empty.hidden = true;
+        return;
+      }
+      if (empty) empty.hidden = this.invites.length > 0;
+      list.innerHTML = this.invites
+        .map((inv) => {
+          const left = Math.max(0, inv.maxUses - inv.usedCount);
+          const spent = left === 0;
+          const when = new Date(inv.expiresAt);
+          const hours = Math.max(0, Math.round((when - Date.now()) / 3600000));
+          const life = hours >= 24
+            ? `${Math.round(hours / 24)} day${Math.round(hours / 24) === 1 ? "" : "s"} left`
+            : `${hours} hour${hours === 1 ? "" : "s"} left`;
+          const uses = spent
+            ? "used up"
+            : `${left} of ${inv.maxUses} use${inv.maxUses === 1 ? "" : "s"} left`;
+          return `
+        <li class="invite-item${spent ? " invite-spent" : ""}">
+          <code class="invite-code">…${esc(inv.code.slice(-6))}</code>
+          <span class="invite-life">${esc(uses)} · ${esc(life)}</span>
+          <button type="button" class="invite-revoke" data-revoke="${esc(inv.code)}"
+                  aria-label="Revoke invite ending ${esc(inv.code.slice(-6))}"
+                  title="Revoke this link">×</button>
+        </li>`;
+        })
+        .join("");
     }
 
     renderDialog() {
@@ -85,12 +139,12 @@
             ${esc(b.name)}
           </button>
           ${
-            b.role === "owner"
+            b.isOwner
               ? `<button type="button" class="book-rename" data-rename="${esc(b.id)}"
                    aria-label="Rename ${esc(b.name)}" title="Rename">✎</button>`
               : ""
           }
-          <span class="book-role">${b.role === "owner" ? "yours" : "shared"}</span>
+          <span class="book-role">${b.isOwner ? "yours" : "shared"}</span>
         </li>`
         )
         .join("");
@@ -99,9 +153,12 @@
       const nameEl = $("#sharing-book-name");
       if (nameEl) nameEl.textContent = current ? `· ${current.name}` : "";
 
+      // Ownership decides every control below, and it comes from
+      // books.owner rather than the membership row's role.
+      const iOwn = Boolean(current && current.isOwner);
+
       const memberList = $("#member-list");
       if (memberList) {
-        const iOwn = current && current.role === "owner";
         memberList.innerHTML = this.members
           .map(
             (m) => `
@@ -120,16 +177,17 @@
       }
 
       // Owners can't walk out on their own book — that would orphan it.
+      // Everyone else always gets a way out, however they ended up here.
       const leaveBtn = $("#leave-book-btn");
-      if (leaveBtn) leaveBtn.hidden = !current || current.role === "owner";
+      if (leaveBtn) leaveBtn.hidden = !current || current.isOwner;
       const inviteBtn = $("#invite-btn");
-      if (inviteBtn) inviteBtn.hidden = !current || current.role !== "owner";
+      if (inviteBtn) inviteBtn.hidden = !iOwn;
       // Deleting is for owners, and never for the last book standing —
       // there would be nowhere to put new recipes.
       const deleteBtn = $("#delete-book-btn");
-      if (deleteBtn) {
-        deleteBtn.hidden = !current || current.role !== "owner" || this.books.length < 2;
-      }
+      if (deleteBtn) deleteBtn.hidden = !iOwn || this.books.length < 2;
+
+      this.renderInvites(iOwn);
     }
 
     async switchTo(bookId) {
@@ -217,15 +275,36 @@
           const url = `${location.origin}${location.pathname}#join=${code}`;
           out.hidden = false;
           out.textContent = url;
+          await this.refresh();
           try {
             await navigator.clipboard.writeText(url);
-            this.app.toast("Invite link copied — it works for 7 days.");
+            this.app.toast("Invite link copied — good for one person, for 48 hours.");
           } catch {
             this.app.toast("Invite link ready — copy it from below.");
           }
         } catch (err) {
           console.warn("Recipe Friend: could not create invite.", err);
           this.app.toast("Couldn't create an invite link.");
+        }
+      });
+
+      $("#invite-list").addEventListener("click", async (event) => {
+        const btn = event.target.closest("[data-revoke]");
+        if (!btn) return;
+        if (!confirm("Revoke this invite link? Anyone still holding it won't be able to join."))
+          return;
+        try {
+          await this.sync.revokeInvite(btn.dataset.revoke);
+          const out = $("#invite-out");
+          if (out && out.textContent.endsWith(btn.dataset.revoke)) {
+            out.hidden = true;
+            out.textContent = "";
+          }
+          await this.refresh();
+          this.app.toast("Invite revoked.");
+        } catch (err) {
+          console.warn("Recipe Friend: could not revoke invite.", err);
+          this.app.toast("Couldn't revoke that link.");
         }
       });
 
@@ -244,7 +323,7 @@
 
       $("#delete-book-btn").addEventListener("click", async () => {
         const current = this.currentBook();
-        if (!current || current.role !== "owner") return;
+        if (!current || !current.isOwner) return;
         if (this.books.length < 2) {
           this.app.toast("This is your only book — create another one first.");
           return;
@@ -290,7 +369,7 @@
 
       $("#leave-book-btn").addEventListener("click", async () => {
         const current = this.currentBook();
-        if (!current || current.role === "owner") return;
+        if (!current || current.isOwner) return;
         if (!confirm(`Leave “${current.name}”? Its recipes stay with the book.`)) return;
         try {
           await this.sync.leaveBook(current.id);
@@ -367,15 +446,62 @@
           (b) => `
         <li class="book-item">
           <button type="button" class="book-pick" data-target="${esc(b.id)}">${esc(b.name)}</button>
-          <span class="book-role">${b.role === "owner" ? "yours" : "shared"}</span>
+          <span class="book-role">${b.isOwner ? "yours" : "shared"}</span>
         </li>`
         )
         .join("");
       $("#move-dialog").showModal();
     }
 
-    /** Redeem an invite code from a #join= link. */
+    /**
+     * Redeem an invite code from a #join= link — but only ever after the
+     * person holding it has said yes.
+     *
+     * Following a link is not consent. Joining a book means everything you
+     * save afterwards lands in someone else's collection, where they can
+     * read, edit and delete it, so the invite is described in full — which
+     * book, whose, and what it costs — before anything is redeemed. The
+     * preview runs server-side because the code alone grants no read
+     * access to the book yet.
+     */
     async join(code) {
+      let preview;
+      try {
+        preview = await this.sync.previewInvite(code);
+      } catch (err) {
+        console.warn("Recipe Friend: could not read that invite.", err);
+        this.app.toast("That invite link is invalid, used up, or has expired.");
+        return false;
+      }
+
+      if (preview.alreadyMember) {
+        const ok = confirm(
+          `You're already in “${preview.bookName}”.\n\n` +
+            "Switch to it now? Recipes you save will go into that book until you switch back."
+        );
+        if (!ok) return false;
+        // Redeeming again is a no-op for an existing member — the server
+        // hands back the book without spending a use — and it is the only
+        // thing that knows which book the code points at.
+        const book = await this.sync.redeemInvite(code);
+        await this.refresh();
+        await this.switchTo(book.id);
+        return true;
+      }
+
+      const ok = confirm(
+        `Join “${preview.bookName}”?\n\n` +
+          `${preview.ownerName} is sharing this recipe book with you.\n\n` +
+          "You'll be able to see everything in it, and everyone in the book — " +
+          "including you — can add, edit and delete its recipes.\n\n" +
+          "Recipe Friend will switch to this book, so new recipes you save " +
+          "will go into it until you switch back."
+      );
+      if (!ok) {
+        this.app.toast("Invite declined — nothing was joined.");
+        return false;
+      }
+
       try {
         const book = await this.sync.redeemInvite(code);
         await this.refresh();
@@ -384,7 +510,7 @@
         return true;
       } catch (err) {
         console.warn("Recipe Friend: could not join book.", err);
-        this.app.toast("That invite link is invalid or has expired.");
+        this.app.toast("That invite link is invalid, used up, or has expired.");
         return false;
       }
     }

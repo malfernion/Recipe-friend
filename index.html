@@ -221,8 +221,11 @@
       <button type="button" class="btn btn-danger" id="delete-book-btn" hidden>Delete this book</button>
     </div>
     <p id="invite-out" class="invite-out" hidden></p>
-    <p class="books-hint">Anyone with an invite link can join this book and add or edit its
-       recipes. Links expire after 7 days.</p>
+    <ul id="invite-list" class="invite-list"></ul>
+    <p id="invite-empty" class="books-hint" hidden>No invite links are live for this book.</p>
+    <p class="books-hint">An invite link lets one person join this book, and expires after 48
+       hours. Anyone who joins can add, edit and delete its recipes, so treat a link like a
+       key: send it to one person, and revoke it if it goes astray.</p>
 
     <div class="dialog-actions">
       <button type="button" class="btn btn-primary" id="books-close-btn">Done</button>
