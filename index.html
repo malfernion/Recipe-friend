@@ -263,7 +263,9 @@
     <h2>Get help from AI</h2>
     <p class="prefs-hint">Copy this into ChatGPT, Gemini, Claude or similar, then send it the
        recipe — a link, a photo of a cookbook page, or typed-out text. It replies with a block
-       of JSON. Bring that back here with <strong>Paste a recipe</strong> below.</p>
+       of JSON and a link back to the paste box; either follow that link or use
+       <strong>Paste a recipe</strong> below. You get to check and edit the recipe before it
+       is saved.</p>
     <pre id="ai-prompt" class="ai-prompt">I want to add a recipe to Recipe Friend. I'll give you the recipe next — a link, a photo, or just text.
 
 Read it and reply with only a JSON object in this exact shape, in a code block, with nothing else around it:
@@ -290,7 +292,11 @@ Rules the app is strict about — it will reject a recipe that breaks one:
 - unit is "" when there isn't one. g, kg, oz, lb, ml, l, cup, fl oz, tsp and tbsp get converted to whatever units the reader prefers; anything else (clove, pinch, can) is kept as written
 - use what the source says, and leave anything it doesn't state as null
 
-If I ask for only part of a recipe, include only that part.</pre>
+If I ask for only part of a recipe, include only that part.
+
+After the JSON, give me this link on its own line so I can click straight through to the box I paste it into:
+
+https://malfernion.github.io/Recipe-friend/#paste</pre>
     <div class="dialog-actions">
       <button type="button" class="btn btn-ghost" id="ai-help-close-btn">Close</button>
       <span class="dialog-actions-spacer"></span>
@@ -303,7 +309,8 @@ If I ask for only part of a recipe, include only that part.</pre>
   <dialog id="paste-dialog" class="recipe-dialog">
     <h2>Paste a recipe</h2>
     <p class="prefs-hint">Paste the JSON an assistant gave you — code fences and all, if it
-       used them. A share link works here too.</p>
+       used them. A share link works here too. Nothing is saved until you have looked it
+       over on the next screen.</p>
     <textarea id="paste-input" class="paste-input" rows="10" spellcheck="false"
               placeholder='{&#10;  "name": "Coleslaw",&#10;  "ingredients": [...],&#10;  "steps": [...]&#10;}'></textarea>
     <p id="paste-error" class="paste-error" hidden></p>
@@ -311,16 +318,6 @@ If I ask for only part of a recipe, include only that part.</pre>
       <button type="button" class="btn btn-ghost" id="paste-close-btn">Cancel</button>
       <span class="dialog-actions-spacer"></span>
       <button type="button" class="btn btn-primary" id="paste-save-btn">Add recipe</button>
-    </div>
-  </dialog>
-
-  <!-- Incoming shared recipe -->
-  <dialog id="share-dialog" class="recipe-dialog detail-dialog">
-    <div id="share-content"></div>
-    <div class="dialog-actions">
-      <button type="button" class="btn btn-ghost" id="share-dismiss-btn">Not now</button>
-      <span class="dialog-actions-spacer"></span>
-      <button type="button" class="btn btn-primary" id="share-save-btn">Save to my recipe box</button>
     </div>
   </dialog>
 

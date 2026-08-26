@@ -67,5 +67,9 @@ correct a recipe you already shared, pass the same `id` back in.
 
 Most can't, so they cannot produce a link at all — asked to, they invent a
 plausible one. The app handles that case itself: **Get help from AI** hands
-out a prompt asking only for JSON, and **Paste a recipe** takes that JSON
-back and saves it. Point someone there rather than at this script.
+out a prompt asking only for JSON, and the assistant returns that JSON plus
+`https://malfernion.github.io/Recipe-friend/#paste`, a deep link to the box
+it goes into. Point someone there rather than at this script.
+
+Either way — a link from this script or a paste — the recipe opens in the
+edit form first, so it can be renamed or corrected before it is saved.
