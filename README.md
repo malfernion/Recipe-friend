@@ -100,10 +100,17 @@ Your first book is created on sign-in and named after you (for example
 shared exactly like any other, so inviting someone into your existing
 collection needs no copying. From **Books** in the header you can create
 more, rename ones you own, switch between them, and invite others with a
-link that works for 7 days. A recipe can be moved to another book from its
-**Move** button. Anyone in a book can add and edit its recipes; owners can
-remove members, and members can leave. Recipes belong to the book, so
-leaving one takes nothing away from it.
+link. A recipe can be moved to another book from its **Move** button.
+Anyone in a book can add and edit its recipes; owners can remove members,
+and members can leave. Recipes belong to the book, so leaving one takes
+nothing away from it.
+
+An invite link is a key, not an announcement: whoever opens it can join.
+So each link is good for **one** person and expires after **48 hours**, and
+the Books dialog lists the links that are still live so you can revoke one
+that went astray. Opening an invite never joins you to anything on its own
+— the app names the book and its owner, spells out that everyone in a book
+can edit and delete its recipes, and waits for you to accept.
 
 An owner can also delete a book outright, which permanently removes its
 recipes for every member — the app says how many recipes and how many
@@ -174,7 +181,8 @@ js/books.js                    Recipe books, members, and invite links
 js/config.js                   Supabase project URL and publishable key
 supabase/schema.sql            Tables, RLS policies, triggers, functions
 supabase/migrations/           Additive schema changes, run in order
-                               (004 creates the private photo bucket)
+                               (004 creates the private photo bucket;
+                                005 tightens membership and invites)
 .github/workflows/deploy-pages.yml   GitHub Pages deployment
 .claude/skills/recipe-share-link/     Agent skill: recipe -> share link
 ```
