@@ -649,8 +649,13 @@
         toast("That file doesn't look like a Recipe Friend export.");
         return;
       }
-      toast(`Imported ${result.imported} recipe${result.imported === 1 ? "" : "s"}` +
-            (result.skipped ? ` (${result.skipped} skipped)` : "") + ".");
+      // Say what actually happened: an import that only updates would
+      // otherwise report "Imported 0 recipes" and look like it failed.
+      const bits = [];
+      if (result.imported) bits.push(`added ${result.imported}`);
+      if (result.updated) bits.push(`updated ${result.updated}`);
+      if (result.skipped) bits.push(`skipped ${result.skipped}`);
+      toast(bits.length ? `Import: ${bits.join(", ")}.` : "Nothing new in that file.");
       render();
     };
     reader.onerror = () => toast("Could not read that file.");

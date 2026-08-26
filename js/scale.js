@@ -39,7 +39,12 @@
   // Fractions people actually measure with — others render as decimals.
   const DISPLAY_FRACTIONS = ["½", "⅓", "⅔", "¼", "¾", "⅛", "⅜", "⅝", "⅞"];
 
-  /** Render a number as a kitchen quantity: 0.5 → "½", 1.5 → "1½", 2.67 → "2.7". */
+  /**
+   * Render a number as a kitchen quantity: 0.5 → "½", 1.5 → "1½",
+   * 2.67 → "2⅔" (within 0.03 of a fraction people measure with), and
+   * 2.7 → "2.7" when no fraction is close. Anything below 0.05 → "0";
+   * see J4.8 — at that size there is nothing useful left to say.
+   */
   function formatQuantity(value) {
     if (!Number.isFinite(value) || value <= 0) return String(value);
     const whole = Math.floor(value + 1e-9);

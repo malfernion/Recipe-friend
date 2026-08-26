@@ -107,7 +107,7 @@
     const hasLocal = Boolean(local.mass || local.volume);
     if (hasRemote) {
       if (remote.mass !== local.mass || remote.volume !== local.volume) {
-        store.setPrefs(remote); // also converts what's already stored
+        store.setPrefs(remote); // display-only: stored recipes are untouched (J8.3)
       }
     } else if (hasLocal) {
       await sync.pushPrefs(local);

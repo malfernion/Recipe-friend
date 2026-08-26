@@ -1,0 +1,32 @@
+name: Tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # No dependencies and no build step: the tests load the app's own
+      # modules and run on node's built-in runner.
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Run tests
+        run: node --test test/*.test.js
+
+      # Cheap insurance that a syntax error can never reach Pages: the
+      # deploy workflow copies the repo as-is and would publish it.
+      - name: Check every script parses
+        run: for f in js/*.js; do node --check "$f" || exit 1; done

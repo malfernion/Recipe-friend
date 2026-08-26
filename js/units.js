@@ -105,16 +105,5 @@
     return { ...ing, amount: converted.amount, unit: converted.unit };
   }
 
-  /** Convert a recipe's ingredients in place. Returns how many changed. */
-  function applyPrefs(recipe, prefs) {
-    let changed = 0;
-    recipe.ingredients = recipe.ingredients.map((ing) => {
-      const out = convertIngredient(ing, prefs);
-      if (out !== ing && (out.amount !== ing.amount || out.unit !== ing.unit)) changed++;
-      return out;
-    });
-    return changed;
-  }
-
-  global.RecipeUnits = { normalizeLabel, familyOf, convertIngredient, applyPrefs };
+  global.RecipeUnits = { normalizeLabel, familyOf, convertIngredient };
 })(window);

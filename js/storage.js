@@ -377,8 +377,13 @@
 
     /**
      * Merge recipes from an exported file into the current collection.
-     * Recipes whose id already exists are skipped so a re-import never
-     * duplicates. Returns {imported, skipped} counts, or null on bad input.
+     *
+     * Matching is by id, so re-importing never duplicates (J10.2). Where
+     * both sides hold the same id the more recently edited one wins, the
+     * same rule two devices use to reconcile (J10.3, J9.3) — an old backup
+     * cannot undo newer work, and a newer one restores it.
+     *
+     * Returns {imported, updated, skipped}, or null on bad input.
      */
     importJSON(text) {
       let parsed;
@@ -390,8 +395,9 @@
       const incoming = Array.isArray(parsed) ? parsed : parsed && parsed.recipes;
       if (!Array.isArray(incoming)) return null;
 
-      const existingIds = new Set(this.state.recipes.map((r) => r.id));
+      const byId = new Map(this.state.recipes.map((r) => [r.id, r]));
       let imported = 0;
+      let updated = 0;
       let skipped = 0;
       for (const raw of incoming) {
         const recipe = sanitizeRecipe(raw);
@@ -399,17 +405,25 @@
           skipped++;
           continue;
         }
-        if (existingIds.has(recipe.id)) {
-          skipped++;
+        const existing = byId.get(recipe.id);
+        if (existing) {
+          // Same recipe, two versions: newest edit wins. Equal timestamps
+          // keep what is already here rather than churning the collection.
+          if (recipe.updatedAt > existing.updatedAt) {
+            Object.assign(existing, recipe);
+            updated++;
+          } else {
+            skipped++;
+          }
           continue;
         }
-        existingIds.add(recipe.id);
-          this._untomb(recipe.id);
+        byId.set(recipe.id, recipe);
+        this._untomb(recipe.id);
         this.state.recipes.push(recipe);
         imported++;
       }
-      if (imported > 0) this._persist();
-      return { imported, skipped };
+      if (imported > 0 || updated > 0) this._persist();
+      return { imported, updated, skipped };
     }
 
   }
