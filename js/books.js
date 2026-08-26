@@ -152,12 +152,13 @@
       let next = this.books[0];
       if (!next) {
         // Someone whose only book was another person's is left with none,
-        // and new recipes still need somewhere to go.
+        // and new recipes still need somewhere to go. It is the first book
+        // they have of their own, so it is named like one (J1.3).
         try {
-          next = await this.sync.createBook("Recipes");
+          next = await this.sync.createBook(global.RecipeSync.ownBookName(this.sync.displayName));
           this.books = [next];
         } catch (err) {
-          console.warn("Recipe Friend: could not replace the deleted book.", err);
+          console.warn("Recipe Friend: could not replace the book that has gone.", err);
         }
       }
       if (!next) {

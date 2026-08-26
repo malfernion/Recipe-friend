@@ -155,16 +155,28 @@
     }
 
     /**
+     * What to call a book the app makes for someone rather than one they
+     * named themselves — their first (J1.3), and any later replacement for
+     * a book that has gone.
+     */
+    static ownBookName(displayName) {
+      const who = String(displayName || "").trim().slice(0, 60);
+      return who ? `${who}'s recipes` : "Recipes";
+    }
+
+    /**
      * Resolve which book this session syncs with, preferring the one the
      * user was last using on this device.
      */
     async resolveBook(userId, preferredId, displayName) {
       this.userId = userId;
+      // Kept because a replacement book may have to be named long after
+      // sign-in, when only the sync object is to hand.
+      this.displayName = displayName || "";
       const books = await this.listBooks();
       if (books.length === 0) {
         // The signup trigger normally creates one; make our own if not.
-        const who = String(displayName || "").trim().slice(0, 60);
-        const book = await this.createBook(who ? `${who}'s recipes` : "Recipes");
+        const book = await this.createBook(RecipeSync.ownBookName(displayName));
         this.bookId = book.id;
         return this.bookId;
       }
