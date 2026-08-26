@@ -169,13 +169,13 @@
         this.app.render();
         this.renderHeader();
         this.renderDialog();
-        this.app.toast(`${name} was deleted by its owner.`);
+        this.app.toast(`${name} isn't available to you any more.`);
         return;
       }
       await this.switchTo(next.id);
       this.app.store.forgetBook(lostId);
       await this.refresh();
-      this.app.toast(`${name} was deleted by its owner — you're in “${next.name}” now.`);
+      this.app.toast(`${name} isn't available to you any more — you're in “${next.name}” now.`);
     }
 
     async switchTo(bookId) {
