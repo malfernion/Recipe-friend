@@ -62,7 +62,15 @@
     }
 
     async refresh() {
+      const previous = this.currentBook();
       this.books = await this.sync.listBooks();
+      // A list that came back without the current book is the only proof
+      // that the book has gone. listBooks throwing says nothing either way
+      // and is left to reject, so a network blip never looks like a delete.
+      if (this.sync.bookId && !this.books.some((b) => b.id === this.sync.bookId)) {
+        await this.bookVanished(previous);
+        return;
+      }
       try {
         this.members = await this.sync.listMembers(this.sync.bookId);
       } catch (err) {
@@ -130,6 +138,44 @@
       if (deleteBtn) {
         deleteBtn.hidden = !current || current.role !== "owner" || this.books.length < 2;
       }
+    }
+
+    /**
+     * The book we were reading isn't ours any more — its owner deleted it,
+     * or they took us out of it. Move to another of our books rather than
+     * leave recipes on screen that exist nowhere and a sync that can only
+     * fail, and drop the local copy that has outlived its book.
+     */
+    async bookVanished(lost) {
+      const lostId = this.sync.bookId;
+      const name = lost ? `“${lost.name}”` : "That book";
+      let next = this.books[0];
+      if (!next) {
+        // Someone whose only book was another person's is left with none,
+        // and new recipes still need somewhere to go.
+        try {
+          next = await this.sync.createBook("Recipes");
+          this.books = [next];
+        } catch (err) {
+          console.warn("Recipe Friend: could not replace the deleted book.", err);
+        }
+      }
+      if (!next) {
+        // Offline, most likely. Stop syncing a book that isn't there and
+        // leave the next refresh to finish the job.
+        this.sync.setBook(null);
+        this.app.store.useBook(null);
+        this.app.store.forgetBook(lostId);
+        this.app.render();
+        this.renderHeader();
+        this.renderDialog();
+        this.app.toast(`${name} was deleted by its owner.`);
+        return;
+      }
+      await this.switchTo(next.id);
+      this.app.store.forgetBook(lostId);
+      await this.refresh();
+      this.app.toast(`${name} was deleted by its owner — you're in “${next.name}” now.`);
     }
 
     async switchTo(bookId) {
@@ -303,6 +349,11 @@
             this.app.store.useBook(next.id);
             rememberSelection(this.sync.userId, next.id);
             await this.sync.syncNow();
+          } else {
+            // Nothing left to sync with, and saying so keeps the refresh
+            // below from reading a book we walked out of as one that was
+            // deleted out from under us.
+            this.sync.setBook(null);
           }
           this.app.render();
           await this.refresh();
