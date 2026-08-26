@@ -1332,6 +1332,17 @@ body.gated .app-footer {
   color: var(--danger);
 }
 
+.review-warning {
+  font-family: var(--sans);
+  font-size: 0.85rem;
+  line-height: 1.45;
+  color: var(--ink);
+  background: var(--paper);
+  border-left: 3px solid var(--danger);
+  padding: 0.6rem 0.8rem;
+  margin: 0 0 1rem;
+}
+
 .books-hint {
   font-family: var(--serif);
   font-style: italic;
