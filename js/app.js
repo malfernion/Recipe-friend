@@ -608,6 +608,33 @@
   $("#empty-add-btn").addEventListener("click", () => openRecipeDialog(null));
   $("#cancel-dialog-btn").addEventListener("click", () => recipeDialog.close());
 
+  // --- Prompt for a chatbot that can turn a recipe into a share link ---
+  const aiHelpDialog = $("#ai-help-dialog");
+
+  $("#ai-help-btn").addEventListener("click", () => {
+    $("#more-menu").open = false;
+    aiHelpDialog.showModal();
+  });
+
+  $("#ai-help-close-btn").addEventListener("click", () => aiHelpDialog.close());
+
+  $("#ai-copy-btn").addEventListener("click", async () => {
+    const prompt = $("#ai-prompt").textContent;
+    try {
+      await navigator.clipboard.writeText(prompt);
+      toast("Prompt copied. Paste it into your AI of choice.");
+    } catch {
+      // Clipboard blocked (no permission, or an insecure context): select
+      // the text so a manual copy still works.
+      const range = document.createRange();
+      range.selectNodeContents($("#ai-prompt"));
+      const selection = window.getSelection();
+      selection.removeAllRanges();
+      selection.addRange(range);
+      toast("Select-all is ready — press Ctrl/Cmd+C to copy.");
+    }
+  });
+
   // --- Measurement preferences ---
   const prefsDialog = $("#prefs-dialog");
 
@@ -844,7 +871,7 @@
   });
 
   // Close dialogs when clicking the backdrop.
-  for (const dialog of [recipeDialog, detailDialog, shareDialog, prefsDialog]) {
+  for (const dialog of [recipeDialog, detailDialog, shareDialog, prefsDialog, aiHelpDialog]) {
     dialog.addEventListener("click", (event) => {
       if (event.target === dialog) dialog.close();
     });

@@ -181,17 +181,24 @@ supabase/migrations/           Additive schema changes, run in order
 
 ## Turning a recipe into a share link
 
-`.claude/skills/recipe-share-link/` is an agent skill that teaches an
-assistant to read a recipe from a web page, a photo of a cookbook page, or
-pasted text and hand back a share link that opens straight into the app. It
-carries the app's validation rules (what makes a recipe importable, which
-units convert, why photos can't travel) and a dependency-free encoder in
-both Node and Python, so it also works pasted into an agent that doesn't
-have this repo checked out. Build a link by hand with:
+Two ways in, both producing the same kind of link:
 
-```bash
-node .claude/skills/recipe-share-link/scripts/recipe-link.mjs recipe.json
-```
+- **Get help from AI** in the app's ··· menu gives you a prompt to paste
+  into ChatGPT, Gemini, Claude or similar. Send it a recipe — a URL, a photo
+  of a cookbook page, or typed-out text — and it hands back a link that
+  opens the app with the recipe ready to save. The prompt carries its own
+  Python encoder, so it needs nothing installed and nothing is uploaded to
+  us.
+- **`.claude/skills/recipe-share-link/`** is the same thing as an agent
+  skill for this repo, with a Node encoder that validates the recipe and
+  round-trips the link before printing it:
+
+  ```bash
+  node .claude/skills/recipe-share-link/scripts/recipe-link.mjs recipe.json
+  ```
+
+Both describe only the part an assistant can't infer: the JSON shape, the
+rules that make the app accept a recipe, and the encoding.
 
 ## Notes on storage
 
