@@ -64,4 +64,63 @@ function aRecipe(over = {}) {
   };
 }
 
-module.exports = { loadApp, makeStorage, aRecipe };
+/**
+ * Load js/app.js on top of a stub DOM and hand back the handles a test
+ * needs to drive it. app.js reaches for RecipeStore and friends as bare
+ * globals — that is what a browser gives it — so they go on globalThis.
+ */
+function loadUI() {
+  const { makeWindow } = require("./dom.js");
+  const win = makeWindow();
+  const base = loadApp("units.js", "scale.js", "storage.js", "share.js");
+
+  for (const key of ["RecipeUnits", "RecipeScale", "RecipeStore", "RecipeShare"]) {
+    win[key] = base[key];
+    globalThis[key] = base[key];
+  }
+  win.localStorage = base.localStorage;
+  win.crypto = base.crypto;
+
+  const restore = swapGlobals({
+    document: win.document,
+    window: win,
+    CSS: win.CSS,
+    location: win.location,
+    history: win.history,
+    sessionStorage: win.sessionStorage,
+    navigator: win.navigator,
+    confirm: win.confirm,
+    alert: win.alert,
+    setTimeout: win.setTimeout,
+    clearTimeout: win.clearTimeout,
+  });
+
+  // search.js is optional so this helper works either side of the
+  // extraction — the characterisation tests must not have to change.
+  const withSearch = fs.existsSync(path.join(SRC, "search.js"))
+    ? ["search.js", "app.js"]
+    : ["app.js"];
+  for (const name of withSearch) {
+    const src = fs.readFileSync(path.join(SRC, name), "utf8");
+    new Function("window", src)(win);
+    if (name === "search.js") globalThis.RecipeSearch = win.RecipeSearch;
+  }
+
+  return { win, el: win.document.el, app: win.RecipeApp, store: win.RecipeApp.store, restore };
+}
+
+function swapGlobals(values) {
+  const saved = new Map();
+  for (const [k, v] of Object.entries(values)) {
+    saved.set(k, Object.getOwnPropertyDescriptor(globalThis, k));
+    Object.defineProperty(globalThis, k, { value: v, configurable: true, writable: true });
+  }
+  return () => {
+    for (const [k, desc] of saved) {
+      if (desc) Object.defineProperty(globalThis, k, desc);
+      else delete globalThis[k];
+    }
+  };
+}
+
+module.exports = { loadApp, loadUI, makeStorage, aRecipe };
