@@ -69,9 +69,14 @@ function aRecipe(over = {}) {
  * needs to drive it. app.js reaches for RecipeStore and friends as bare
  * globals — that is what a browser gives it — so they go on globalThis.
  */
-function loadUI() {
+function loadUI(options = {}) {
   const { makeWindow } = require("./dom.js");
   const win = makeWindow();
+  // A link or a deep link is in the address bar before the app loads, and
+  // the sign-in gate is up or down before it loads too. Both have to be
+  // set here rather than after, because app.js reads them on the way in.
+  if (options.hash) win.location.hash = options.hash;
+  if (options.gated) win.document.body.classList.add("gated");
   const base = loadApp("units.js", "scale.js", "storage.js", "share.js");
 
   for (const key of ["RecipeUnits", "RecipeScale", "RecipeStore", "RecipeShare"]) {

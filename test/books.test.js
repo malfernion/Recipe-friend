@@ -132,6 +132,10 @@ function fakeCloud() {
 
   function run(q) {
     calls.push({ table: q.table, op: q.op, filters: q.filters.map((f) => f.join(":")), payload: q.payload });
+    // A dropped book that keeps being re-checked, or a replacement that never
+    // appears in the book list, would loop for ever. Fail the test instead of
+    // hanging the suite.
+    if (calls.length > 400) throw new Error("runaway client: the app never stopped asking");
     const failure = failures.get(`${q.table}.${q.op}`);
     if (failure) return { data: null, error: failure };
     const rows = db[q.table] || (db[q.table] = []);
@@ -452,6 +456,13 @@ test("J7.2 · books are switched from the header", async () => {
 
   await h.el("books-btn").fire("click");
   assert.equal(h.el("books-dialog").open, true, "the dialog opens on the button");
+  assert.deepEqual(
+    bookNames(h.el("book-list").innerHTML),
+    ["Dave&#39;s recipes", "Household"],
+    "every book you are in is there to switch to, yours and other people's"
+  );
+  assert.match(h.el("book-list").innerHTML, /book-role">shared/, "and says which is which");
+  assert.match(h.el("book-list").innerHTML, /book-role">yours/);
 
   await h.el("book-list").fire("click", { target: control({ book: SHARED }) });
   await flush();
@@ -545,6 +556,18 @@ test("J7.4 · the invite the app hands out says how long it is good for", async 
   assert.equal(h.el("invite-out").textContent, `https://test.local/#join=${code}`);
   assert.deepEqual(h.clipboard, [`https://test.local/#join=${code}`], "and is on the clipboard");
   assert.match(h.lastToast(), /48 hours/);
+});
+
+test("J7.4 · the code in the link survives being a link", async () => {
+  const h = harness();
+  // Bytes whose base64 is "+/++" repeated — the two characters that would
+  // not come back out of a URL fragment the same way they went in.
+  h.win.crypto = { getRandomValues: (bytes) => { for (let i = 0; i < bytes.length; i += 3) bytes.set([0xfb, 0xff, 0xbe], i); } };
+
+  const code = await h.sync.createInvite(MINE);
+
+  assert.equal(code, "-_---_---_---_--", "url-safe, and no padding to be stripped in transit");
+  assert.equal(h.db.invites[0].code, code, "the server is told the same code the link carries");
 });
 
 test("J7.4 · a browser with no secure randomness is refused an invite rather than given a guessable one", async () => {
@@ -862,6 +885,7 @@ test("J7.8 · deleting a book states how many recipes and how many other people 
   h.cloud.join(MINE, THEM, "editor");
   h.cloud.join(MINE, "u-third", "editor");
   seedRecipes(h, MINE, 3);
+  seedRecipes(h, SHARED, 4); // another book's recipes are none of this count's business
   await h.books.refresh();
   h.setConfirm(false);
 
@@ -955,9 +979,10 @@ test("J7.8 · a delete that was not confirmed destroys nothing", async () => {
   assert.equal(h.sync.bookId, MINE);
 });
 
-test("J7.8 · the recipe count is of live recipes, not ones already deleted", async () => {
+test("J7.8 · the recipe count is of this book's live recipes, not ones already deleted", async () => {
   const h = harness();
   seedRecipes(h, MINE, 2);
+  seedRecipes(h, SHARED, 5);
   h.db.recipes.push({
     id: "tombstoned", book_id: MINE, data: aRecipe(),
     updated_at: new Date().toISOString(), deleted_at: new Date().toISOString(),
@@ -1188,7 +1213,7 @@ test("J7.11 · a move the server rejects outright keeps the recipe too", async (
   assert.equal(h.lastToast(), "Couldn't move that recipe.");
 });
 
-test("J7.11 · a recipe already moved by someone else is not dropped twice", async () => {
+test("J7.11 · a move the server cannot match is refused rather than assumed", async () => {
   const h = harness();
   await h.books.refresh();
   const recipe = h.typed({ name: "Gone from the server" });
@@ -1259,7 +1284,7 @@ test("J7.12 · a removal that was not confirmed removes nobody", async () => {
   assert.equal(h.cloud.tableCalls("book_members", "delete").length, 0);
 });
 
-test("J7.12 · a member cannot remove anyone, including the owner", async () => {
+test("J7.12 · removing someone is the owner's to do: a member is offered no such control", async () => {
   const h = harness({ book: SHARED });
   await h.books.refresh();
   assert.match(h.el("member-list").innerHTML, /Sam/, "the members are still listed");
@@ -1277,7 +1302,7 @@ function loseBook(h, bookId) {
   );
 }
 
-test("J7.13 · a book that stops being available moves you to another of your books", async () => {
+test("J7.13 · a book that stops being available moves you to another of your books", { timeout: 5000 }, async () => {
   const h = harness();
   h.typed({ name: "Cached from the book that went" });
   const cacheKey = `recipe-friend:v1:book:${MINE}`;
@@ -1293,7 +1318,7 @@ test("J7.13 · a book that stops being available moves you to another of your bo
   assert.deepEqual(h.store.recipes, [], "its recipes are not left on screen");
 });
 
-test("J7.13 · it happens without being asked: the check runs on an ordinary refresh", async () => {
+test("J7.13 · it happens without being asked: the check runs on an ordinary refresh", { timeout: 5000 }, async () => {
   const h = harness();
   await h.books.refresh();
   loseBook(h, MINE);
@@ -1306,7 +1331,7 @@ test("J7.13 · it happens without being asked: the check runs on an ordinary ref
   assert.match(h.lastToast(), /isn't available to you any more/);
 });
 
-test("J7.13 · a book list that could not be fetched is never mistaken for a book that has gone", async () => {
+test("J7.13 · a book list that could not be fetched is never mistaken for a book that has gone", { timeout: 5000 }, async () => {
   const h = harness();
   h.typed({ name: "Still mine" });
   const cacheKey = `recipe-friend:v1:book:${MINE}`;
@@ -1320,7 +1345,7 @@ test("J7.13 · a book list that could not be fetched is never mistaken for a boo
   assert.deepEqual(h.toasts, [], "and says nothing about availability");
 });
 
-test("J7.14 · the message says only that the book is no longer available to you", async () => {
+test("J7.14 · the message says only that the book is no longer available to you", { timeout: 5000 }, async () => {
   const h = harness();
   await h.books.refresh();
   loseBook(h, MINE);
@@ -1335,7 +1360,7 @@ test("J7.14 · the message says only that the book is no longer available to you
   assert.doesNotMatch(said, /owner|kicked|blocked|revoked|no longer a member/i);
 });
 
-test("J7.14 · and says no more than that when there is nowhere to move you to", async () => {
+test("J7.14 · and says no more than that when there is nowhere to move you to", { timeout: 5000 }, async () => {
   const h = harness();
   h.db.book_members = h.db.book_members.filter((m) => m.book_id === MINE);
   await h.books.refresh();
@@ -1349,7 +1374,7 @@ test("J7.14 · and says no more than that when there is nowhere to move you to",
   assert.doesNotMatch(said, /delet|remov|owner|kicked/i);
 });
 
-test("J7.15 · if the book that went was your only one, a replacement named after you is created", async () => {
+test("J7.15 · if the book that went was your only one, a replacement named after you is created", { timeout: 5000 }, async () => {
   const h = harness();
   h.db.book_members = h.db.book_members.filter((m) => m.book_id === MINE);
   h.typed({ name: "Cached from the book that went" });
@@ -1371,7 +1396,7 @@ test("J7.15 · if the book that went was your only one, a replacement named afte
   assert.equal(h.lastToast(), "“Dave's recipes” isn't available to you any more — you're in “Dave's recipes” now.");
 });
 
-test("J7.15 · the replacement is named the way the app names any book it makes for you", async () => {
+test("J7.15 · the replacement is named the way the app names any book it makes for you", { timeout: 5000 }, async () => {
   const h = harness({ displayName: "" });
   h.db.book_members = h.db.book_members.filter((m) => m.book_id === MINE);
   await h.books.refresh();
@@ -1384,7 +1409,7 @@ test("J7.15 · the replacement is named the way the app names any book it makes 
   assert.equal(made.name, "Recipes");
 });
 
-test("J7.13 · with no replacement possible, nothing is left pointing at the book that has gone", async () => {
+test("J7.13 · with no replacement possible, nothing is left pointing at the book that has gone", { timeout: 5000 }, async () => {
   const h = harness();
   h.db.book_members = h.db.book_members.filter((m) => m.book_id === MINE);
   h.typed({ name: "Cached from the book that went" });
@@ -1434,10 +1459,10 @@ function signedInApp() {
   const src = fs.readFileSync(path.join(__dirname, "..", "js", "account.js"), "utf8");
   new Function("window", src)(win);
 
-  return { ...h, session, auth: () => onAuth, doc };
+  return { ...h, session, signIn: () => onAuth && onAuth("SIGNED_IN", session) };
 }
 
-test("J7.13 · a sync that starts failing is one of the moments it is checked", async () => {
+test("J7.13 · a sync that starts failing is one of the moments it is checked", { timeout: 5000 }, async () => {
   const h = signedInApp();
   await flush();
   const sync = h.win.RecipeCloud.sync;

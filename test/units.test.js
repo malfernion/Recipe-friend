@@ -100,3 +100,27 @@ test("a lookup key from Object's prototype is not a unit", () => {
     assert.equal(familyOf(key), "other", `${key} should not resolve to a unit`);
   }
 });
+
+test("J4.4 · amounts are shown in the reader's units, not the ones stored", () => {
+  // The recipe is written in grams. Two readers, two answers, one recipe.
+  const written = Object.freeze({ amount: 500, unit: "g", item: "flour" });
+  assert.equal(convertIngredient(written, IMPERIAL).unit, "lb", "500g is over a pound");
+  assert.equal(convertIngredient(written, METRIC).unit, "g");
+  assert.equal(written.unit, "g", "and the recipe still says what it always said");
+});
+
+test("J4.5 · two people sharing a book neither see the same units nor rewrite each other's", () => {
+  const shared = [
+    { amount: 500, unit: "g", item: "flour" },
+    { amount: 250, unit: "ml", item: "milk" },
+  ];
+  const snapshot = JSON.stringify(shared);
+
+  const dave = shared.map((i) => convertIngredient(i, IMPERIAL));
+  const sam = shared.map((i) => convertIngredient(i, METRIC));
+
+  assert.deepEqual(dave.map((i) => i.unit), ["lb", "cup"]);
+  assert.deepEqual(sam.map((i) => i.unit), ["g", "ml"]);
+  assert.equal(JSON.stringify(shared), snapshot,
+    "reading a recipe is not a write — the book is untouched by either of them");
+});

@@ -113,3 +113,13 @@ test("an uncompressed link still decodes, for browsers without CompressionStream
   const back = await decodeRecipeShare("0." + b64url(plain));
   assert.equal(back.name, "Soup");
 });
+
+test("J6.6 · there is no multi-recipe share link", async () => {
+  // Deliberate: one link, one recipe. Nothing in the module takes a list,
+  // and a list handed to it does not come back as one.
+  assert.deepEqual(Object.keys(win.RecipeShare).sort(), ["decodeRecipeShare", "encodeRecipeShare"]);
+
+  const two = [sanitize(aRecipe({ name: "One" })), sanitize(aRecipe({ name: "Two" }))];
+  const back = await decodeRecipeShare(await encodeRecipeShare(two));
+  assert.equal(sanitize(back), null, "an array is not a recipe and does not survive the trip");
+});

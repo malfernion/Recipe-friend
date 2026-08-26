@@ -256,7 +256,7 @@ accident:
 - Signed-out local use is not a supported journey (J1.6).
 - Search does not span books (J3.5).
 - Favourites are shared within a book, not personal (J3.6).
-- Owners cannot leave their own books (J7.6).
+- Owners cannot leave their own books (J7.7).
 - Invite links are single-use and short-lived, and joining needs consent
   (J7.4, J7.5). This replaced an earlier decision to leave them reusable for
   seven days.
@@ -273,6 +273,23 @@ accident:
 recipe is, what it says on screen, and what survives a round trip. Those
 are the failures that would be silent — a recipe quietly losing its tags is
 worse than a page that will not load.
+
+Four more things the tests do not reach, recorded so the gap is visible:
+
+- **The 48-hour lifetime and single use of an invite** are the database's,
+  not the app's (J7.4). The client asks only for links that have not
+  expired, mints them for one person, and says so on screen; nothing
+  client-side stops an expired one.
+- **The profile and first book a new account gets** are made by a database
+  trigger (J1.3). Only the client's fallback — naming a book after someone
+  when their account arrives with none — is held by a test.
+- **The resampling and JPEG encoding behind a device photo** are the
+  browser's canvas, not ours (J2.7). The tests check the size and quality
+  the app asks for; that the result is a smaller, readable JPEG is taken on
+  trust.
+- **Deployment and the keepalive ping** (J11) are a static host and two
+  workflow files. There is no code to exercise, and J5.10 records a reason
+  for a decision rather than a behaviour.
 
 **The database is deliberately outside the net.** The row-level security
 policies, `redeem_invite`, `preview_invite` and the Storage rules are the

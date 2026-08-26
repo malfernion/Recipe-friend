@@ -228,3 +228,25 @@ test("J9.7 · each book caches separately, so switching never mixes them", () =>
   h.store.useBook(BOOK);
   assert.deepEqual(h.store.recipes.map((r) => r.name), ["In first book"]);
 });
+
+test("J9.1 · the browser's copy is the working copy, so the app works with no network at all", () => {
+  const h = harness();
+  h.store.add(aRecipe({ name: "Written offline" }));
+  // No sync has ever run and no client has ever answered.
+  assert.equal(h.calls.selected, 0);
+  assert.deepEqual(h.store.recipes.map((r) => r.name), ["Written offline"]);
+  assert.equal(h.store.getById(h.store.recipes[0].id).name, "Written offline");
+});
+
+test("J9.2 · rapid edits are coalesced into one round trip, not one each", async () => {
+  const h = harness();
+  h.setRemote([]);
+  for (let i = 0; i < 5; i++) h.sync.schedulePush();
+
+  assert.equal(h.sync.pending, true, "there is work waiting");
+  assert.equal(h.calls.selected, 0, "and none of it has gone out yet");
+
+  // One timer, however many edits: firing it once drains them all.
+  await h.sync.syncNow();
+  assert.equal(h.calls.selected, 1, "five edits, one round trip");
+});

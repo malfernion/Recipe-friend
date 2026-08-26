@@ -164,3 +164,35 @@ test("clearing the search brings everything back", () => {
   app.search("");
   assert.equal(app.titles().length, 2);
 });
+
+test("J3.5 · search covers the current book only", () => {
+  const app = appWith([]);
+  // Start in a book, so this is a genuine switch rather than the one-off
+  // path that adopts a pre-account box into your first book.
+  app.store.useBook("11111111-1111-4111-8111-111111111111");
+  app.store.add(ROAST);
+
+  // A second book keeps its own cache, so switching changes what exists to
+  // be searched at all. Deliberate: a cross-book hit would be ambiguous
+  // about where the recipe lives.
+  app.store.useBook("22222222-2222-4222-8222-222222222222");
+  app.store.add(SOUP);
+  app.app.render();
+
+  app.search("roast");
+  assert.deepEqual(app.titles(), [], "the other book's recipes are not reachable from here");
+  app.search("tomato");
+  assert.deepEqual(app.titles(), ["Tomato Soup"]);
+});
+
+test("J3.6 · a favourite belongs to the recipe, so a book shares it", () => {
+  const app = appWith([SOUP]);
+  const soup = app.store.recipes[0];
+  app.store.toggleFavorite(soup.id);
+
+  // It rides on the recipe itself, which is what syncs to everyone in the
+  // book — there is no per-person list anywhere to diverge from it.
+  assert.equal(app.store.getById(soup.id).favorite, true);
+  assert.match(app.store.exportJSON(), /"favorite": true/,
+    "and it travels with the recipe rather than with the device");
+});

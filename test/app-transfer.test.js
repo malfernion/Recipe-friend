@@ -49,21 +49,32 @@ globalThis.FileReader = class {
   }
 };
 
-/** Let pending promises — and the decompression a link needs — finish. */
-async function settle(turns = 12) {
+/**
+ * Give the app a chance to do something it should NOT do.
+ *
+ * Only for asserting a negative — that nothing was reviewed, that nothing
+ * was saved. A fixed number of turns is honest here because there is no
+ * condition to wait for; the point is to let any pending work run first.
+ */
+async function settle(turns = 50) {
   for (let i = 0; i < turns; i++) await new Promise((r) => setImmediate(r));
 }
 
 /**
- * Wait for the app to do something, rather than for a number of turns:
- * decoding a link goes through zlib, which takes as long as it takes.
+ * Wait for the app to actually do something, and fail loudly if it never
+ * does. Decoding a link goes through zlib, which takes as long as it takes
+ * — a fixed number of turns is a race, and this suite lost it about one run
+ * in three under load. Worse, a budget that quietly ran out left the test
+ * asserting against a half-finished app, so the failure pointed at the
+ * assertion rather than at the wait.
  */
-async function until(condition, turns = 500) {
-  for (let i = 0; i < turns; i++) {
+async function until(condition, what = "the app to respond", ms = 10000) {
+  const deadline = Date.now() + ms;
+  while (Date.now() < deadline) {
     if (condition()) return true;
     await new Promise((r) => setImmediate(r));
   }
-  return false;
+  throw new Error(`timed out after ${ms}ms waiting for ${what}`);
 }
 
 /**
@@ -173,14 +184,18 @@ function openApp({ hash = "", gated = false, seed = null } = {}) {
         () =>
           ui.el("recipe-dialog").open ||
           ui.el("toast").textContent !== "" ||
-          sessionWrites.length > 0
+          sessionWrites.length > 0,
+        "the incoming link to be reviewed, refused, or held for sign-in"
       ),
     /** A link opened in a tab that is already loaded. */
     arrive: async (h) => {
       ui.el("toast").textContent = "";
       ui.win.location.hash = h;
       ui.win.fireWindow("hashchange");
-      await until(() => ui.el("recipe-dialog").open || ui.el("toast").textContent !== "");
+      await until(
+        () => ui.el("recipe-dialog").open || ui.el("toast").textContent !== "",
+        "the link arriving in an open tab to be reviewed or refused"
+      );
     },
   };
 }
@@ -217,8 +232,9 @@ async function exportBook(ui) {
 
 /** Choose a file in the Import picker, and read back what the app said. */
 async function importFile(ui, file) {
+  ui.el("toast").textContent = "";
   ui.el("import-file").fire("change", { target: { files: [file], value: "chosen.json" } });
-  await settle();
+  await until(() => ui.el("toast").textContent !== "", "the import to report what it did");
   return ui.el("toast").textContent;
 }
 
