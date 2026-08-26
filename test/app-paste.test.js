@@ -129,3 +129,40 @@ test("a pasted recipe keeps a valid id it was given, so a re-paste updates", asy
   assert.equal(out.reviewing, true);
   assert.equal(out.nameField, "Coleslaw");
 });
+
+test("J5.6 · Get help from AI hands out a prompt that asks for JSON and links back", () => {
+  const ui = loadUI();
+  ui.el("ai-help-btn").fire("click");
+
+  const prompt = ui.el("ai-prompt").textContent || readPromptFromMarkup();
+  assert.match(prompt, /JSON/i, "the assistant is asked for JSON");
+  assert.match(prompt, /#paste/, "and told where to send the person back to");
+});
+
+/** The prompt is static markup, so read it from index.html. */
+function readPromptFromMarkup() {
+  const html = require("node:fs").readFileSync(
+    require("node:path").join(__dirname, "..", "index.html"), "utf8");
+  const m = /<pre id="ai-prompt"[^>]*>([\s\S]*?)<\/pre>/.exec(html);
+  return m ? m[1] : "";
+}
+
+test("J5.9 · #paste opens the paste box directly", async () => {
+  const ui = loadUI({ hash: "#paste" });
+  await new Promise((r) => setImmediate(r));
+  assert.equal(ui.el("paste-dialog").open, true, "the box is open on arrival");
+});
+
+test("J5.9 · #paste survives the sign-in round trip", async () => {
+  // Gated, the fragment is deliberately left alone so it still opens once
+  // the round trip finishes — the same promise J5.5 makes for a link.
+  const gated = loadUI({ hash: "#paste", gated: true });
+  await new Promise((r) => setImmediate(r));
+  assert.equal(gated.el("paste-dialog").open, false, "nothing to paste into yet");
+  assert.equal(gated.win.location.hash, "#paste", "and the fragment is not thrown away");
+
+  gated.win.document.body.classList.remove("gated");
+  gated.app.showPendingShare();
+  await new Promise((r) => setImmediate(r));
+  assert.equal(gated.el("paste-dialog").open, true, "it opens once someone is signed in");
+});

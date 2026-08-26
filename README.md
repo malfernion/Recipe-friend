@@ -59,11 +59,15 @@ node --test test/*.test.js
 ```
 
 No dependencies and no build step — the tests load the app's own modules
-into a fake `window` and call them directly. They cover the code that
-decides what a recipe is, what it says on screen, and which recipes you
-are shown: `storage.js`, `units.js`, `scale.js`, `share.js` and
-`search.js`. `test/app-search.test.js` goes further and drives `app.js`
-itself through a stub DOM. Each test name quotes a criterion
+into a fake `window` and call them directly, and the `app-*` files go
+further and drive `app.js`, `books.js` and `account.js` through a stub DOM:
+type in the search box, pick a photo, click Export, open an invite link.
+
+Every test name quotes a criterion from [`docs/journeys.md`](docs/journeys.md),
+so a failure points at behaviour that was agreed rather than at an
+implementation detail. **76 of the 81 criteria have a test naming them**;
+the five that do not are listed at the end of the journeys, along with the
+database, which is deliberately outside the net. Each test name quotes a criterion
 from [`docs/journeys.md`](docs/journeys.md), so a failure points at the
 behaviour that was agreed rather than at an implementation detail.
 
