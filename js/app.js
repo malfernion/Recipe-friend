@@ -13,6 +13,7 @@
   let favoritesOnly = false;
   let activeTag = null;
   let editingId = null; // recipe id being edited, or null when adding
+  let incomingId = null; // id of a shared/pasted recipe being reviewed before saving
   let detailId = null; // recipe id shown in the detail dialog
   let pendingImage = ""; // data URI chosen via the file picker, pre-save
   let existingPhotoPath = ""; // photo already in Storage for the recipe being edited
@@ -243,10 +244,26 @@
   });
 
   // --- Add / edit dialog ---
-  function openRecipeDialog(recipe) {
-    editingId = recipe ? recipe.id : null;
-    dialogTitle.textContent = recipe ? "Edit recipe" : "New recipe";
-    $("#save-recipe-btn").textContent = recipe ? "Save changes" : "Save recipe";
+  /**
+   * The add/edit form. `review` means the recipe arrived from a share link
+   * or a paste: it is not in the box yet, so the form is pre-filled but
+   * saving adds rather than updates, keeping the incoming id so opening the
+   * same link twice never duplicates.
+   */
+  function openRecipeDialog(recipe, review) {
+    editingId = recipe && !review ? recipe.id : null;
+    incomingId = review && recipe ? recipe.id : null;
+    dialogTitle.textContent = review ? "Review recipe" : recipe ? "Edit recipe" : "New recipe";
+    // Re-opening a link you already saved shows the sender's version again,
+    // so say that saving replaces your copy rather than adding a second.
+    const alreadyHere = Boolean(review && recipe && store.getById(recipe.id));
+    $("#save-recipe-btn").textContent = review
+      ? alreadyHere
+        ? "Update my copy"
+        : "Add to my recipes"
+      : recipe
+        ? "Save changes"
+        : "Save recipe";
     recipeForm.reset();
     if (recipe) {
       const f = recipeForm.elements;
@@ -414,7 +431,19 @@
       toast("A recipe needs at least one ingredient and one step.");
       return;
     }
-    const saved = editingId ? store.update(editingId, input) : store.add(input);
+    let saved;
+    if (editingId) {
+      saved = store.update(editingId, input);
+    } else if (incomingId) {
+      // Already here (the same link opened twice): the review wins, so the
+      // recipe is updated rather than the edits being thrown away.
+      const result = store.getById(incomingId)
+        ? { recipe: store.update(incomingId, input) }
+        : store.addShared({ ...input, id: incomingId });
+      saved = result && result.recipe;
+    } else {
+      saved = store.add(input);
+    }
     if (!saved) {
       toast("Could not save that recipe — check the name, ingredients, and steps.");
       return;
@@ -437,6 +466,7 @@
       toast(editingId ? "Recipe updated." : `Added “${saved.name}”.`);
     }
     editingId = null;
+    incomingId = null;
     render();
   });
 
@@ -702,8 +732,8 @@
       }
     }
 
-    const result = store.addShared(raw);
-    if (!result) {
+    const preview = RecipeStore.sanitizeRecipe(raw);
+    if (!preview) {
       pasteFailed(
         "A recipe needs a name, at least one ingredient and at least one step, " +
           "and each amount must be a number or null."
@@ -711,8 +741,7 @@
       return;
     }
     pasteDialog.close();
-    toast(result.existed ? "Already in your recipe box." : `Saved \u201c${result.recipe.name}\u201d.`);
-    render();
+    reviewIncoming(preview);
   });
 
   // --- Measurement preferences ---
@@ -815,29 +844,21 @@
   });
 
   // --- Share links ---
-  const shareDialog = $("#share-dialog");
   let incomingShare = null; // raw payload awaiting the user's decision
-
-  $("#detail-share-btn").addEventListener("click", async () => {
-    const recipe = store.getById(detailId);
-    if (!recipe) return;
-    const encoded = await RecipeShare.encodeRecipeShare(recipe);
-    const url = `${location.origin}${location.pathname}#add=${encoded}`;
-    const note =
-      recipe.imagePath || recipe.image.startsWith("data:")
-        ? " The photo stays behind — shared links carry the recipe only."
-        : "";
-    try {
-      await navigator.clipboard.writeText(url);
-      toast(`Share link copied.${note}`);
-    } catch {
-      window.prompt("Copy this share link:", url);
-    }
-  });
 
   const PENDING_SHARE_KEY = "recipe-friend:pending-share";
 
   async function handleIncomingShare() {
+    // A bare #paste is a deep link to the paste box — what an assistant
+    // hands out alongside the JSON it wrote.
+    if (location.hash === "#paste") {
+      // Signed out there is nothing to paste into yet; leave the fragment
+      // alone so it still opens once the sign-in round trip finishes.
+      if (document.body.classList.contains("gated")) return;
+      history.replaceState(null, "", location.pathname + location.search);
+      openPasteDialog();
+      return;
+    }
     const match = location.hash.match(/^#add=(.+)$/);
     if (!match) return;
     // Clear the fragment so reloads and copied URLs don't re-trigger.
@@ -859,16 +880,24 @@
       }
       return;
     }
-    openShareDialog(preview);
+    reviewIncoming(preview);
   }
 
-  function openShareDialog(preview) {
-    $("#share-content").innerHTML = recipeDetailHTML(preview, "A recipe shared with you");
-    if (!shareDialog.open) shareDialog.showModal();
+  /**
+   * A shared or pasted recipe lands in the normal form first, so it can be
+   * renamed or tweaked before it joins the box.
+   */
+  function reviewIncoming(preview) {
+    clearPendingShare();
+    openRecipeDialog(preview, true);
   }
 
   /** Called once signed in, for a link that arrived before sign-in. */
   function showPendingShare() {
+    if (location.hash === "#paste") {
+      handleIncomingShare();
+      return;
+    }
     if (!incomingShare) {
       try {
         const held = sessionStorage.getItem(PENDING_SHARE_KEY);
@@ -879,7 +908,7 @@
     }
     if (!incomingShare) return;
     const preview = RecipeStore.sanitizeRecipe(incomingShare);
-    if (preview) openShareDialog(preview);
+    if (preview) reviewIncoming(preview);
   }
 
   function clearPendingShare() {
@@ -890,23 +919,6 @@
       /* nothing to clear */
     }
   }
-
-  $("#share-save-btn").addEventListener("click", () => {
-    const result = incomingShare && store.addShared(incomingShare);
-    clearPendingShare();
-    shareDialog.close();
-    if (!result) {
-      toast("That share link couldn't be read.");
-      return;
-    }
-    toast(result.existed ? "Already in your recipe box." : `Saved “${result.recipe.name}”.`);
-    render();
-  });
-
-  $("#share-dismiss-btn").addEventListener("click", () => {
-    clearPendingShare();
-    shareDialog.close();
-  });
 
   // Moving lives with books, so hand off to that layer. The button only
   // appears once there is somewhere else to move to.
@@ -951,7 +963,7 @@
   });
 
   // Close dialogs when clicking the backdrop.
-  for (const dialog of [recipeDialog, detailDialog, shareDialog, prefsDialog, aiHelpDialog, pasteDialog]) {
+  for (const dialog of [recipeDialog, detailDialog, prefsDialog, aiHelpDialog, pasteDialog]) {
     dialog.addEventListener("click", (event) => {
       if (event.target === dialog) dialog.close();
     });

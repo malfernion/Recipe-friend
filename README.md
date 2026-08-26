@@ -184,9 +184,16 @@ supabase/migrations/           Additive schema changes, run in order
 **Get help from AI** in the ··· menu hands you a prompt to paste into
 ChatGPT, Gemini, Claude or similar. Send that assistant a recipe — a URL, a
 photo of a cookbook page, or typed-out text — and it replies with a block of
-JSON. **Paste a recipe**, in the same menu or straight from the AI dialog,
-takes that reply and saves it: code fences, surrounding chatter and all. A
-share link can be pasted there too.
+JSON and a link back to `#paste`, which opens the box that JSON goes into.
+**Paste a recipe**, in the same menu or straight from the AI dialog, does
+the same job by hand and takes code fences and surrounding chatter in its
+stride. A share link can be pasted there too.
+
+Nothing arrives unseen: a pasted recipe and an opened share link both land
+in the normal edit form first, titled **Review recipe**, so you can rename
+or fix anything before saving. The recipe keeps its identity through that
+edit, so opening the same share link twice updates your copy rather than
+adding a second.
 
 The prompt asks only for JSON because most chatbots have no code execution
 and so cannot build a share link — asked for one, they produce a
