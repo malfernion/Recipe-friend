@@ -56,7 +56,12 @@ Someone types in a recipe from their head or a book.
 
 ## J3 · Finding something to cook
 
-1. Search matches across names, descriptions, ingredients and tags.
+1. Search matches across names, descriptions, ingredients and tags. An
+   ingredient matches **both as written and as you see it**, so a recipe
+   stored in grams is findable by "oz" by someone reading in ounces. This
+   keeps search aligned with the screen now that units are converted for
+   display (J4.4) rather than stored; it does mean two people in one book
+   can get different results for the same query.
 2. Tag chips and the Favourites filter narrow the list, and combine with
    search.
 3. "What can I cook?" takes a list of ingredients and ranks recipes by how
@@ -84,6 +89,15 @@ Someone types in a recipe from their head or a book.
    rewrites the other's data.
 6. Teaspoons and tablespoons are never converted, and an unrecognised unit
    ("clove", "pinch", "can") passes through untouched while still scaling.
+7. An amount renders as the nearest kitchen fraction when it is within 0.03
+   of one — so 2.67 shows as "2⅔", not "2.7" — and as one decimal place
+   otherwise.
+8. **An amount below 0.05 renders as "0".** Scaling a recipe down far
+   enough therefore shows "0 tsp" for an ingredient that is present: a
+   recipe serving 12, taken to one serving, renders ½ tsp that way. This is
+   accepted rather than worked around — below a twentieth of a unit there is
+   nothing useful to say, and the recipe as written is always one tap away
+   at full portions.
 
 ## J5 · Bringing in a recipe from outside
 
@@ -123,7 +137,9 @@ Covers a share link someone sent, and a recipe an assistant wrote out.
 3. Anyone holding the link has the recipe. The link is the data.
 4. A link points only at this app's own origin, and the decoder refuses an
    oversized payload rather than unpacking whatever it is handed.
-5. There is no multi-recipe share link, by choice.
+5. A share link carries the recipe, not your relationship to it: a recipe
+   arriving from a link is never already starred.
+6. There is no multi-recipe share link, by choice.
 
 ## J7 · Cooking together: books and membership
 
@@ -176,6 +192,10 @@ Covers a share link someone sent, and a recipe an assistant wrote out.
 2. Preferences belong to the person, not the device: signing in elsewhere
    applies the same units.
 3. Changing units never edits a recipe.
+4. Converted amounts pick their unit by size: grams below 1000 and
+   kilograms above, millilitres below 1000 and litres above, ounces below a
+   pound, and **fluid ounces below 120ml with cups at or above it** — so
+   half a cup and more reads in cups.
 
 ## J9 · Working across devices, and offline
 
@@ -199,15 +219,19 @@ Covers a share link someone sent, and a recipe an assistant wrote out.
 1. Export downloads the whole current book as JSON.
 2. Import merges a file back in by recipe id, so re-importing the same file
    never creates duplicates.
-3. **An export carries recipes, not photos.** A stored photo is referenced
+3. Where a recipe in the file and a recipe in the book share an id, **the
+   more recently edited one wins**, matching how two devices reconcile
+   (J9.3). A recipe id means the same thing on both paths: an older backup
+   never undoes newer work, and a newer backup restores it.
+4. **An export carries recipes, not photos.** A stored photo is referenced
    by a path that only members of its book can read, so a recipe imported
    into another account or book arrives without its picture. Photos held on
    the recipe itself — from a public URL, or from a device while signed out
    — do travel.
-4. The app says so rather than leaving it to be discovered: exporting a
+5. The app says so rather than leaving it to be discovered: exporting a
    book that holds stored photos says they are not included, and the
    delete-a-book confirmation repeats it where it matters most.
-5. Import is a bulk operation and does not step through a review of each
+6. Import is a bulk operation and does not step through a review of each
    recipe. It is your own backup coming home.
 
 ## J11 · Keeping the lights on
@@ -240,3 +264,20 @@ accident:
 - There is no multi-recipe share link (J6.4).
 - The app cannot tell a deleted book from one you were removed from, and
   does not pretend otherwise (J7.14).
+- Amounts below 0.05 display as 0 (J4.8).
+- Search results depend on the reader's unit preferences (J3.1).
+
+## What the tests cover, and what they do not
+
+`test/` covers the client-side JavaScript: the modules that decide what a
+recipe is, what it says on screen, and what survives a round trip. Those
+are the failures that would be silent — a recipe quietly losing its tags is
+worse than a page that will not load.
+
+**The database is deliberately outside the net.** The row-level security
+policies, `redeem_invite`, `preview_invite` and the Storage rules are the
+security model, and none of them are tested: doing so needs a live Postgres
+that CI has not got. They are verified by hand in the Supabase dashboard
+when a migration is applied. This is the largest untested surface in the
+project and is written down here so it stays visible rather than being
+mistaken for coverage.

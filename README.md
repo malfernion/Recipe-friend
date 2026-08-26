@@ -52,6 +52,22 @@ python3 -m http.server 8000
 
 Or just open `index.html` directly in a browser.
 
+## Tests
+
+```bash
+node --test test/*.test.js
+```
+
+No dependencies and no build step — the tests load the app's own modules
+into a fake `window` and call them directly. They cover the code that
+decides what a recipe is and what it says on screen: `storage.js`,
+`units.js`, `scale.js` and `share.js`. Each test name quotes a criterion
+from [`docs/journeys.md`](docs/journeys.md), so a failure points at the
+behaviour that was agreed rather than at an implementation detail.
+
+The database is deliberately not covered — see the note at the end of the
+journeys. Row-level security is verified by hand when a migration is run.
+
 ## Backend (Supabase) setup
 
 Signing in is required: the app shows a sign-in screen until you do, and
@@ -152,7 +168,10 @@ supabase/schema.sql            Tables, RLS policies, triggers, functions
 supabase/migrations/           Additive schema changes, run in order
                                (004 creates the private photo bucket;
                                 005 tightens membership and invites)
+docs/journeys.md               What the app is meant to do, as criteria
+test/                          Tests, named for the criteria they check
 .github/workflows/deploy-pages.yml   GitHub Pages deployment
+.github/workflows/test.yml           Tests on every pull request
 .claude/skills/recipe-share-link/     Agent skill: recipe -> share link
 ```
 
