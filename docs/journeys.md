@@ -135,15 +135,31 @@ Covers a share link someone sent, and a recipe an assistant wrote out.
 6. An owner cannot leave a book. Their exits are to keep it or to delete it.
 7. An owner can delete a book, which destroys its recipes for every member.
    The confirmation states how many recipes and how many other people are
-   affected first.
+   affected first, and — because it points at Export as the way to keep a
+   copy — that an export carries recipes and not photos.
 8. Nobody can delete their last remaining book — there would be nowhere for
    new recipes to go.
 9. A recipe can be moved to another book you belong to. It keeps its
    identity, and its photo moves with it so that the new book's members can
    see it.
-10. When a book you are in is deleted by its owner, the app moves you to
-    another of your books, says what happened, and forgets the deleted
-    book's local copy.
+10. A move that doesn't reach the server leaves the recipe exactly where it
+    was and says so. A recipe is never dropped locally on the strength of a
+    move that didn't happen — including a recipe typed seconds earlier that
+    the server has not yet seen, and one whose photo could not be copied
+    across.
+11. An owner can remove someone from a book. The person removed keeps
+    nothing from it; the recipes stay with the book.
+12. When a book stops being available to you — its owner deleted it, or
+    removed you from it — the app moves you to another of your books and
+    forgets the gone book's local copy. It happens on its own, without
+    waiting for you to go looking: a sync that starts failing is the symptom
+    you actually see, so that is one of the moments it is checked.
+13. The message for J7.12 says only that the book is no longer available to
+    you. **It must not name a cause**: deletion and removal are
+    indistinguishable from the app's side, and guessing means telling
+    someone something untrue about a person they cook with.
+14. If the book that went was your only one, a replacement is created, named
+    after you exactly as your first book was (J1.3).
 
 ## J8 · Measurements that suit the cook
 
@@ -181,7 +197,10 @@ Covers a share link someone sent, and a recipe an assistant wrote out.
    into another account or book arrives without its picture. Photos held on
    the recipe itself — from a public URL, or from a device while signed out
    — do travel.
-4. Import is a bulk operation and does not step through a review of each
+4. The app says so rather than leaving it to be discovered: exporting a
+   book that holds stored photos says they are not included, and the
+   delete-a-book confirmation repeats it where it matters most.
+5. Import is a bulk operation and does not step through a review of each
    recipe. It is your own backup coming home.
 
 ## J11 · Keeping the lights on
@@ -210,3 +229,5 @@ accident:
 - Invite links are reusable until they expire (J7.4).
 - Share links never carry photos (J6.2), and exports do not either (J10.3).
 - There is no multi-recipe share link (J6.4).
+- The app cannot tell a deleted book from one you were removed from, and
+  does not pretend otherwise (J7.13).
