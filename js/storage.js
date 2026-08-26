@@ -31,9 +31,22 @@
 
   const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-  function normalizeStringList(value) {
+  // A recipe arrives from a share link, a pasted blob, or an imported file,
+  // and none of those are limited to what a person would type. Caps are set
+  // far above any real recipe — the biggest thing in here is a step, and a
+  // long one is a couple of hundred characters — so that a hostile payload
+  // is bounded rather than rendered.
+  const MAX_STEPS = 200;
+  const MAX_STEP_CHARS = 2000;
+  const MAX_INGREDIENTS = 200;
+  const MAX_TAGS = 50;
+
+  function normalizeStringList(value, maxItems, maxChars) {
     if (!Array.isArray(value)) return [];
-    return value.map((s) => String(s).trim()).filter(Boolean);
+    return value
+      .slice(0, maxItems)
+      .map((s) => String(s).trim().slice(0, maxChars))
+      .filter(Boolean);
   }
 
   /** Ingredients are structured: {amount: number|null, unit, item}. */
@@ -50,7 +63,7 @@
 
   function normalizeIngredients(value) {
     if (!Array.isArray(value)) return [];
-    return value.map(sanitizeIngredient).filter(Boolean);
+    return value.slice(0, MAX_INGREDIENTS).map(sanitizeIngredient).filter(Boolean);
   }
 
   /**
@@ -85,7 +98,7 @@
     if (!raw || typeof raw !== "object") return null;
     const name = String(raw.name || "").trim();
     const ingredients = normalizeIngredients(raw.ingredients);
-    const steps = normalizeStringList(raw.steps);
+    const steps = normalizeStringList(raw.steps, MAX_STEPS, MAX_STEP_CHARS);
     if (!name || ingredients.length === 0 || steps.length === 0) return null;
 
     const num = (v) => {
@@ -105,7 +118,7 @@
       steps,
       image: sanitizeImage(raw.image),
       imagePath: sanitizePhotoPath(raw.imagePath),
-      tags: normalizeStringList(raw.tags).map((t) => t.toLowerCase().slice(0, 40)),
+      tags: normalizeStringList(raw.tags, MAX_TAGS, 40).map((t) => t.toLowerCase()),
       favorite: Boolean(raw.favorite),
       createdAt: num(raw.createdAt) || Date.now(),
       updatedAt: num(raw.updatedAt) || Date.now(),

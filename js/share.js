@@ -15,6 +15,13 @@
   const MARK_DEFLATE = "1.";
   const MARK_PLAIN = "0.";
 
+  // A link is decoded on page load, before anyone has clicked anything, so
+  // the cost of reading a hostile one has to be bounded. Raw deflate can
+  // exceed 1000:1, which turns a link that fits in the address bar into
+  // gigabytes of string. A real recipe is a few kilobytes.
+  const MAX_DECODED_BYTES = 256 * 1024;
+  const MAX_ENCODED_CHARS = 64 * 1024;
+
   function toBase64Url(bytes) {
     let binary = "";
     const chunk = 0x8000;
@@ -61,17 +68,51 @@
     return MARK_PLAIN + toBase64Url(new TextEncoder().encode(json));
   }
 
+  /**
+   * Read a decompression stream, giving up past a ceiling instead of
+   * expanding whatever the sender chose to compress.
+   */
+  async function inflateBounded(bytes, limit) {
+    const stream = new Blob([bytes]).stream().pipeThrough(new DecompressionStream("deflate-raw"));
+    const reader = stream.getReader();
+    const chunks = [];
+    let total = 0;
+    try {
+      for (;;) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        total += value.length;
+        if (total > limit) {
+          await reader.cancel();
+          return null;
+        }
+        chunks.push(value);
+      }
+    } finally {
+      reader.releaseLock();
+    }
+    const joined = new Uint8Array(total);
+    let at = 0;
+    for (const chunk of chunks) {
+      joined.set(chunk, at);
+      at += chunk.length;
+    }
+    return new TextDecoder().decode(joined);
+  }
+
   /** Returns the raw shared recipe object, or null if the link is unreadable. */
   async function decodeRecipeShare(encoded) {
     try {
+      if (typeof encoded !== "string" || encoded.length > MAX_ENCODED_CHARS) return null;
       const mark = encoded.slice(0, 2);
       const bytes = fromBase64Url(encoded.slice(2));
       let json;
       if (mark === MARK_DEFLATE) {
         if (typeof DecompressionStream !== "function") return null;
-        const stream = new Blob([bytes]).stream().pipeThrough(new DecompressionStream("deflate-raw"));
-        json = await new Response(stream).text();
+        json = await inflateBounded(bytes, MAX_DECODED_BYTES);
+        if (json === null) return null;
       } else if (mark === MARK_PLAIN) {
+        if (bytes.length > MAX_DECODED_BYTES) return null;
         json = new TextDecoder().decode(bytes);
       } else {
         return null;

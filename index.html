@@ -3,6 +3,32 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <!--
+    Content Security Policy. GitHub Pages serves static files and cannot set
+    response headers, so this has to live in the document.
+
+    The app keeps a session in localStorage, which means any HTML injection
+    would be an account takeover rather than a defacement. Every value the
+    app interpolates is escaped today; this is the second line, for the
+    commit that forgets. img-src stays broad because linking a photo by URL
+    is a feature — see the referrerpolicy on those <img> tags.
+
+    Two notes on what is missing. frame-ancestors is ignored in a meta tag,
+    so clickjacking cover would need a response header, which GitHub Pages
+    cannot send. And form-action is 'self' rather than 'none' because the
+    recipe dialog is a method="dialog" form, which some browsers have
+    treated as a navigation to be blocked.
+  -->
+  <meta http-equiv="Content-Security-Policy" content="
+    default-src 'none';
+    script-src 'self';
+    style-src 'self' https://fonts.googleapis.com;
+    font-src https://fonts.gstatic.com;
+    img-src 'self' data: blob: https:;
+    connect-src 'self' https://dveyxesgwohokenoomsf.supabase.co wss://dveyxesgwohokenoomsf.supabase.co;
+    form-action 'self';
+    base-uri 'none';
+    object-src 'none'">
   <meta name="description" content="Recipe Friend — your personal recipe box, saved right in your browser.">
   <title>Recipe Friend</title>
   <link rel="icon" href="assets/favicon.ico" sizes="any">
@@ -166,7 +192,7 @@
           <input type="url" name="imageUrl" class="photo-url" placeholder="or paste an image URL">
           <button type="button" class="btn btn-ghost" id="photo-remove-btn" hidden>Remove</button>
         </div>
-        <img id="photo-preview" class="photo-preview" alt="Recipe photo preview" hidden>
+        <img referrerpolicy="no-referrer" id="photo-preview" class="photo-preview" alt="Recipe photo preview" hidden>
         <input type="file" id="photo-file" accept="image/*" hidden>
       </div>
 
