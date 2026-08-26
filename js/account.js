@@ -21,7 +21,14 @@
     return;
   }
 
-  const client = window.supabase.createClient(cfg.supabaseUrl, cfg.supabaseKey);
+  // PKCE rather than the implicit flow. The implicit flow returns the
+  // access *and* refresh token in the URL fragment, which puts long-lived
+  // credentials through the address bar and browser history; PKCE returns a
+  // short code that is exchanged out of band and never appears in a link
+  // anyone could copy or a referrer anyone could log.
+  const client = window.supabase.createClient(cfg.supabaseUrl, cfg.supabaseKey, {
+    auth: { flowType: "pkce" },
+  });
   // Shared handle for later milestones (books, profiles) and tests.
   window.RecipeCloud = { client, session: null, sync: null };
 

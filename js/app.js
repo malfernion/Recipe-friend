@@ -133,7 +133,10 @@
                role="button" aria-label="Open ${escapeHTML(recipe.name)}">
         ${(() => {
           const src = photoSrc(recipe);
-          return src ? `<img class="card-img" src="${escapeHTML(src)}" alt="" loading="lazy">` : "";
+          return src
+            ? `<img class="card-img" src="${escapeHTML(src)}" alt="" loading="lazy"
+                    referrerpolicy="no-referrer">`
+            : "";
         })()}
         <span class="card-index">№ ${String(index + 1).padStart(2, "0")}</span>
         <div class="card-top">
@@ -256,10 +259,23 @@
     dialogTitle.textContent = review ? "Review recipe" : recipe ? "Edit recipe" : "New recipe";
     // Re-opening a link you already saved shows the sender's version again,
     // so say that saving replaces your copy rather than adding a second.
-    const alreadyHere = Boolean(review && recipe && store.getById(recipe.id));
+    // An incoming recipe carries its own id, and the sender chose it. If it
+    // matches something already here, saving replaces that recipe with what
+    // is on screen — so name the one at stake rather than saying "my copy"
+    // and leaving the person to guess which.
+    const existing = review && recipe ? store.getById(recipe.id) : null;
+    const warning = $("#review-warning");
+    if (warning) {
+      warning.hidden = !existing;
+      if (existing) {
+        warning.textContent =
+          `This will replace “${existing.name}” in your recipe box. ` +
+          "Everything below is the version you were sent.";
+      }
+    }
     $("#save-recipe-btn").textContent = review
-      ? alreadyHere
-        ? "Update my copy"
+      ? existing
+        ? `Replace “${existing.name.length > 28 ? existing.name.slice(0, 27) + "…" : existing.name}”`
         : "Add to my recipes"
       : recipe
         ? "Save changes"
@@ -534,7 +550,8 @@
       ${(() => {
         const src = photoSrc(recipe);
         return src
-          ? `<img class="detail-img" src="${escapeHTML(src)}" alt="Photo of ${escapeHTML(recipe.name)}">`
+          ? `<img class="detail-img" src="${escapeHTML(src)}"
+                  alt="Photo of ${escapeHTML(recipe.name)}" referrerpolicy="no-referrer">`
           : "";
       })()}
       ${recipe.description ? `<p class="detail-desc">${escapeHTML(recipe.description)}</p>` : ""}
@@ -926,6 +943,46 @@
       /* nothing to clear */
     }
   }
+
+  /**
+   * Share the open recipe as a link. The recipe travels compressed in the
+   * URL fragment, so nothing is uploaded and no server sees it — but that
+   * also means a stored photo cannot come along, since those are private to
+   * their book and readable only through a signed URL.
+   */
+  $("#detail-share-btn").addEventListener("click", async () => {
+    const recipe = detailId && store.getById(detailId);
+    if (!recipe) return;
+    const btn = $("#detail-share-btn");
+    btn.disabled = true;
+    try {
+      const encoded = await RecipeShare.encodeRecipeShare(recipe);
+      const url = `${location.origin}${location.pathname}#add=${encoded}`;
+      // Long enough to break in a chat app is long enough to warn about.
+      if (url.length > 8000) {
+        toast("That recipe is too long to fit in a share link — try Export instead.");
+        return;
+      }
+      const lostPhoto = Boolean(recipe.imagePath);
+      try {
+        await navigator.clipboard.writeText(url);
+        toast(
+          lostPhoto
+            ? "Link copied — the photo stays behind, since it's private to this book."
+            : "Share link copied."
+        );
+      } catch {
+        // No clipboard permission (or an insecure context): fall back to
+        // something the person can actually get at.
+        window.prompt("Copy this share link:", url);
+      }
+    } catch (err) {
+      console.warn("Recipe Friend: could not build a share link.", err);
+      toast("Couldn't build a share link for that recipe.");
+    } finally {
+      btn.disabled = false;
+    }
+  });
 
   // Moving lives with books, so hand off to that layer. The button only
   // appears once there is somewhere else to move to.

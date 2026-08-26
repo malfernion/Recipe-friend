@@ -35,17 +35,25 @@
       this.onStatus(state, detail);
     }
 
-    /** Every book this user belongs to: [{id, name, role}]. */
+    /**
+     * Every book this user belongs to: [{id, name, role, isOwner}].
+     *
+     * `isOwner` comes from books.owner, never from the membership row's
+     * `role`. Ownership is what the server actually enforces, and reading
+     * it from the same place the policies do means the UI cannot be talked
+     * into showing — or hiding — the wrong controls.
+     */
     async listBooks() {
       const { data, error } = await this.client
         .from("book_members")
-        .select("book_id, role, books(name)")
+        .select("book_id, role, books(name, owner)")
         .eq("user_id", this.userId);
       if (error) throw error;
       return (data || []).map((m) => ({
         id: m.book_id,
         role: m.role,
         name: (m.books && m.books.name) || "Recipes",
+        isOwner: Boolean(m.books && m.books.owner === this.userId),
       }));
     }
 
@@ -61,7 +69,7 @@
         .from("book_members")
         .insert({ book_id: book.id, user_id: this.userId, role: "owner" });
       if (memberErr) throw memberErr;
-      return { id: book.id, name: book.name, role: "owner" };
+      return { id: book.id, name: book.name, role: "owner", isOwner: true };
     }
 
     async renameBook(bookId, name) {
@@ -90,21 +98,72 @@
     /**
      * Mint an invite code. Generated client-side so it is URL-safe — the
      * column default is base64, which can contain "+" and "/".
+     *
+     * An invite is a bearer token: whoever holds the link gets write access
+     * to the book. So it is good for one join by default, and the server
+     * counts uses rather than trusting this.
      */
-    async createInvite(bookId) {
+    async createInvite(bookId, maxUses = 1) {
       const bytes = new Uint8Array(12);
-      (global.crypto || {}).getRandomValues
-        ? global.crypto.getRandomValues(bytes)
-        : bytes.forEach((_, i) => (bytes[i] = Math.floor(Math.random() * 256)));
+      if (!global.crypto || !global.crypto.getRandomValues) {
+        // No CSPRNG means a guessable invite. Refuse rather than mint one.
+        throw new Error("this browser cannot generate a secure invite code");
+      }
+      global.crypto.getRandomValues(bytes);
       const code = btoa(String.fromCharCode(...bytes))
         .replaceAll("+", "-")
         .replaceAll("/", "_")
         .replace(/=+$/, "");
       const { error } = await this.client
         .from("invites")
-        .insert({ code, book_id: bookId, created_by: this.userId });
+        .insert({
+          code,
+          book_id: bookId,
+          created_by: this.userId,
+          max_uses: Math.min(50, Math.max(1, Math.round(maxUses) || 1)),
+        });
       if (error) throw error;
       return code;
+    }
+
+    /** Live invites for a book, newest first — owners only, by policy. */
+    async listInvites(bookId) {
+      const { data, error } = await this.client
+        .from("invites")
+        .select("code, expires_at, used_count, max_uses")
+        .eq("book_id", bookId)
+        .gt("expires_at", new Date().toISOString())
+        .order("created_at", { ascending: false });
+      if (error) throw error;
+      return (data || []).map((i) => ({
+        code: i.code,
+        expiresAt: i.expires_at,
+        usedCount: i.used_count,
+        maxUses: i.max_uses,
+      }));
+    }
+
+    /** Tear up an invite that hasn't been used yet (or has been). */
+    async revokeInvite(code) {
+      const { error } = await this.client.from("invites").delete().eq("code", code);
+      if (error) throw error;
+    }
+
+    /**
+     * What an invite is offering, without accepting it. The holder has no
+     * read access to the book yet, so this goes through a definer function
+     * that returns only what is needed to decide.
+     */
+    async previewInvite(code) {
+      const { data, error } = await this.client.rpc("preview_invite", { invite_code: code });
+      if (error) throw error;
+      const row = Array.isArray(data) ? data[0] : data;
+      if (!row) throw new Error("invalid or expired invite");
+      return {
+        bookName: row.book_name,
+        ownerName: row.owner_name,
+        alreadyMember: Boolean(row.already_member),
+      };
     }
 
     /** Join a book from an invite code (validated server-side). */
@@ -181,7 +240,7 @@
         return this.bookId;
       }
       const preferred = preferredId && books.find((b) => b.id === preferredId);
-      const owned = books.find((b) => b.role === "owner");
+      const owned = books.find((b) => b.isOwner);
       this.bookId = (preferred || owned || books[0]).id;
       return this.bookId;
     }

@@ -95,8 +95,9 @@ Covers a share link someone sent, and a recipe an assistant wrote out.
 2. A recipe keeps its identity through that review, so opening the same link
    twice updates the existing recipe instead of adding a second.
 3. When the recipe is already in the box, the form shows the sender's
-   version and the button says **Update my copy**, because saving replaces
-   what is there.
+   version and says **by name** which recipe saving would replace. Naming it
+   matters: "your copy" leaves someone guessing which of their recipes is
+   about to be overwritten.
 4. A link that cannot be decoded says so rather than failing silently.
 5. Opening a share link while signed out holds the recipe across the sign-in
    round trip and reviews it afterwards.
@@ -120,7 +121,9 @@ Covers a share link someone sent, and a recipe an assistant wrote out.
    their book and a link cannot carry that; a public `http(s)` image URL on
    the recipe does travel.
 3. Anyone holding the link has the recipe. The link is the data.
-4. There is no multi-recipe share link, by choice.
+4. A link points only at this app's own origin, and the decoder refuses an
+   oversized payload rather than unpacking whatever it is handed.
+5. There is no multi-recipe share link, by choice.
 
 ## J7 · Cooking together: books and membership
 
@@ -128,37 +131,41 @@ Covers a share link someone sent, and a recipe an assistant wrote out.
    There is no separate "personal" tier to migrate out of.
 2. Anyone can create more books, and switch between them from the header.
 3. Everyone in a book can add, edit and delete its recipes.
-4. An owner can invite others with a link that works for 7 days. **The link
-   is reusable within those 7 days** — anyone it is forwarded to can join.
-   Treat it as you would a house key.
-5. A member can leave a book; its recipes stay with the book.
-6. An owner cannot leave a book. Their exits are to keep it or to delete it.
-7. An owner can delete a book, which destroys its recipes for every member.
+4. An owner can invite others with a link. A link is **good for one person
+   and expires after 48 hours**, and the owner can see the live ones and
+   revoke any that went astray.
+5. Opening an invite never joins anyone to anything by itself. The app names
+   the book and its owner, says plainly that everyone in a book can edit and
+   delete its recipes, and waits to be accepted. Membership is something you
+   agree to, not something you can be given.
+6. A member can leave a book; its recipes stay with the book.
+7. An owner cannot leave a book. Their exits are to keep it or to delete it.
+8. An owner can delete a book, which destroys its recipes for every member.
    The confirmation states how many recipes and how many other people are
    affected first, and — because it points at Export as the way to keep a
    copy — that an export carries recipes and not photos.
-8. Nobody can delete their last remaining book — there would be nowhere for
+9. Nobody can delete their last remaining book — there would be nowhere for
    new recipes to go.
-9. A recipe can be moved to another book you belong to. It keeps its
+10. A recipe can be moved to another book you belong to. It keeps its
    identity, and its photo moves with it so that the new book's members can
    see it.
-10. A move that doesn't reach the server leaves the recipe exactly where it
+11. A move that doesn't reach the server leaves the recipe exactly where it
     was and says so. A recipe is never dropped locally on the strength of a
     move that didn't happen — including a recipe typed seconds earlier that
     the server has not yet seen, and one whose photo could not be copied
     across.
-11. An owner can remove someone from a book. The person removed keeps
+12. An owner can remove someone from a book. The person removed keeps
     nothing from it; the recipes stay with the book.
-12. When a book stops being available to you — its owner deleted it, or
+13. When a book stops being available to you — its owner deleted it, or
     removed you from it — the app moves you to another of your books and
     forgets the gone book's local copy. It happens on its own, without
     waiting for you to go looking: a sync that starts failing is the symptom
     you actually see, so that is one of the moments it is checked.
-13. The message for J7.12 says only that the book is no longer available to
+14. The message for J7.13 says only that the book is no longer available to
     you. **It must not name a cause**: deletion and removal are
     indistinguishable from the app's side, and guessing means telling
     someone something untrue about a person they cook with.
-14. If the book that went was your only one, a replacement is created, named
+15. If the book that went was your only one, a replacement is created, named
     after you exactly as your first book was (J1.3).
 
 ## J8 · Measurements that suit the cook
@@ -226,8 +233,10 @@ accident:
 - Search does not span books (J3.5).
 - Favourites are shared within a book, not personal (J3.6).
 - Owners cannot leave their own books (J7.6).
-- Invite links are reusable until they expire (J7.4).
+- Invite links are single-use and short-lived, and joining needs consent
+  (J7.4, J7.5). This replaced an earlier decision to leave them reusable for
+  seven days.
 - Share links never carry photos (J6.2), and exports do not either (J10.3).
 - There is no multi-recipe share link (J6.4).
 - The app cannot tell a deleted book from one you were removed from, and
-  does not pretend otherwise (J7.13).
+  does not pretend otherwise (J7.14).

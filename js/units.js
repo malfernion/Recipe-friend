@@ -4,8 +4,9 @@
  * Two convertible families: mass (g/kg/oz/lb) and volume (ml/l/cup/fl oz).
  * Spoons (tsp/tbsp) are universal and never converted. Any unrecognized
  * unit ("cloves", "pinch", "can") is family "other" and passes through
- * untouched. Conversion happens once, when a recipe is stored, so the
- * collection is always in the user's preferred units.
+ * untouched. Conversion happens when a recipe is displayed, never when it
+ * is stored, so a recipe keeps the units it was written in and two people
+ * sharing a book can each read it their own way.
  *
  * prefs shape: { mass: ""|"metric"|"imperial", volume: ""|"metric"|"us" }
  * ("" = keep units as entered)
@@ -14,7 +15,11 @@
   "use strict";
 
   // canonical short label -> { family, toBase } (base: g for mass, ml for volume)
-  const UNITS = {
+  //
+  // Null-prototype, here and below: these are indexed by whatever someone
+  // typed into a unit field, and on a plain object "constructor" or
+  // "toString" would resolve to an inherited member rather than miss.
+  const UNITS = Object.assign(Object.create(null), {
     g: { family: "mass", toBase: 1 },
     kg: { family: "mass", toBase: 1000 },
     oz: { family: "mass", toBase: 28.35 },
@@ -25,9 +30,9 @@
     "fl oz": { family: "volume", toBase: 29.57 },
     tsp: { family: "spoon", toBase: 5 },
     tbsp: { family: "spoon", toBase: 15 },
-  };
+  });
 
-  const ALIASES = {
+  const ALIASES = Object.assign(Object.create(null), {
     g: "g", gram: "g", grams: "g",
     kg: "kg", kilogram: "kg", kilograms: "kg", kilo: "kg", kilos: "kg",
     oz: "oz", ounce: "oz", ounces: "oz",
@@ -38,7 +43,7 @@
     "fl oz": "fl oz", floz: "fl oz", "fl. oz": "fl oz", "fluid ounce": "fl oz", "fluid ounces": "fl oz",
     tsp: "tsp", teaspoon: "tsp", teaspoons: "tsp",
     tbsp: "tbsp", tablespoon: "tbsp", tablespoons: "tbsp",
-  };
+  });
 
   /** Canonical short label for a recognized unit, or the input as typed. */
   function normalizeLabel(unit) {
@@ -52,10 +57,10 @@
   }
 
   // Which unit system a canonical unit belongs to, per family.
-  const SYSTEM = {
+  const SYSTEM = Object.assign(Object.create(null), {
     g: "metric", kg: "metric", oz: "imperial", lb: "imperial",
     ml: "metric", l: "metric", cup: "us", "fl oz": "us",
-  };
+  });
 
   const round = (v, dp) => Math.round(v * 10 ** dp) / 10 ** dp;
 

@@ -9,7 +9,9 @@ accounts and sync.
 ## Features
 
 - **Recipes** — name, description, servings, prep/cook times, structured
-  ingredients (amount · unit · item), steps, tags, and a photo.
+  ingredients (amount · unit · item), steps, tags, and a photo. Device
+  photos are downscaled in the browser and kept in private storage; nothing
+  in the bucket is publicly readable.
 - **Search and filter** — across names, ingredients and tags, plus tag chips
   and favourites.
 - **"What can I cook?"** — list what you have and matching recipes rise to
@@ -17,11 +19,15 @@ accounts and sync.
 - **Portion scaling and measurement preferences** — amounts rescale on the
   fly and appear in your own units, without ever editing the stored recipe.
 - **Shared recipe books** — invite a household into a book; everyone can add
-  and edit, while each person keeps their own units.
+  and edit, while each person keeps their own units. Invite links are
+  single-use, expire in 48 hours, can be revoked, and never join anyone to
+  anything without their say-so.
 - **Sync across devices, offline-first** — the browser copy is the working
   copy, so the app is instant and keeps working without a network.
-- **Share links** — send one recipe as a URL that carries it in the fragment,
-  so no server sees it.
+- **Share links** — **Share** copies a link carrying one recipe in the URL
+  fragment, so no server sees it. The recipient reviews it in the edit form
+  before saving, and is told by name if it would replace a recipe they
+  already have.
 - **AI assistance** — a prompt for the chatbot of your choice, and a paste
   box that takes its answer back.
 - **Export / import** — your recipes as JSON, merging by id so nothing
@@ -78,7 +84,13 @@ with the account, not the browser.
 Your first book is created on sign-in and named after you. There is no
 separate "personal" tier — that book can be shared exactly like any other.
 From **Books** in the header you can create more, rename ones you own,
-switch between them, and invite others with a link that works for 7 days.
+switch between them, and invite others.
+
+An invite link is a key, not an announcement: whoever opens it can join. So
+each link is good for **one** person, expires after **48 hours**, and can be
+revoked from the Books dialog. Opening an invite never joins you to anything
+on its own — the app names the book and its owner, spells out that everyone
+in a book can edit and delete its recipes, and waits for you to accept.
 
 Signed in, recipes sync in the background and the most recently edited
 version of a recipe wins. Deletes travel as tombstones so a recipe deleted
@@ -138,7 +150,8 @@ js/books.js                    Recipe books, members, and invite links
 js/config.js                   Supabase project URL and publishable key
 supabase/schema.sql            Tables, RLS policies, triggers, functions
 supabase/migrations/           Additive schema changes, run in order
-                               (004 creates the private photo bucket)
+                               (004 creates the private photo bucket;
+                                005 tightens membership and invites)
 .github/workflows/deploy-pages.yml   GitHub Pages deployment
 .claude/skills/recipe-share-link/     Agent skill: recipe -> share link
 ```
