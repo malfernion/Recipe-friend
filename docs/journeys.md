@@ -260,8 +260,8 @@ accident:
 - Invite links are single-use and short-lived, and joining needs consent
   (J7.4, J7.5). This replaced an earlier decision to leave them reusable for
   seven days.
-- Share links never carry photos (J6.2), and exports do not either (J10.3).
-- There is no multi-recipe share link (J6.4).
+- Share links never carry photos (J6.2), and exports do not either (J10.4).
+- There is no multi-recipe share link (J6.6).
 - The app cannot tell a deleted book from one you were removed from, and
   does not pretend otherwise (J7.14).
 - Amounts below 0.05 display as 0 (J4.8).

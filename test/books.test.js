@@ -1429,7 +1429,7 @@ function signedInApp() {
   };
   win.RecipeApp = { store: h.store, render: h.app.render, toast: h.app.toast };
   win.addEventListener = () => {};
-  win.RecipeBooks = win.RecipeBooks; // the real one, already loaded by harness()
+  // window.RecipeBooks and window.RecipeSync are the real ones, loaded by harness().
 
   const src = fs.readFileSync(path.join(__dirname, "..", "js", "account.js"), "utf8");
   new Function("window", src)(win);
