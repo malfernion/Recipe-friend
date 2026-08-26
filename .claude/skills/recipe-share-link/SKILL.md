@@ -47,7 +47,7 @@ nothing at all, so the encoder below fails loudly on each instead:
 ## Build the link
 
 ```bash
-node .claude/skills/recipe-share-link/scripts/recipe-link.mjs recipe.json
+python3 .claude/skills/recipe-share-link/scripts/recipe_link.py recipe.json
 ```
 
 It validates, encodes, decodes its own output to check it, and prints the
@@ -63,8 +63,9 @@ The `id` is what stops a link creating duplicates: open the same link twice
 and it updates the same recipe. Omit `id` and the script mints one. To
 correct a recipe you already shared, pass the same `id` back in.
 
-## Somewhere without Node
+## Chatbots that can't run code
 
-The app's **Get help from AI** dialog holds a self-contained version of all
-this — the format, the rules, and a Python encoder — written to be pasted
-into a chatbot. Use that if you can't run the script.
+Most can't, so they cannot produce a link at all — asked to, they invent a
+plausible one. The app handles that case itself: **Get help from AI** hands
+out a prompt asking only for JSON, and **Paste a recipe** takes that JSON
+back and saves it. Point someone there rather than at this script.

@@ -608,8 +608,18 @@
   $("#empty-add-btn").addEventListener("click", () => openRecipeDialog(null));
   $("#cancel-dialog-btn").addEventListener("click", () => recipeDialog.close());
 
-  // --- Prompt for a chatbot that can turn a recipe into a share link ---
+  // --- AI assistance: a prompt to take away, and a box to bring JSON back to ---
   const aiHelpDialog = $("#ai-help-dialog");
+  const pasteDialog = $("#paste-dialog");
+  const pasteInput = $("#paste-input");
+  const pasteError = $("#paste-error");
+
+  function openPasteDialog() {
+    pasteInput.value = "";
+    pasteError.hidden = true;
+    pasteDialog.showModal();
+    pasteInput.focus();
+  }
 
   $("#ai-help-btn").addEventListener("click", () => {
     $("#more-menu").open = false;
@@ -633,6 +643,76 @@
       selection.addRange(range);
       toast("Select-all is ready — press Ctrl/Cmd+C to copy.");
     }
+  });
+
+  $("#ai-to-paste-btn").addEventListener("click", () => {
+    aiHelpDialog.close();
+    openPasteDialog();
+  });
+
+  $("#paste-btn").addEventListener("click", () => {
+    $("#more-menu").open = false;
+    openPasteDialog();
+  });
+
+  $("#paste-close-btn").addEventListener("click", () => pasteDialog.close());
+
+  /**
+   * What an assistant hands back, loosely: bare JSON, JSON inside a markdown
+   * code fence, prose wrapped around it, or a share link pasted by mistake.
+   */
+  function readPasted(text) {
+    const trimmed = text.trim();
+    if (!trimmed) return null;
+    const link = trimmed.match(/#add=([A-Za-z0-9._~-]+)/);
+    if (link) return { kind: "link", payload: link[1] };
+    const fenced = trimmed.match(/```(?:json)?\s*([\s\S]*?)```/i);
+    const body = fenced ? fenced[1] : trimmed;
+    const open = body.indexOf("{");
+    const close = body.lastIndexOf("}");
+    if (open === -1 || close <= open) return null;
+    return { kind: "json", text: body.slice(open, close + 1) };
+  }
+
+  function pasteFailed(message) {
+    pasteError.textContent = message;
+    pasteError.hidden = false;
+  }
+
+  $("#paste-save-btn").addEventListener("click", async () => {
+    const parsed = readPasted(pasteInput.value);
+    if (!parsed) {
+      pasteFailed("That doesn't look like JSON or a share link.");
+      return;
+    }
+
+    let raw;
+    if (parsed.kind === "link") {
+      raw = await RecipeShare.decodeRecipeShare(parsed.payload);
+      if (!raw) {
+        pasteFailed("That share link couldn't be read — it may have been cut short.");
+        return;
+      }
+    } else {
+      try {
+        raw = JSON.parse(parsed.text);
+      } catch (err) {
+        pasteFailed(`That isn't valid JSON: ${err.message}`);
+        return;
+      }
+    }
+
+    const result = store.addShared(raw);
+    if (!result) {
+      pasteFailed(
+        "A recipe needs a name, at least one ingredient and at least one step, " +
+          "and each amount must be a number or null."
+      );
+      return;
+    }
+    pasteDialog.close();
+    toast(result.existed ? "Already in your recipe box." : `Saved \u201c${result.recipe.name}\u201d.`);
+    render();
   });
 
   // --- Measurement preferences ---
@@ -871,7 +951,7 @@
   });
 
   // Close dialogs when clicking the backdrop.
-  for (const dialog of [recipeDialog, detailDialog, shareDialog, prefsDialog, aiHelpDialog]) {
+  for (const dialog of [recipeDialog, detailDialog, shareDialog, prefsDialog, aiHelpDialog, pasteDialog]) {
     dialog.addEventListener("click", (event) => {
       if (event.target === dialog) dialog.close();
     });
