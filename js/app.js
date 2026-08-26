@@ -60,23 +60,24 @@
     return total > 0 ? `${total} min` : null;
   }
 
-  function matchesFilters(recipe) {
-    if (favoritesOnly && !recipe.favorite) return false;
-    if (activeTag && !recipe.tags.includes(activeTag)) return false;
-    if (searchQuery) {
-      const haystack = [
-        recipe.name,
-        recipe.description,
-        ...recipe.ingredients.map((i) => RecipeScale.ingredientText(i)),
-        ...recipe.ingredients.map((i) => displayIngredient(i, 1)),
-        ...recipe.tags,
-      ]
-        .join("\n")
-        .toLowerCase();
-      if (!haystack.includes(searchQuery)) return false;
-    }
-    if (pantryOn && pantryTerms.length > 0 && pantryMatches(recipe).length === 0) return false;
-    return true;
+  /**
+   * What the person is currently looking for, as RecipeSearch wants it.
+   * Pantry terms only count while the panel is open, so a list left behind
+   * from a closed panel does not quietly keep filtering.
+   */
+  function criteria() {
+    return {
+      query: searchQuery,
+      tag: activeTag,
+      favoritesOnly,
+      pantryTerms: pantryOn ? pantryTerms : [],
+      prefs: store.prefs,
+    };
+  }
+
+  /** Which of the user's pantry terms this recipe's ingredients mention. */
+  function pantryMatches(recipe) {
+    return RecipeSearch.pantryMatches(recipe, pantryOn ? pantryTerms : []);
   }
 
   /**
@@ -90,17 +91,7 @@
       ing.amount === null || ing.amount === undefined || factor === 1
         ? ing
         : { ...ing, amount: ing.amount * factor };
-    return RecipeScale.ingredientText(RecipeUnits.convertIngredient(scaled, store.prefs));
-  }
-
-  /** Which of the user's pantry terms this recipe's ingredients mention. */
-  function pantryMatches(recipe) {
-    const lines = recipe.ingredients.map((i) => `${i.item} ${i.unit}`.toLowerCase());
-    return pantryTerms.filter((term) => {
-      // Also try a crude singular so "tomatoes" finds "tomato purée" and vice versa.
-      const singular = term.replace(/(es|s)$/, "");
-      return lines.some((l) => l.includes(term) || (singular.length >= 3 && l.includes(singular)));
-    });
+    return RecipeSearch.readable(scaled, store.prefs);
   }
 
   // --- Rendering ---
@@ -127,7 +118,7 @@
       .filter(Boolean)
       .join(" · ");
 
-    const matched = pantryOn && pantryTerms.length > 0 ? pantryMatches(recipe) : [];
+    const matched = pantryMatches(recipe);
     return `
       <article class="recipe-card" data-id="${escapeHTML(recipe.id)}" tabindex="0"
                role="button" aria-label="Open ${escapeHTML(recipe.name)}">
@@ -165,14 +156,7 @@
   }
 
   function render() {
-    let visible = store.recipes.filter(matchesFilters);
-    if (pantryOn && pantryTerms.length > 0) {
-      // Best matches first; stable within equal counts.
-      visible = visible
-        .map((r, i) => ({ r, i, n: pantryMatches(r).length }))
-        .sort((a, b) => b.n - a.n || a.i - b.i)
-        .map((x) => x.r);
-    }
+    const visible = RecipeSearch.visibleRecipes(store.recipes, criteria());
     listEl.innerHTML = visible.map((r, i) => recipeCard(r, i)).join("");
 
     const hasAny = store.recipes.length > 0;
@@ -835,10 +819,7 @@
   });
 
   pantryInput.addEventListener("input", () => {
-    pantryTerms = pantryInput.value
-      .split(",")
-      .map((s) => s.trim().toLowerCase())
-      .filter((s) => s.length >= 2);
+    pantryTerms = RecipeSearch.parsePantryTerms(pantryInput.value);
     render();
   });
 
