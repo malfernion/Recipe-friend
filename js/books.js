@@ -313,7 +313,12 @@
         if (others > 0) {
           parts.push(`${others} other member${others === 1 ? "" : "s"} will lose it too.`);
         }
-        parts.push("This cannot be undone — export first if you want a copy.");
+        // Export is the way out offered here, so be straight about what
+        // it carries: photos stay behind in the book (J10.3).
+        parts.push(
+          "This cannot be undone — export first if you want a copy. " +
+            "An export carries recipes, not photos."
+        );
         if (!confirm(parts.join("\n\n"))) return;
 
         try {
