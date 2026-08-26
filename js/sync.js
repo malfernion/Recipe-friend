@@ -178,13 +178,57 @@
      * Move a recipe into another book. The row keeps its id and simply
      * changes book — RLS allows it because the check runs against both the
      * old and the new book, and you must belong to both.
+     *
+     * The photo has to travel with it. Storage policies authorise on the
+     * first segment of the path, so a file left under the old book is
+     * unreadable to anyone in the new one who isn't also in the old one —
+     * the recipe would arrive with no picture and no explanation. The copy
+     * goes first and the move is abandoned if it fails: a recipe that
+     * plainly stayed put is easier to live with than one that has quietly
+     * lost its photo, and the mover can try again.
+     *
+     * Returns the recipe's photo path after the move ("" if it has none).
      */
     async moveRecipe(recipeId, targetBookId) {
-      const { error } = await this.client
-        .from("recipes")
-        .update({ book_id: targetBookId, updated_at: new Date().toISOString() })
-        .eq("id", recipeId);
+      const fromBookId = this.bookId;
+      const local = this.store.getById(recipeId);
+      const oldPath = (local && local.imagePath) || "";
+      const newPath = oldPath ? `${targetBookId}/${recipeId}.jpg` : "";
+      if (oldPath) {
+        const { error: copyErr } = await this.client.storage
+          .from(PHOTO_BUCKET)
+          .copy(oldPath, newPath);
+        if (copyErr) throw copyErr;
+      }
+
+      const patch = { book_id: targetBookId, updated_at: new Date().toISOString() };
+      if (newPath) {
+        // imagePath lives inside the row's data, and the local copy is
+        // dropped the moment this returns, so the new path has to go up
+        // with the move rather than wait for the next push. Patch the
+        // server's own data, so an edit made on another device survives.
+        const { data: row, error: readErr } = await this.client
+          .from("recipes")
+          .select("data")
+          .eq("id", recipeId)
+          .maybeSingle();
+        if (readErr) throw readErr;
+        patch.data = { ...((row && row.data) || local), imagePath: newPath };
+      }
+      const { error } = await this.client.from("recipes").update(patch).eq("id", recipeId);
       if (error) throw error;
+
+      // Only now is the old file safe to drop: until the row moved, it was
+      // still the photo the recipe pointed at. A leftover file costs a
+      // little quota, so a failure here isn't worth failing the move over.
+      if (oldPath) {
+        try {
+          await this.deletePhoto(fromBookId, recipeId);
+        } catch (err) {
+          console.warn("Recipe Friend: the moved recipe's old photo is left behind.", err);
+        }
+      }
+      return newPath;
     }
 
     /**
