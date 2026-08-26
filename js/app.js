@@ -133,7 +133,10 @@
                role="button" aria-label="Open ${escapeHTML(recipe.name)}">
         ${(() => {
           const src = photoSrc(recipe);
-          return src ? `<img class="card-img" src="${escapeHTML(src)}" alt="" loading="lazy">` : "";
+          return src
+            ? `<img class="card-img" src="${escapeHTML(src)}" alt="" loading="lazy"
+                    referrerpolicy="no-referrer">`
+            : "";
         })()}
         <span class="card-index">№ ${String(index + 1).padStart(2, "0")}</span>
         <div class="card-top">
@@ -534,7 +537,8 @@
       ${(() => {
         const src = photoSrc(recipe);
         return src
-          ? `<img class="detail-img" src="${escapeHTML(src)}" alt="Photo of ${escapeHTML(recipe.name)}">`
+          ? `<img class="detail-img" src="${escapeHTML(src)}"
+                  alt="Photo of ${escapeHTML(recipe.name)}" referrerpolicy="no-referrer">`
           : "";
       })()}
       ${recipe.description ? `<p class="detail-desc">${escapeHTML(recipe.description)}</p>` : ""}
