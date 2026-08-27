@@ -325,9 +325,9 @@
 
   function resolvePhoto(path) {
     const cloud = window.RecipeCloud;
-    if (photoPending.has(path) || !cloud || !cloud.sync || !cloud.sync.userId) return;
+    if (photoPending.has(path) || !cloud || !cloud.api || !cloud.api.userId) return;
     photoPending.add(path);
-    cloud.sync
+    cloud.api
       .signedPhotoUrl(path)
       .then((url) => {
         photoUrls.set(path, { url, expiresAt: Date.now() + SIGNED_TTL_MS });
@@ -363,9 +363,9 @@
    */
   async function uploadPendingPhoto(recipeId, image) {
     const cloud = window.RecipeCloud;
-    if (!image.startsWith("data:") || !cloud || !cloud.sync || !cloud.sync.bookId) return "";
+    if (!image.startsWith("data:") || !cloud || !cloud.api || !cloud.sync || !cloud.sync.bookId) return "";
     try {
-      return await cloud.sync.uploadPhoto(cloud.sync.bookId, recipeId, dataUrlToBlob(image));
+      return await cloud.api.uploadPhoto(cloud.sync.bookId, recipeId, dataUrlToBlob(image));
     } catch (err) {
       console.warn("Recipe Friend: photo upload failed, keeping it on this device.", err);
       return "";
@@ -764,8 +764,8 @@
   $("#prefs-save-btn").addEventListener("click", () => {
     store.setPrefs({ mass: $("#mass-pref").value, volume: $("#volume-pref").value });
     const cloud = window.RecipeCloud;
-    if (cloud && cloud.sync && cloud.sync.userId) {
-      cloud.sync.pushPrefs(store.prefs).catch((err) => {
+    if (cloud && cloud.api && cloud.api.userId) {
+      cloud.api.pushPrefs(store.prefs).catch((err) => {
         console.warn("Recipe Friend: could not save preferences to your account.", err);
       });
     }
@@ -994,8 +994,8 @@
     // Take the stored photo with it. Best effort — an orphaned file costs
     // a little quota, a failed delete shouldn't block removing the recipe.
     const cloud = window.RecipeCloud;
-    if (recipe.imagePath && cloud && cloud.sync && cloud.sync.bookId) {
-      cloud.sync
+    if (recipe.imagePath && cloud && cloud.api && cloud.sync && cloud.sync.bookId) {
+      cloud.api
         .deletePhoto(cloud.sync.bookId, recipe.id)
         .catch((err) => console.warn("Recipe Friend: could not remove the photo.", err));
     }

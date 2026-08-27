@@ -31,8 +31,12 @@
   }
 
   class BooksUI {
-    constructor(sync, app) {
+    constructor(sync, api, app) {
       this.sync = sync;
+      // Books, members and invites are data access, not sync. Taking the
+      // api directly is what stops this file asking an object called
+      // "sync" to mint an invite.
+      this.api = api;
       this.app = app;
       this.books = [];
       this.members = [];
@@ -58,7 +62,7 @@
 
     async refresh() {
       const previous = this.currentBook();
-      this.books = await this.sync.listBooks();
+      this.books = await this.api.listBooks();
       // A list that came back without the current book is the only proof
       // that the book has gone. listBooks throwing says nothing either way
       // and is left to reject, so a network blip never looks like a delete.
@@ -67,7 +71,7 @@
         return;
       }
       try {
-        this.members = await this.sync.listMembers(this.sync.bookId);
+        this.members = await this.api.listMembers(this.sync.bookId);
       } catch (err) {
         console.warn("Recipe Friend: could not load members.", err);
         this.members = [];
@@ -77,7 +81,7 @@
       const current = this.currentBook();
       if (current && current.isOwner) {
         try {
-          this.invites = await this.sync.listInvites(current.id);
+          this.invites = await this.api.listInvites(current.id);
         } catch (err) {
           console.warn("Recipe Friend: could not load invites.", err);
           this.invites = [];
@@ -207,7 +211,7 @@
         // and new recipes still need somewhere to go. It is the first book
         // they have of their own, so it is named like one (J1.3).
         try {
-          next = await this.sync.createBook(global.RecipeSync.ownBookName(this.sync.displayName));
+          next = await this.api.createBook(global.RecipeApi.ownBookName(this.sync.displayName));
           this.books = [next];
         } catch (err) {
           console.warn("Recipe Friend: could not replace the book that has gone.", err);
@@ -297,7 +301,7 @@
         const name = input.value.trim();
         if (!name) return;
         try {
-          const book = await this.sync.createBook(name);
+          const book = await this.api.createBook(name);
           input.value = "";
           this.books.push(book);
           await this.switchTo(book.id);
@@ -312,7 +316,7 @@
       $("#invite-btn").addEventListener("click", async () => {
         const out = $("#invite-out");
         try {
-          const code = await this.sync.createInvite(this.sync.bookId);
+          const code = await this.api.createInvite(this.sync.bookId);
           const url = `${location.origin}${location.pathname}#join=${code}`;
           out.hidden = false;
           out.textContent = url;
@@ -335,7 +339,7 @@
         if (!confirm("Revoke this invite link? Anyone still holding it won't be able to join."))
           return;
         try {
-          await this.sync.revokeInvite(btn.dataset.revoke);
+          await this.api.revokeInvite(btn.dataset.revoke);
           const out = $("#invite-out");
           if (out && out.textContent.endsWith(btn.dataset.revoke)) {
             out.hidden = true;
@@ -354,7 +358,7 @@
         if (!btn) return;
         if (!confirm("Remove this person from the book?")) return;
         try {
-          await this.sync.removeMember(this.sync.bookId, btn.dataset.remove);
+          await this.api.removeMember(this.sync.bookId, btn.dataset.remove);
           await this.refresh();
         } catch (err) {
           console.warn("Recipe Friend: could not remove member.", err);
@@ -372,7 +376,7 @@
         // Spell out exactly what is about to be destroyed, for everyone.
         let recipeCount = null;
         try {
-          recipeCount = await this.sync.countRecipes(current.id);
+          recipeCount = await this.api.countRecipes(current.id);
         } catch {
           recipeCount = null;
         }
@@ -395,7 +399,7 @@
         if (!confirm(parts.join("\n\n"))) return;
 
         try {
-          await this.sync.deleteBook(current.id);
+          await this.api.deleteBook(current.id);
         } catch (err) {
           console.warn("Recipe Friend: could not delete book.", err);
           this.app.toast("Couldn't delete that book.");
@@ -418,7 +422,7 @@
         if (!current || current.isOwner) return;
         if (!confirm(`Leave “${current.name}”? Its recipes stay with the book.`)) return;
         try {
-          await this.sync.leaveBook(current.id);
+          await this.api.leaveBook(current.id);
           // Drop this book's local cache so it doesn't linger on the device.
           this.app.store.useBook(null);
           this.books = this.books.filter((b) => b.id !== current.id);
@@ -466,7 +470,7 @@
         const name = input.value.trim();
         if (save && name && name !== book.name) {
           try {
-            await this.sync.renameBook(bookId, name);
+            await this.api.renameBook(bookId, name);
             book.name = name.slice(0, 80);
             this.app.toast("Book renamed.");
           } catch (err) {
@@ -518,7 +522,7 @@
     async join(code) {
       let preview;
       try {
-        preview = await this.sync.previewInvite(code);
+        preview = await this.api.previewInvite(code);
       } catch (err) {
         console.warn("Recipe Friend: could not read that invite.", err);
         this.app.toast("That invite link is invalid, used up, or has expired.");
@@ -534,7 +538,7 @@
         // Redeeming again is a no-op for an existing member — the server
         // hands back the book without spending a use — and it is the only
         // thing that knows which book the code points at.
-        const book = await this.sync.redeemInvite(code);
+        const book = await this.api.redeemInvite(code);
         await this.refresh();
         await this.switchTo(book.id);
         return true;
@@ -554,7 +558,7 @@
       }
 
       try {
-        const book = await this.sync.redeemInvite(code);
+        const book = await this.api.redeemInvite(code);
         await this.refresh();
         await this.switchTo(book.id);
         this.app.toast(`Joined “${book.name}”.`);

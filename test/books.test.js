@@ -332,7 +332,8 @@ function harness(opts = {}) {
   win.document = doc;
 
   const statuses = [];
-  const sync = new win.RecipeSync(store, cloud.client, (s) => statuses.push(s));
+  const api = new win.RecipeApi(cloud.client);
+  const sync = new win.RecipeSync(store, api, (s) => statuses.push(s));
   sync.userId = ME;
   sync.displayName = opts.displayName === undefined ? "Dave" : opts.displayName;
   const startBook = opts.book === undefined ? MINE : opts.book;
@@ -347,11 +348,11 @@ function harness(opts = {}) {
 
   const src = fs.readFileSync(path.join(__dirname, "..", "js", "books.js"), "utf8");
   new Function("window", src)(win);
-  const books = new win.RecipeBooks.BooksUI(sync, app);
+  const books = new win.RecipeBooks.BooksUI(sync, api, app);
   books.wire();
 
   return {
-    win, doc, cloud, db: cloud.db, store, sync, app, books, toasts, confirms,
+    win, doc, cloud, db: cloud.db, store, sync, api, app, books, toasts, confirms,
     clipboard, statuses, renders, restore,
     el: doc.el,
     setConfirm: (value) => { answer = value; },
@@ -404,8 +405,8 @@ test("J7.1 · everyone's first book is named after them", async () => {
 
 test("J7.1 · someone with no name at all still gets a book", async () => {
   const h = harness();
-  assert.equal(h.win.RecipeSync.ownBookName(""), "Recipes");
-  assert.equal(h.win.RecipeSync.ownBookName("  Dave  "), "Dave's recipes");
+  assert.equal(h.win.RecipeApi.ownBookName(""), "Recipes");
+  assert.equal(h.win.RecipeApi.ownBookName("  Dave  "), "Dave's recipes");
 });
 
 test("J7.1 · that first book can be shared as it is, with no personal tier to leave", async () => {
@@ -538,7 +539,7 @@ test("J7.4 · an invite expires after 48 hours, and only live ones are listed", 
   h.cloud.invite({ code: "live-one" });
   h.cloud.invite({ code: "gone-one", expires_at: new Date(Date.now() - HOURS).toISOString() });
 
-  const live = await h.sync.listInvites(MINE);
+  const live = await h.api.listInvites(MINE);
 
   assert.deepEqual(live.map((i) => i.code), ["live-one"], "an expired link is not offered");
   await h.books.refresh();
@@ -564,7 +565,7 @@ test("J7.4 · the code in the link survives being a link", async () => {
   // not come back out of a URL fragment the same way they went in.
   h.win.crypto = { getRandomValues: (bytes) => { for (let i = 0; i < bytes.length; i += 3) bytes.set([0xfb, 0xff, 0xbe], i); } };
 
-  const code = await h.sync.createInvite(MINE);
+  const code = await h.api.createInvite(MINE);
 
   assert.equal(code, "-_---_---_---_--", "url-safe, and no padding to be stripped in transit");
   assert.equal(h.db.invites[0].code, code, "the server is told the same code the link carries");
@@ -573,7 +574,7 @@ test("J7.4 · the code in the link survives being a link", async () => {
 test("J7.4 · a browser with no secure randomness is refused an invite rather than given a guessable one", async () => {
   const h = harness();
   h.win.crypto = { };
-  await assert.rejects(() => h.sync.createInvite(MINE), /secure invite code/);
+  await assert.rejects(() => h.api.createInvite(MINE), /secure invite code/);
   assert.equal(h.db.invites.length, 0);
 });
 
@@ -988,7 +989,7 @@ test("J7.8 · the recipe count is of this book's live recipes, not ones already 
     updated_at: new Date().toISOString(), deleted_at: new Date().toISOString(),
   });
 
-  assert.equal(await h.sync.countRecipes(MINE), 2);
+  assert.equal(await h.api.countRecipes(MINE), 2);
 });
 
 test("J7.9 · nobody can delete their last remaining book", async () => {
@@ -1405,7 +1406,7 @@ test("J7.15 · the replacement is named the way the app names any book it makes 
   await h.books.refresh();
 
   const made = h.db.books.find((b) => b.owner === ME && b.id !== MINE);
-  assert.equal(made.name, h.win.RecipeSync.ownBookName(""), "no name to use, so: Recipes");
+  assert.equal(made.name, h.win.RecipeApi.ownBookName(""), "no name to use, so: Recipes");
   assert.equal(made.name, "Recipes");
 });
 

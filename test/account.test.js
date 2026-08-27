@@ -314,9 +314,10 @@ function arrive(opts = {}) {
 function syncOnly(opts = {}) {
   const win = loadApp("units.js", "scale.js", "storage.js", "sync.js");
   const sb = fakeSupabase(opts);
-  const sync = new win.RecipeSync(new win.RecipeStore(), sb.client, () => {});
+  const api = new win.RecipeApi(sb.client);
+  const sync = new win.RecipeSync(new win.RecipeStore(), api, () => {});
   sync.userId = "user-1";
-  return { sync, sb, win };
+  return { sync, api, sb, win };
 }
 
 // ---------------------------------------------------------------------
@@ -462,7 +463,7 @@ test("J1.3 · the book is named after the person, however the account names them
 
 test("J1.3 · a book named for nobody falls back rather than reading oddly", () => {
   const win = loadApp("units.js", "scale.js", "storage.js", "sync.js");
-  const name = win.RecipeSync.ownBookName;
+  const name = win.RecipeApi.ownBookName;
 
   assert.equal(name("Dave"), "Dave's recipes");
   assert.equal(name("  Dave  "), "Dave's recipes");
@@ -671,30 +672,30 @@ test("J8.3 · adopting the person's units does not touch a single recipe", async
 // ---------------------------------------------------------------------
 
 test("J8.2 · a preference pushed to the profile is the preference pulled back", async () => {
-  const { sync } = syncOnly({ db: withProfile(null) });
+  const { sync, api } = syncOnly({ db: withProfile(null) });
 
-  assert.equal(await sync.pullPrefs(), null, "nothing there to begin with");
-  await sync.pushPrefs({ mass: "imperial", volume: "us" });
+  assert.equal(await api.pullPrefs(), null, "nothing there to begin with");
+  await api.pushPrefs({ mass: "imperial", volume: "us" });
 
-  assert.deepEqual(await sync.pullPrefs(), { mass: "imperial", volume: "us" });
+  assert.deepEqual(await api.pullPrefs(), { mass: "imperial", volume: "us" });
 });
 
 test("J8.2 · a half-set preference travels as a half-set preference", async () => {
-  const { sync } = syncOnly({ db: withProfile(null) });
-  await sync.pushPrefs({ mass: "metric" });
+  const { sync, api } = syncOnly({ db: withProfile(null) });
+  await api.pushPrefs({ mass: "metric" });
 
-  assert.deepEqual(await sync.pullPrefs(), { mass: "metric", volume: "" }, "volume stays unset, not undefined");
+  assert.deepEqual(await api.pullPrefs(), { mass: "metric", volume: "" }, "volume stays unset, not undefined");
 });
 
 test("J8.2 · a profile row that is empty or missing is read as no preference", async () => {
   const missing = syncOnly({ db: makeDb() });
-  assert.equal(await missing.sync.pullPrefs(), null, "no row at all");
+  assert.equal(await missing.api.pullPrefs(), null, "no row at all");
 
   const empty = syncOnly({ db: withProfile(null) });
-  assert.equal(await empty.sync.pullPrefs(), null, "a row with nothing in it");
+  assert.equal(await empty.api.pullPrefs(), null, "a row with nothing in it");
 
   const blank = syncOnly({ db: withProfile({}) });
-  assert.deepEqual(await blank.sync.pullPrefs(), {}, "an empty object is passed through, not invented");
+  assert.deepEqual(await blank.api.pullPrefs(), {}, "an empty object is passed through, not invented");
 });
 
 test("J8.2 · a malformed profile row does not crash the app or corrupt the units", async () => {

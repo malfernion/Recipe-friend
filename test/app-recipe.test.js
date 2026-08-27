@@ -142,10 +142,11 @@ function submitRecipe(ui, { name = "Soup", ingredients, steps = ["Heat it."], se
 function signedInApp({ uploadPhoto, signedPhotoUrl } = {}) {
   const ui = loadUI();
   const calls = { uploads: [], signed: [] };
+  // Photos are the api's business; the book they belong to is sync's.
   ui.win.RecipeCloud = {
-    sync: {
+    sync: { bookId: BOOK },
+    api: {
       userId: "user-1",
-      bookId: BOOK,
       uploadPhoto: async (bookId, recipeId, blob) => {
         calls.uploads.push({ bookId, recipeId, blob });
         if (uploadPhoto) return uploadPhoto(bookId, recipeId, blob);
@@ -155,6 +156,7 @@ function signedInApp({ uploadPhoto, signedPhotoUrl } = {}) {
         calls.signed.push(path);
         return signedPhotoUrl ? signedPhotoUrl(path) : `https://signed.example/${path}?token=1`;
       },
+      deletePhoto: async () => {},
     },
   };
   return { ...ui, calls };
