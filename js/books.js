@@ -247,10 +247,24 @@
       this.renderDialog();
     }
 
+    /**
+     * Wire the dialog up once. Split by what each group is about rather
+     * than left as one long method: the four concerns below share nothing
+     * but the dialog they live in.
+     */
     wire() {
       if (this.wired) return;
       this.wired = true;
+      this.wireDialog();
+      this.wireMove();
+      this.wireSharing();
+    }
 
+    /**
+     * Opening and closing the dialog, and the list of books inside it:
+     * picking one, renaming one, making one.
+     */
+    wireDialog() {
       $("#books-btn").addEventListener("click", async () => {
         this.dialog.showModal();
         await this.refresh();
@@ -270,7 +284,29 @@
         if (btn) this.switchTo(btn.dataset.book);
       });
 
-      // --- Move a recipe between books ---
+      $("#create-book-btn").addEventListener("click", async () => {
+        const input = $("#new-book-name");
+        const name = input.value.trim();
+        if (!name) return;
+        try {
+          const book = await this.api.createBook(name);
+          input.value = "";
+          this.books.push(book);
+          await this.switchTo(book.id);
+          await this.refresh();
+          this.app.toast(`Created “${book.name}”.`);
+        } catch (err) {
+          console.warn("Recipe Friend: could not create book.", err);
+          this.app.toast("Couldn't create that book.");
+        }
+      });
+    }
+
+    /**
+     * Moving a recipe to another book. It lives here because the list of
+     * books to move it to is this file's, not app.js's.
+     */
+    wireMove() {
       const moveDialog = $("#move-dialog");
       $("#move-cancel-btn").addEventListener("click", () => moveDialog.close());
       moveDialog.addEventListener("click", (event) => {
@@ -295,24 +331,13 @@
           this.app.toast("Couldn't move that recipe.");
         }
       });
+    }
 
-      $("#create-book-btn").addEventListener("click", async () => {
-        const input = $("#new-book-name");
-        const name = input.value.trim();
-        if (!name) return;
-        try {
-          const book = await this.api.createBook(name);
-          input.value = "";
-          this.books.push(book);
-          await this.switchTo(book.id);
-          await this.refresh();
-          this.app.toast(`Created “${book.name}”.`);
-        } catch (err) {
-          console.warn("Recipe Friend: could not create book.", err);
-          this.app.toast("Couldn't create that book.");
-        }
-      });
-
+    /**
+     * Everything about who else is in a book: invites, members, and the
+     * two ways a book ends for you — leaving it, or deleting it.
+     */
+    wireSharing() {
       $("#invite-btn").addEventListener("click", async () => {
         const out = $("#invite-out");
         try {
@@ -447,6 +472,7 @@
         }
       });
     }
+
 
     /** Swap a book's name for an input, in place. */
     beginRename(bookId) {
