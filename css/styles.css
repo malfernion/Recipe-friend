@@ -330,6 +330,7 @@ body {
 .field input:focus-visible,
 .field textarea:focus-visible,
 .field select:focus-visible,
+.ing-row input:focus-visible,
 .legal-links a:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
@@ -485,6 +486,12 @@ body {
   transition: color 0.15s ease;
 }
 
+/*
+  Padding rather than a bigger glyph: the star sits inside a card that is
+  itself a button, so a near-miss did not do nothing — it opened the
+  recipe. The negative margin keeps the larger target from shifting the
+  title it sits beside.
+*/
 .fav-btn {
   font-size: 1.15rem;
   line-height: 1;
@@ -492,7 +499,8 @@ body {
   border: none;
   cursor: pointer;
   color: var(--ink-faint);
-  padding: 0.15rem 0.2rem;
+  padding: 0.6rem 0.65rem;
+  margin: -0.45rem -0.5rem 0 0;
   flex-shrink: 0;
   transition: color 0.15s ease, transform 0.15s ease;
 }
@@ -597,7 +605,8 @@ body {
   border-radius: 0;
   background: var(--paper-raised);
   color: var(--ink);
-  padding: 2.25rem 2.25rem 1.75rem;
+  --dialog-pad-b: 1.75rem;
+  padding: 2.25rem 2.25rem var(--dialog-pad-b);
   width: min(600px, calc(100vw - 2rem));
   max-height: min(88dvh, 960px);
   overflow-y: auto;
@@ -715,7 +724,6 @@ body {
 }
 
 .ing-row input:focus-visible {
-  outline: none;
   border-color: var(--accent);
 }
 
@@ -779,13 +787,33 @@ body {
   flex: 1;
 }
 
+/*
+  Sticky, because these dialogs scroll: Save sat below a long form, and
+  Close below every step of a recipe — which is the one screen being read
+  with your hands full. The dialog's own ground goes behind it so the
+  content scrolling underneath does not show through.
+*/
 .dialog-actions {
   display: flex;
   align-items: center;
   justify-content: flex-end;
   gap: 1.1rem;
+  position: sticky;
+  /*
+    bottom:0 sticks to the content box, leaving the dialog's own bottom
+    padding as a strip the form scrolls through underneath — the tags
+    field was visible below the Save button. The bar is pulled down
+    through that padding and grows its own to cover it; the negative
+    margin cancels the growth when the bar is at rest, and nothing
+    follows it in flow for that margin to disturb.
+  */
+  bottom: calc(-1 * var(--dialog-pad-b, 0px));
+  z-index: 1;
   margin-top: 1.5rem;
+  margin-bottom: calc(-1 * var(--dialog-pad-b, 0px));
   padding-top: 1.25rem;
+  padding-bottom: var(--dialog-pad-b, 0.25rem);
+  background: var(--paper-raised);
   border-top: 1px solid var(--rule);
 }
 
@@ -914,12 +942,16 @@ body {
   color: var(--ink-soft);
 }
 
+/*
+  The one control in the app meant to be used mid-cook, with hands that
+  are wet or floury. It was 30x30 — the second-smallest thing on screen.
+*/
 .scale-btn {
   font: inherit;
-  font-size: 1.05rem;
+  font-size: 1.15rem;
   line-height: 1;
-  width: 1.9rem;
-  height: 1.9rem;
+  width: 2.75rem;
+  height: 2.75rem;
   border: 1px solid var(--rule-strong);
   background: none;
   color: var(--ink);
@@ -1014,9 +1046,14 @@ body {
 
 /* Phones */
 @media (max-width: 480px) {
+  /*
+    Servings, prep and cook hold two digits each. Stacked, they were three
+    full-width rows — some 300px of scrolling to get past six characters —
+    so they stay side by side and just get narrower.
+  */
   .field-row {
-    flex-direction: column;
-    gap: 0;
+    gap: 0.5rem;
+    align-items: flex-end;
   }
 
   .container {
@@ -1035,13 +1072,24 @@ body {
   .recipe-dialog {
     width: calc(100vw - 1rem);
     max-height: calc(100dvh - 1rem);
-    padding: 1.5rem 1.25rem 1.25rem;
+    --dialog-pad-b: 1.25rem;
+    padding: 1.5rem 1.25rem var(--dialog-pad-b);
   }
 
   .dialog-actions {
     flex-wrap: wrap;
     gap: 0.75rem 1rem;
   }
+
+  /*
+    The spacer keeps growing when the row wraps, which is what holds
+    Delete at the far left of the first line while Edit ends up at the
+    right of the last. Hiding it here (as this block used to) packed the
+    two together; giving Delete a line of its own instead cost a third
+    row of a bar that is now sticky, in the one view being read while
+    cooking. Leaving the spacer alone is both the smaller change and the
+    better layout.
+  */
 
   .ing-row {
     gap: 0.35rem;
@@ -1056,12 +1104,38 @@ body {
   }
 }
 
+/*
+  Below this the three-across ingredient row stops working: the item field
+  is last in a row that has already run out, so the field holding the
+  longest text — "tomato purée", "plain flour" — ends up the narrowest of
+  the three, and the placeholder clips to "spaghet". Amount and unit keep
+  their row; the item takes a line of its own.
+*/
+@media (max-width: 380px) {
+  .ing-row {
+    flex-wrap: wrap;
+  }
+
+  .ing-row .ing-item {
+    flex: 1 0 100%;
+    order: 1;
+  }
+}
+
+/* Footer links were 13px tall — a real target, not just underlined text. */
+@media (pointer: coarse) {
+  .legal-links a {
+    display: inline-block;
+    padding: 0.5rem 0.25rem;
+  }
+}
+
 /* Touch devices: larger tap targets, no hover-dependent affordances */
 @media (pointer: coarse) {
   .fav-btn {
     font-size: 1.45rem;
-    padding: 0.3rem 0.45rem;
-    margin: -0.2rem -0.2rem 0 0;
+    padding: 0.68rem 0.72rem;
+    margin: -0.5rem -0.55rem 0 0;
   }
 
   /* A floor rather than a nudge: padding alone still left these at 31px. */
