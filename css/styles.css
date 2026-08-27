@@ -7,7 +7,7 @@
   --paper-raised: #fbf8f2;
   --ink: #211d18;
   --ink-soft: #4f463c;
-  --ink-faint: #8a7f70;
+  --ink-faint: #6f6555;
   --rule: #d9d1c2;
   --rule-strong: #b8ad99;
   --accent: #9a4a26;
@@ -24,7 +24,7 @@
     --paper-raised: #211d19;
     --ink: #eae4d8;
     --ink-soft: #b5aa99;
-    --ink-faint: #83796a;
+    --ink-faint: #9a8f7e;
     --rule: #37312a;
     --rule-strong: #554c40;
     --accent: #d08454;
@@ -36,6 +36,16 @@
 
 * {
   box-sizing: border-box;
+}
+
+/*
+  The hidden attribute is a browser default, which any author rule beats.
+  Three rules here quietly did: an element could be marked hidden in the
+  DOM, toggled correctly in JS, and painted anyway. Stating it once, with
+  the weight to win, means it cannot happen again.
+*/
+[hidden] {
+  display: none !important;
 }
 
 html {

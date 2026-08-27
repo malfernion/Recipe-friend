@@ -17,6 +17,7 @@
   let detailId = null; // recipe id shown in the detail dialog
   let pendingImage = ""; // data URI chosen via the file picker, pre-save
   let existingPhotoPath = ""; // photo already in Storage for the recipe being edited
+  let formBaseline = ""; // the editor's contents as it opened, to spot unsaved work
   let detailScale = 1; // display-only scaling factor for the open detail view
 
   // --- Elements ---
@@ -102,10 +103,11 @@
 
   function recipeCard(recipe, index) {
     const time = totalTime(recipe);
+    const count = recipe.ingredients.length;
     const meta = [
       recipe.servings ? `Serves ${recipe.servings}` : null,
       time,
-      `${recipe.ingredients.length} ingredients`,
+      `${count} ${count === 1 ? "ingredient" : "ingredients"}`,
     ]
       .filter(Boolean)
       .join(" · ");
@@ -277,7 +279,45 @@
     existingPhotoPath = recipe ? recipe.imagePath : "";
     recipeForm.elements.imageUrl.value = image.startsWith("http") ? image : "";
     updatePhotoPreview();
+    formBaseline = formSnapshot();
     recipeDialog.showModal();
+  }
+
+  /**
+   * Everything the editor is holding, as one comparable string. Taken as
+   * the form opens and again when something tries to close it, so an
+   * accidental dismissal can be told from an untouched one.
+   */
+  function formSnapshot() {
+    const f = recipeForm.elements;
+    return JSON.stringify([
+      f.name.value,
+      f.description.value,
+      f.servings.value,
+      f.prepMinutes.value,
+      f.cookMinutes.value,
+      f.steps.value,
+      f.tags.value,
+      f.imageUrl.value,
+      pendingImage,
+      existingPhotoPath,
+      readIngredientRows(),
+    ]);
+  }
+
+  /**
+   * Closing the editor is the one way to lose work in this app: a recipe
+   * typed out of a cookbook is minutes of it, and the backdrop on a phone
+   * is a thin margin around a long scrolling form — exactly where a thumb
+   * lands. Both ways out still work. They just ask first, and only when
+   * there is something to lose, so open-look-leave stays a single tap.
+   */
+  function tryCloseEditor() {
+    if (formSnapshot() !== formBaseline &&
+        !confirm("Discard this recipe? What you have typed will be lost.")) {
+      return;
+    }
+    recipeDialog.close();
   }
 
   function currentFormImage() {
@@ -985,12 +1025,22 @@
     render();
   });
 
-  // Close dialogs when clicking the backdrop.
-  for (const dialog of [recipeDialog, detailDialog, prefsDialog, aiHelpDialog, pasteDialog]) {
+  // Close dialogs when clicking the backdrop. These hold nothing that
+  // isn't already saved, so they go without asking.
+  for (const dialog of [detailDialog, prefsDialog, aiHelpDialog, pasteDialog]) {
     dialog.addEventListener("click", (event) => {
       if (event.target === dialog) dialog.close();
     });
   }
+
+  // The editor holds typed work, so both its accidental exits are guarded.
+  recipeDialog.addEventListener("click", (event) => {
+    if (event.target === recipeDialog) tryCloseEditor();
+  });
+  recipeDialog.addEventListener("cancel", (event) => {
+    event.preventDefault(); // Escape: decide for ourselves whether this closes
+    tryCloseEditor();
+  });
 
   // --- Overflow menu ---
   // <details> doesn't close on outside clicks or after choosing an item.

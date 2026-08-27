@@ -517,3 +517,100 @@ test("J6.1 · with no clipboard to write to, the link is offered rather than dro
   await ui.el("detail-share-btn").fire("click");
   assert.ok(offered && offered.includes("#add="), "the link is put somewhere it can be copied by hand");
 });
+
+// --- J2.9 · not throwing typed work away ---------------------------------
+
+/**
+ * Drive the editor's two accidental exits with a confirm() that answers
+ * however the test needs, and record whether it was asked at all.
+ */
+function editorWith(ui) {
+  const asked = [];
+  const saved = globalThis.confirm;
+  const answer = { value: false };
+  globalThis.confirm = (message) => {
+    asked.push(message);
+    return answer.value;
+  };
+  return {
+    asked,
+    answers: (value) => { answer.value = value; },
+    open: () => ui.el("recipe-dialog").open,
+    tapOutside: () => ui.el("recipe-dialog").fire("click"),
+    pressEscape: () => {
+      let prevented = false;
+      ui.el("recipe-dialog").fire("cancel", { preventDefault: () => { prevented = true; } });
+      return prevented;
+    },
+    type: (name) => { ui.el("recipe-form").elements.name.value = name; },
+    restore: () => { globalThis.confirm = saved; },
+  };
+}
+
+test("J2.9 · leaving an untouched form alone closes it without asking", () => {
+  const ui = loadUI();
+  const editor = editorWith(ui);
+  try {
+    openNewRecipeForm(ui);
+    assert.equal(editor.open(), true);
+
+    editor.tapOutside();
+    assert.equal(editor.open(), false, "nothing was typed, so nothing is at risk");
+    assert.deepEqual(editor.asked, [], "and open-look-leave stays a single tap");
+  } finally {
+    editor.restore();
+  }
+});
+
+test("J2.9 · a tap outside a half-typed recipe asks before discarding it", () => {
+  const ui = loadUI();
+  const editor = editorWith(ui);
+  try {
+    openNewRecipeForm(ui);
+    editor.type("Grandmother's pie");
+
+    editor.answers(false);
+    editor.tapOutside();
+    assert.equal(editor.open(), true, "answering no leaves the recipe where it was");
+    assert.equal(editor.asked.length, 1);
+
+    editor.answers(true);
+    editor.tapOutside();
+    assert.equal(editor.open(), false, "answering yes still lets it go");
+  } finally {
+    editor.restore();
+  }
+});
+
+test("J2.9 · Escape asks too, and keeps the form open when the answer is no", () => {
+  const ui = loadUI();
+  const editor = editorWith(ui);
+  try {
+    openNewRecipeForm(ui);
+    editor.type("Grandmother's pie");
+
+    editor.answers(false);
+    // The app takes the decision off the browser, which would otherwise
+    // have closed the dialog before anyone was asked.
+    assert.equal(editor.pressEscape(), true, "the browser's own close is stopped first");
+    assert.equal(editor.open(), true);
+    assert.equal(editor.asked.length, 1);
+  } finally {
+    editor.restore();
+  }
+});
+
+test("J2.9 · Cancel is an explicit choice, so it does not ask", () => {
+  const ui = loadUI();
+  const editor = editorWith(ui);
+  try {
+    openNewRecipeForm(ui);
+    editor.type("Grandmother's pie");
+
+    ui.el("cancel-dialog-btn").fire("click");
+    assert.equal(editor.open(), false);
+    assert.deepEqual(editor.asked, [], "the button says what it does; asking twice is nagging");
+  } finally {
+    editor.restore();
+  }
+});

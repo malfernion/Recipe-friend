@@ -53,6 +53,11 @@ Someone types in a recipe from their head or a book.
 8. Signed in, a device photo is uploaded to private storage and the recipe
    keeps only its path. If the upload fails the photo stays on the recipe as
    data instead — a photo is never silently lost.
+9. **Typed work is not thrown away by accident.** Dismissing the editor by
+   tapping outside it or pressing Escape asks first, and only when
+   something has actually been typed or changed — opening a recipe, reading
+   it and leaving stays a single tap. **Cancel** is an explicit choice and
+   closes without asking.
 
 ## J3 · Finding something to cook
 
