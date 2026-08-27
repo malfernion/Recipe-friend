@@ -313,9 +313,24 @@ body {
   border-bottom-color: var(--danger);
 }
 
+/*
+  One ring for everything that takes focus. Four rules used to set
+  outline:none and signal focus by shifting a border colour instead — on
+  a card that meant a 1px hairline going grey to rust, which is a
+  colour-only cue and easy to lose. Those colour shifts all stay; the
+  ring goes back on top of them.
+*/
 .btn:focus-visible,
 .chip:focus-visible,
-.fav-btn:focus-visible {
+.fav-btn:focus-visible,
+.more-summary:focus-visible,
+.more-item:focus-visible,
+.recipe-card:focus-visible,
+.search-input:focus-visible,
+.field input:focus-visible,
+.field textarea:focus-visible,
+.field select:focus-visible,
+.legal-links a:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
 }
@@ -355,14 +370,13 @@ body {
 }
 
 .search-input:focus {
-  outline: none;
   border-bottom-color: var(--accent);
 }
 
 .filter-row {
   display: flex;
-  align-items: baseline;
-  gap: 0.35rem 1.1rem;
+  align-items: center;
+  gap: 0.45rem;
   flex-wrap: wrap;
 }
 
@@ -370,32 +384,42 @@ body {
   display: contents;
 }
 
+/*
+  Chips are buttons and have to look like it. They used to share their
+  whole type treatment — letterspaced small caps in --ink-faint — with
+  .card-meta and the section labels, and carried no border or ground at
+  all, so the filter row read as a caption describing the list rather
+  than as five controls above it. The small caps stay; a hairline and a
+  surface give them a body.
+*/
 .chip {
   font-family: var(--sans);
   font-size: 0.7rem;
   font-weight: 600;
   letter-spacing: 0.16em;
   text-transform: uppercase;
-  padding: 0.25rem 0;
-  border: none;
-  border-bottom: 1px solid transparent;
-  background: none;
-  color: var(--ink-faint);
+  padding: 0.4rem 0.65rem;
+  border: 1px solid var(--rule);
+  border-radius: 0;
+  background: var(--paper-raised);
+  color: var(--ink-soft);
   cursor: pointer;
-  transition: color 0.15s ease, border-color 0.15s ease;
+  transition: color 0.15s ease, border-color 0.15s ease, background-color 0.15s ease;
 }
 
 .chip:hover {
   color: var(--ink);
+  border-color: var(--rule-strong);
 }
 
+/*
+  Pressed is a filled chip rather than an underline: once every chip has
+  a full border, a heavier bottom edge no longer reads as a state.
+*/
 .chip-active {
-  color: var(--accent);
-  border-bottom-color: var(--accent);
-}
-
-.chip-fav {
-  color: var(--ink-soft);
+  color: var(--paper);
+  background: var(--accent);
+  border-color: var(--accent);
 }
 
 /* ---------- Recipe grid ---------- */
@@ -420,7 +444,6 @@ body {
 .recipe-card:hover,
 .recipe-card:focus-visible {
   border-top-color: var(--accent);
-  outline: none;
 }
 
 .recipe-card:hover .card-title,
@@ -630,7 +653,6 @@ body {
 }
 
 .field select:focus-visible {
-  outline: none;
   border-color: var(--accent);
 }
 
@@ -659,7 +681,6 @@ body {
 
 .field input:focus-visible,
 .field textarea:focus-visible {
-  outline: none;
   border-color: var(--accent);
 }
 
@@ -1043,10 +1064,12 @@ body {
     margin: -0.2rem -0.2rem 0 0;
   }
 
+  /* A floor rather than a nudge: padding alone still left these at 31px. */
   .btn,
-  .chip {
-    padding-top: 0.55rem;
-    padding-bottom: 0.55rem;
+  .chip,
+  .more-item,
+  .more-summary {
+    min-height: 44px;
   }
 
   .btn-primary {
