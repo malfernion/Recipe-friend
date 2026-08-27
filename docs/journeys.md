@@ -58,6 +58,8 @@ Someone types in a recipe from their head or a book.
    something has actually been typed or changed — opening a recipe, reading
    it and leaving stays a single tap. **Cancel** is an explicit choice and
    closes without asking.
+10. **Deleting a saved recipe asks first**, names the recipe, and says it
+    cannot be undone. Answering no leaves it exactly where it was.
 
 ## J3 · Finding something to cook
 

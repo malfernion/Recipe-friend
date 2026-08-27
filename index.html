@@ -101,7 +101,12 @@
       </div>
     </section>
 
-    <section id="recipe-list" class="recipe-grid" aria-live="polite"></section>
+    <!--
+      The count is the live region, not the grid. Announcing the grid
+      re-read every visible card on every keystroke in the search box.
+    -->
+    <p id="result-count" class="visually-hidden" role="status" aria-live="polite"></p>
+    <section id="recipe-list" class="recipe-grid"></section>
 
     <div id="empty-state" class="empty-state" hidden>
       <p class="empty-emoji">🥕</p>
@@ -345,6 +350,17 @@ https://malfernion.github.io/Recipe-friend/#paste</pre>
     </div>
   </dialog>
 
+  <!-- Asked before anything that cannot be undone. See js/ask.js. -->
+  <dialog id="confirm-dialog" class="recipe-dialog confirm-dialog">
+    <form method="dialog">
+      <p id="confirm-message" class="confirm-message"></p>
+      <div class="dialog-actions">
+        <button type="submit" value="" class="btn btn-ghost">Cancel</button>
+        <button type="submit" value="yes" id="confirm-yes" class="btn btn-danger">OK</button>
+      </div>
+    </form>
+  </dialog>
+
   <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
 
   <script src="js/scale.js"></script>
@@ -354,6 +370,7 @@ https://malfernion.github.io/Recipe-friend/#paste</pre>
   <script src="js/storage.js"></script>
   <script src="js/share.js"></script>
   <script src="js/search.js"></script>
+  <script src="js/ask.js"></script>
   <script src="js/app.js"></script>
   <script src="js/vendor/supabase.js"></script>
   <script src="js/config.js"></script>

@@ -209,3 +209,25 @@ test("J3.6 · a favourite belongs to the recipe, so a book shares it", () => {
   assert.match(app.store.exportJSON(), /"favorite": true/,
     "and it travels with the recipe rather than with the device");
 });
+
+// --- the search result count, for anyone who cannot see the list --------
+
+test("the count is announced, not the whole grid", () => {
+  const app = appWith([ROAST, SOUP, CURRY]);
+  assert.equal(app.el("result-count").textContent, "3 recipes");
+
+  app.search("onion");
+  assert.equal(app.el("result-count").textContent, "2 recipes");
+
+  app.search("curry");
+  assert.equal(app.el("result-count").textContent, "1 recipe", "and it counts in the singular");
+
+  app.search("zzzz");
+  assert.equal(app.el("result-count").textContent, "No recipes match your search.");
+});
+
+test("an empty box says nothing rather than announcing a zero", () => {
+  // The empty state on screen already says it, and better.
+  const app = appWith([]);
+  assert.equal(app.el("result-count").textContent, "");
+});

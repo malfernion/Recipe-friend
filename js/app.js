@@ -24,6 +24,7 @@
   const $ = (sel) => document.querySelector(sel);
   const listEl = $("#recipe-list");
   const emptyStateEl = $("#empty-state");
+  const resultCountEl = $("#result-count");
   const searchInput = $("#search-input");
   const favoritesBtn = $("#favorites-filter");
   const tagFiltersEl = $("#tag-filters");
@@ -162,9 +163,29 @@
       listEl.innerHTML = `<p class="no-results">No recipes match your search.</p>`;
     }
 
+    announceCount(hasAny ? visible.length : null);
     favoritesBtn.classList.toggle("chip-active", favoritesOnly);
     favoritesBtn.setAttribute("aria-pressed", String(favoritesOnly));
     renderTagFilters();
+  }
+
+  /**
+   * Say how many recipes are showing, for anyone who cannot see the list.
+   * The grid itself used to be the live region, which re-read every
+   * visible card on every keystroke in the search box.
+   *
+   * Only written when the wording changes: assigning the same text again
+   * makes a screen reader repeat it, and searching is a lot of keystrokes
+   * that do not change the answer.
+   */
+  function announceCount(count) {
+    const text =
+      count === null
+        ? ""
+        : count === 0
+          ? "No recipes match your search."
+          : `${count} ${count === 1 ? "recipe" : "recipes"}`;
+    if (resultCountEl.textContent !== text) resultCountEl.textContent = text;
   }
 
   // --- Ingredient row editor ---
@@ -312,9 +333,12 @@
    * lands. Both ways out still work. They just ask first, and only when
    * there is something to lose, so open-look-leave stays a single tap.
    */
-  function tryCloseEditor() {
+  async function tryCloseEditor() {
     if (formSnapshot() !== formBaseline &&
-        !confirm("Discard this recipe? What you have typed will be lost.")) {
+        !(await RecipeAsk.ask("Discard this recipe? What you have typed will be lost.", {
+          confirmLabel: "Discard",
+          danger: true,
+        }))) {
       return;
     }
     recipeDialog.close();
@@ -1007,10 +1031,14 @@
     if (recipe) openRecipeDialog(recipe);
   });
 
-  $("#detail-delete-btn").addEventListener("click", () => {
+  $("#detail-delete-btn").addEventListener("click", async () => {
     const recipe = store.getById(detailId);
     if (!recipe) return;
-    if (!confirm(`Delete “${recipe.name}”? This can't be undone.`)) return;
+    const ok = await RecipeAsk.ask(`Delete “${recipe.name}”? This can't be undone.`, {
+      confirmLabel: "Delete",
+      danger: true,
+    });
+    if (!ok) return;
     // Take the stored photo with it. Best effort — an orphaned file costs
     // a little quota, a failed delete shouldn't block removing the recipe.
     const cloud = window.RecipeCloud;
@@ -1035,11 +1063,12 @@
 
   // The editor holds typed work, so both its accidental exits are guarded.
   recipeDialog.addEventListener("click", (event) => {
-    if (event.target === recipeDialog) tryCloseEditor();
+    if (event.target !== recipeDialog) return undefined;
+    return tryCloseEditor(); // returned so a test can await the answer
   });
   recipeDialog.addEventListener("cancel", (event) => {
     event.preventDefault(); // Escape: decide for ourselves whether this closes
-    tryCloseEditor();
+    return tryCloseEditor();
   });
 
   // --- Overflow menu ---

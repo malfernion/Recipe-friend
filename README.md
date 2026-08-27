@@ -168,6 +168,7 @@ js/html.js                     Escaping, in one place
 js/api.js                      Everything the app asks the server for
 js/search.js                   Search, filters, and "what can I cook?" ranking
 js/share.js                    Encode/decode single-recipe share links
+js/ask.js                      The confirm dialog, asked before anything undoable
 js/account.js                  Google sign-in, session, sync bootstrap
 js/sync.js                     Reconciling the local box with the book
 js/books.js                    Recipe books, members, and invite links
