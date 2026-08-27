@@ -12,13 +12,7 @@
   const SELECTED_KEY = "recipe-friend:selected-book";
 
   const $ = (sel) => document.querySelector(sel);
-  const esc = (s) =>
-    String(s)
-      .replaceAll("&", "&amp;")
-      .replaceAll("<", "&lt;")
-      .replaceAll(">", "&gt;")
-      .replaceAll('"', "&quot;")
-      .replaceAll("'", "&#39;");
+  const esc = global.RecipeHTML.escapeHTML;
 
   function rememberSelection(userId, bookId) {
     try {

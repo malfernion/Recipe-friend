@@ -36,7 +36,9 @@ function loadApp(...modules) {
   globalThis.CompressionStream = globalThis.CompressionStream || streams.CompressionStream;
   globalThis.DecompressionStream = globalThis.DecompressionStream || streams.DecompressionStream;
 
-  for (const name of modules) {
+  // html.js is a leaf everything that renders depends on, so it always
+  // goes in first rather than being repeated in every caller's list.
+  for (const name of ["html.js", ...modules.filter((m) => m !== "html.js")]) {
     const src = fs.readFileSync(path.join(SRC, name), "utf8");
     new Function("window", src)(win);
   }
@@ -79,7 +81,7 @@ function loadUI(options = {}) {
   if (options.gated) win.document.body.classList.add("gated");
   const base = loadApp("units.js", "scale.js", "storage.js", "share.js");
 
-  for (const key of ["RecipeUnits", "RecipeScale", "RecipeStore", "RecipeShare"]) {
+  for (const key of ["RecipeHTML", "RecipeUnits", "RecipeScale", "RecipeStore", "RecipeShare"]) {
     win[key] = base[key];
     globalThis[key] = base[key];
   }

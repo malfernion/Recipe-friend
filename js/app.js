@@ -36,14 +36,7 @@
   const toastEl = $("#toast");
 
   // --- Helpers ---
-  function escapeHTML(str) {
-    return String(str)
-      .replaceAll("&", "&amp;")
-      .replaceAll("<", "&lt;")
-      .replaceAll(">", "&gt;")
-      .replaceAll('"', "&quot;")
-      .replaceAll("'", "&#39;");
-  }
+  const escapeHTML = RecipeHTML.escapeHTML;
 
   let toastTimer = null;
   function toast(message) {
