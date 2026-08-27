@@ -11,7 +11,7 @@ const assert = require("node:assert/strict");
 const { loadApp, aRecipe } = require("./helpers/load.js");
 
 const win = loadApp("units.js", "scale.js", "storage.js", "search.js");
-const { parsePantryTerms, pantryMatches, matchesFilters, visibleRecipes, readable } = win.RecipeSearch;
+const { parseTerms, matchedTerms, matchesFilters, visibleRecipes, readable } = win.RecipeSearch;
 const sanitize = win.RecipeStore.sanitizeRecipe;
 
 const recipe = (over) => sanitize(aRecipe(over));
@@ -37,9 +37,21 @@ const CURRY = recipe({
 });
 
 test("J3.4 · plural tolerance works in both directions", () => {
-  assert.deepEqual(pantryMatches(SOUP, ["tomatoes"]), ["tomatoes"]);
-  assert.deepEqual(pantryMatches(SOUP, ["tomato"]), ["tomato"]);
-  assert.deepEqual(pantryMatches(CURRY, ["chickpea"]), ["chickpea"]);
+  // The criterion's own example, and the only shape that needs the stem:
+  // a plural term against text that is singular throughout. Everything
+  // else here would match as a plain substring anyway.
+  const PUREE = recipe({
+    name: "Ragu",
+    ingredients: [{ amount: 400, unit: "g", item: "tomato purée" }],
+    steps: ["Simmer."],
+  });
+  assert.deepEqual(matchedTerms(PUREE, ["tomatoes"]), ["tomatoes"],
+    "plural term finds singular text");
+
+  // The other direction needs no stem — a singular term is a substring of
+  // its own plural — but it is the half people expect, so pin it too.
+  assert.deepEqual(matchedTerms(SOUP, ["tomato"]), ["tomato"]);
+  assert.deepEqual(matchedTerms(SOUP, ["tomatoes"]), ["tomatoes"]);
 });
 
 test("J3.4 · a stem too short to mean anything is not used", () => {
@@ -47,33 +59,45 @@ test("J3.4 · a stem too short to mean anything is not used", () => {
   // tried when it is at least three characters, so this finds nothing —
   // while the term itself still matches as a plain substring wherever it
   // genuinely appears.
-  assert.deepEqual(pantryMatches(CURRY, ["ass"]), []);
-  assert.deepEqual(pantryMatches(CURRY, ["as"]), ["as"], "\"as\" is really in \"chickpeas\"");
+  assert.deepEqual(matchedTerms(CURRY, ["ass"]), []);
+  assert.deepEqual(matchedTerms(CURRY, ["as"]), ["as"], "\"as\" is really in \"chickpeas\"");
+});
+
+test("J3.3 · a term matches anywhere the reader can see it, not only the ingredients", () => {
+  // The one behaviour the merged search adds over the old pantry box: a
+  // listed term reaches the name, description and tags too, exactly as a
+  // plain search term always has (J3.1).
+  assert.deepEqual(matchedTerms(CURRY, ["chickpea"]), ["chickpea"], "the name");
+  assert.deepEqual(matchedTerms(CURRY, ["vegan"]), ["vegan"], "a tag");
+  assert.deepEqual(matchedTerms(SOUP, ["vegan"]), []);
 });
 
 test("J3.3 · matching names every term the recipe uses", () => {
-  assert.deepEqual(pantryMatches(CURRY, ["onion", "garlic", "beef"]).sort(),
+  assert.deepEqual(matchedTerms(CURRY, ["onion", "garlic", "beef"]).sort(),
     ["garlic", "onion"]);
 });
 
 test("a term matches the unit as well as the item", () => {
   // "cloves" is the unit on the garlic line, not part of the item.
-  assert.deepEqual(pantryMatches(CURRY, ["cloves"]), ["cloves"]);
+  assert.deepEqual(matchedTerms(CURRY, ["cloves"]), ["cloves"]);
 });
 
-test("no pantry terms means no pantry opinion", () => {
-  assert.deepEqual(pantryMatches(CURRY, []), []);
-  assert.deepEqual(pantryMatches(CURRY, null), []);
+test("no terms means no opinion", () => {
+  assert.deepEqual(matchedTerms(CURRY, []), []);
+  assert.deepEqual(matchedTerms(CURRY, null), []);
 });
 
-test("pantry input is split on commas, trimmed, lowercased", () => {
-  assert.deepEqual(parsePantryTerms(" Onion , TOMATOES ,rice"), ["onion", "tomatoes", "rice"]);
+test("a query is split on commas, trimmed, lowercased", () => {
+  assert.deepEqual(parseTerms(" Onion , TOMATOES ,rice"), ["onion", "tomatoes", "rice"]);
 });
 
-test("single letters and blanks are dropped from pantry input", () => {
-  assert.deepEqual(parsePantryTerms("a, , onion,,x"), ["onion"]);
-  assert.deepEqual(parsePantryTerms(""), []);
-  assert.deepEqual(parsePantryTerms(null), []);
+test("blanks are dropped, single letters are not", () => {
+  // The old pantry box dropped single letters, which mean nothing in a
+  // list of ingredients. As the only term in a search box one is a
+  // legitimate way to narrow a long list, so it survives.
+  assert.deepEqual(parseTerms("a, , onion,,"), ["a", "onion"]);
+  assert.deepEqual(parseTerms(""), []);
+  assert.deepEqual(parseTerms(null), []);
 });
 
 test("no criteria at all matches everything", () => {
@@ -86,14 +110,14 @@ test("J3.2 · filters combine — all must pass", () => {
   assert.equal(matchesFilters(favSoup, { favoritesOnly: true, tag: "quick" }), true);
   assert.equal(matchesFilters(favSoup, { favoritesOnly: true, tag: "vegan" }), false);
   assert.equal(matchesFilters(SOUP, { favoritesOnly: true, tag: "quick" }), false);
-  assert.equal(matchesFilters(favSoup, { favoritesOnly: true, tag: "quick", query: "curry" }), false);
+  assert.equal(matchesFilters(favSoup, { favoritesOnly: true, tag: "quick", terms: ["curry"] }), false);
 });
 
 test("J3.1 · the search term is matched against text already lowercased", () => {
-  // app.js lowercases what was typed before handing it over; the haystack
-  // is lowercased here. A capitalised query would silently match nothing.
-  assert.equal(matchesFilters(SOUP, { query: "tomato" }), true);
-  assert.equal(matchesFilters(SOUP, { query: "Tomato" }), false);
+  // parseTerms lowercases what was typed before handing it over; the
+  // haystack is lowercased here. A capitalised term would match nothing.
+  assert.equal(matchesFilters(SOUP, { terms: ["tomato"] }), true);
+  assert.equal(matchesFilters(SOUP, { terms: ["Tomato"] }), false);
 });
 
 test("J3.3 · ranking puts the best match first and is stable below that", () => {
@@ -102,17 +126,27 @@ test("J3.3 · ranking puts the best match first and is stable below that", () =>
   const one = recipe({ name: "One", ingredients: [{ amount: 1, unit: "", item: "onion" }], steps: ["x"] });
   const alsoOne = recipe({ name: "AlsoOne", ingredients: [{ amount: 1, unit: "", item: "rice" }], steps: ["x"] });
 
-  const out = visibleRecipes([one, both, alsoOne], { pantryTerms: ["onion", "rice"] });
+  const out = visibleRecipes([one, both, alsoOne], { terms: ["onion", "rice"] });
   assert.deepEqual(out.map((r) => r.name), ["Both", "One", "AlsoOne"],
     "two matches first; the two one-match recipes keep their original order");
 });
 
-test("J3.3 · a recipe using none of your ingredients drops out entirely", () => {
-  const out = visibleRecipes([SOUP, CURRY], { pantryTerms: ["chickpeas"] });
+test("J3.3 · a recipe matching none of the terms drops out entirely", () => {
+  const out = visibleRecipes([SOUP, CURRY], { terms: ["chickpeas"] });
   assert.deepEqual(out.map((r) => r.name), ["Chickpea Curry"]);
 });
 
-test("without pantry terms the collection keeps its own order", () => {
+test("J3.3 · one term leaves the collection in its own order", () => {
+  // Nothing here can distinguish ranking from not ranking: with one term
+  // every visible recipe matches exactly once, so sorting by count is a
+  // no-op on a stable sort. visibleRecipes skips the sort anyway, to avoid
+  // recomputing the matches for every recipe — an optimisation, not a
+  // behaviour, and recorded as such so nobody defends it as one.
+  const out = visibleRecipes([CURRY, SOUP], { terms: ["onion"] });
+  assert.deepEqual(out.map((r) => r.name), ["Chickpea Curry", "Tomato Soup"]);
+});
+
+test("without any terms the collection keeps its own order", () => {
   const out = visibleRecipes([CURRY, SOUP], {});
   assert.deepEqual(out.map((r) => r.name), ["Chickpea Curry", "Tomato Soup"]);
 });
@@ -124,13 +158,13 @@ test("J3.1 · what search reads is exactly what the screen shows", () => {
   // 400g converts to 14.1oz, which then renders as a kitchen fraction —
   // so the text search runs against is the fraction, not the decimal.
   assert.equal(readable(ing, prefs), "14⅛ oz tomatoes");
-  assert.equal(matchesFilters(SOUP, { query: "14⅛ oz", prefs }), true);
-  assert.equal(matchesFilters(SOUP, { query: "oz", prefs }), true);
+  assert.equal(matchesFilters(SOUP, { terms: ["14⅛ oz"], prefs }), true);
+  assert.equal(matchesFilters(SOUP, { terms: ["oz"], prefs }), true);
 
   // The decimal it passed through on the way is not what anyone sees, and
   // so is not what anyone can search for.
-  assert.equal(matchesFilters(SOUP, { query: "14.1", prefs }), false);
+  assert.equal(matchesFilters(SOUP, { terms: ["14.1"], prefs }), false);
 
   // The units as written stay searchable whatever the reader prefers.
-  assert.equal(matchesFilters(SOUP, { query: "400 g", prefs }), true);
+  assert.equal(matchesFilters(SOUP, { terms: ["400 g"], prefs }), true);
 });

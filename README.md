@@ -13,9 +13,8 @@ accounts and sync.
   photos are downscaled in the browser and kept in private storage; nothing
   in the bucket is publicly readable.
 - **Search and filter** — across names, ingredients and tags, plus tag chips
-  and favourites.
-- **"What can I cook?"** — list what you have and matching recipes rise to
-  the top.
+  and favourites. A search is a comma-separated list, so typing what you
+  have — `chicken, rice` — shows what you can cook, best matches first.
 - **Portion scaling and measurement preferences** — amounts rescale on the
   fly and appear in your own units, without ever editing the stored recipe.
 - **Shared recipe books** — invite a household into a book; everyone can add
@@ -65,11 +64,9 @@ type in the search box, pick a photo, click Export, open an invite link.
 
 Every test name quotes a criterion from [`docs/journeys.md`](docs/journeys.md),
 so a failure points at behaviour that was agreed rather than at an
-implementation detail. **76 of the 81 criteria have a test naming them**;
+implementation detail. **78 of the 83 criteria have a test naming them**;
 the five that do not are listed at the end of the journeys, along with the
-database, which is deliberately outside the net. Each test name quotes a criterion
-from [`docs/journeys.md`](docs/journeys.md), so a failure points at the
-behaviour that was agreed rather than at an implementation detail.
+database, which is deliberately outside the net.
 
 The database is deliberately not covered — see the note at the end of the
 journeys. Row-level security is verified by hand when a migration is run.
@@ -169,6 +166,7 @@ js/html.js                     Escaping, in one place
 js/api.js                      Everything the app asks the server for
 js/search.js                   Search, filters, and "what can I cook?" ranking
 js/share.js                    Encode/decode single-recipe share links
+js/ask.js                      The confirm dialog, asked before anything undoable
 js/account.js                  Google sign-in, session, sync bootstrap
 js/sync.js                     Reconciling the local box with the book
 js/books.js                    Recipe books, members, and invite links

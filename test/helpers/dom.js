@@ -86,10 +86,35 @@ function makeForm(id) {
   return form;
 }
 
+/**
+ * The dialog ask.js opens, answering itself.
+ *
+ * ask() resolves on the dialog's close event, which in a browser waits
+ * for a person. Nothing here is a person, so showModal answers straight
+ * away and the promise settles in the same turn. The default is yes,
+ * which is what the window.confirm stub did before this was a dialog;
+ * a test says otherwise with `el("confirm-dialog").answer = ""`.
+ */
+function makeConfirmDialog(id) {
+  const el = makeElement(id);
+  el.answer = "yes";
+  el.showModal = () => {
+    el.returnValue = el.answer;
+    el.open = false;
+    el.fire("close");
+  };
+  return el;
+}
+
 function makeDocument() {
   const byId = new Map();
   const get = (id) => {
-    if (!byId.has(id)) byId.set(id, id === "recipe-form" ? makeForm(id) : makeElement(id));
+    if (!byId.has(id)) {
+      byId.set(
+        id,
+        id === "recipe-form" ? makeForm(id) : id === "confirm-dialog" ? makeConfirmDialog(id) : makeElement(id)
+      );
+    }
     return byId.get(id);
   };
   const doc = {

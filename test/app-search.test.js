@@ -30,12 +30,7 @@ function appWith(recipes) {
     ui.el("search-input").value = text;
     ui.el("search-input").fire("input");
   };
-  const pantry = (text) => {
-    ui.el("pantry-toggle").fire("click");
-    ui.el("pantry-input").value = text;
-    ui.el("pantry-input").fire("input");
-  };
-  return { ...ui, titles, search, pantry };
+  return { ...ui, titles, search };
 }
 
 const ROAST = aRecipe({
@@ -127,26 +122,44 @@ test("J3.2 · the favourites filter narrows the list, and combines with search",
   assert.deepEqual(app.titles(), [], "a favourites filter and a search both apply");
 });
 
-test("J3.3 · what can I cook ranks by how many of your ingredients are used", () => {
+test("J3.3 · a list of terms ranks by how many each recipe matches", () => {
   const app = appWith([ROAST, SOUP, CURRY]);
-  app.pantry("onion, chickpeas");
-  // Curry uses both, soup uses one, roast uses neither and drops out.
+  app.search("onion, chickpeas");
+  // Curry matches both, soup matches one, roast matches neither and drops.
   assert.deepEqual(app.titles(), ["Chickpea Curry", "Tomato Soup"]);
 });
 
-test("J3.3 · a card names which of your ingredients it uses", () => {
+test("J3.3 · a card names which of the terms it matched", () => {
   const app = appWith([CURRY]);
-  app.pantry("chickpeas");
-  assert.match(app.el("recipe-list").innerHTML, /chickpeas/);
+  app.search("chickpeas, garlic");
+  const html = app.el("recipe-list").innerHTML;
+  assert.match(html, /Matches[^<]*chickpeas/);
+  assert.match(html, /Matches[^<]*garlic/);
 });
 
-test("J3.4 · ingredient matching tolerates simple plurals", () => {
+test("J3.3 · one term names nothing — every result matches it", () => {
+  // The annotation explains a ranking. With one term there is no ranking
+  // and nothing to explain, so it would just repeat what was typed.
+  const app = appWith([CURRY]);
+  app.search("chickpeas");
+  assert.deepEqual(app.titles(), ["Chickpea Curry"]);
+  assert.doesNotMatch(app.el("recipe-list").innerHTML, /card-matches/);
+});
+
+test("J3.3 · a search that is one term still behaves as it always did", () => {
+  const app = appWith([ROAST, SOUP, CURRY]);
+  app.search("onion");
+  assert.deepEqual(app.titles(), ["Chickpea Curry", "Tomato Soup"],
+    "filtered, and left in the collection's own order — newest first, unranked");
+});
+
+test("J3.4 · matching tolerates simple plurals", () => {
   const app = appWith([SOUP]);
-  app.pantry("tomatoes");
+  app.search("tomatoes");
   assert.deepEqual(app.titles(), ["Tomato Soup"], "plural term finds singular ingredient");
 
   const app2 = appWith([SOUP]);
-  app2.pantry("tomato");
+  app2.search("tomato");
   assert.deepEqual(app2.titles(), ["Tomato Soup"], "singular term finds plural ingredient");
 });
 
@@ -195,4 +208,26 @@ test("J3.6 · a favourite belongs to the recipe, so a book shares it", () => {
   assert.equal(app.store.getById(soup.id).favorite, true);
   assert.match(app.store.exportJSON(), /"favorite": true/,
     "and it travels with the recipe rather than with the device");
+});
+
+// --- the search result count, for anyone who cannot see the list --------
+
+test("the count is announced, not the whole grid", () => {
+  const app = appWith([ROAST, SOUP, CURRY]);
+  assert.equal(app.el("result-count").textContent, "3 recipes");
+
+  app.search("onion");
+  assert.equal(app.el("result-count").textContent, "2 recipes");
+
+  app.search("curry");
+  assert.equal(app.el("result-count").textContent, "1 recipe", "and it counts in the singular");
+
+  app.search("zzzz");
+  assert.equal(app.el("result-count").textContent, "No recipes match your search.");
+});
+
+test("an empty box says nothing rather than announcing a zero", () => {
+  // The empty state on screen already says it, and better.
+  const app = appWith([]);
+  assert.equal(app.el("result-count").textContent, "");
 });

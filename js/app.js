@@ -9,7 +9,7 @@
   const store = new RecipeStore();
 
   // --- UI state (not persisted) ---
-  let searchQuery = "";
+  let searchTerms = []; // the query, split on commas (J3.3)
   let favoritesOnly = false;
   let activeTag = null;
   let editingId = null; // recipe id being edited, or null when adding
@@ -17,14 +17,14 @@
   let detailId = null; // recipe id shown in the detail dialog
   let pendingImage = ""; // data URI chosen via the file picker, pre-save
   let existingPhotoPath = ""; // photo already in Storage for the recipe being edited
-  let pantryOn = false;
-  let pantryTerms = []; // normalized "what can I cook?" ingredients
+  let formBaseline = ""; // the editor's contents as it opened, to spot unsaved work
   let detailScale = 1; // display-only scaling factor for the open detail view
 
   // --- Elements ---
   const $ = (sel) => document.querySelector(sel);
   const listEl = $("#recipe-list");
   const emptyStateEl = $("#empty-state");
+  const resultCountEl = $("#result-count");
   const searchInput = $("#search-input");
   const favoritesBtn = $("#favorites-filter");
   const tagFiltersEl = $("#tag-filters");
@@ -53,24 +53,25 @@
     return total > 0 ? `${total} min` : null;
   }
 
-  /**
-   * What the person is currently looking for, as RecipeSearch wants it.
-   * Pantry terms only count while the panel is open, so a list left behind
-   * from a closed panel does not quietly keep filtering.
-   */
+  /** What the person is currently looking for, as RecipeSearch wants it. */
   function criteria() {
     return {
-      query: searchQuery,
+      terms: searchTerms,
       tag: activeTag,
       favoritesOnly,
-      pantryTerms: pantryOn ? pantryTerms : [],
       prefs: store.prefs,
     };
   }
 
-  /** Which of the user's pantry terms this recipe's ingredients mention. */
-  function pantryMatches(recipe) {
-    return RecipeSearch.pantryMatches(recipe, pantryOn ? pantryTerms : []);
+  /**
+   * Which of the listed terms this recipe answers to — named on the card
+   * so a ranked list explains its own order (J3.3). One term explains
+   * nothing worth saying: every result matches it, and the reader just
+   * typed it.
+   */
+  function matchedTerms(recipe) {
+    if (searchTerms.length < 2) return [];
+    return RecipeSearch.matchedTerms(recipe, searchTerms, store.prefs);
   }
 
   /**
@@ -103,15 +104,16 @@
 
   function recipeCard(recipe, index) {
     const time = totalTime(recipe);
+    const count = recipe.ingredients.length;
     const meta = [
       recipe.servings ? `Serves ${recipe.servings}` : null,
       time,
-      `${recipe.ingredients.length} ingredients`,
+      `${count} ${count === 1 ? "ingredient" : "ingredients"}`,
     ]
       .filter(Boolean)
       .join(" · ");
 
-    const matched = pantryMatches(recipe);
+    const matched = matchedTerms(recipe);
     return `
       <article class="recipe-card" data-id="${escapeHTML(recipe.id)}" tabindex="0"
                role="button" aria-label="Open ${escapeHTML(recipe.name)}">
@@ -135,7 +137,7 @@
         <p class="card-meta">${escapeHTML(meta)}</p>
         ${
           matched.length
-            ? `<p class="card-matches">Has ${matched.map((t) => escapeHTML(t)).join(" · ")}</p>`
+            ? `<p class="card-matches">Matches ${matched.map((t) => escapeHTML(t)).join(" · ")}</p>`
             : ""
         }
         ${
@@ -161,9 +163,29 @@
       listEl.innerHTML = `<p class="no-results">No recipes match your search.</p>`;
     }
 
+    announceCount(hasAny ? visible.length : null);
     favoritesBtn.classList.toggle("chip-active", favoritesOnly);
     favoritesBtn.setAttribute("aria-pressed", String(favoritesOnly));
     renderTagFilters();
+  }
+
+  /**
+   * Say how many recipes are showing, for anyone who cannot see the list.
+   * The grid itself used to be the live region, which re-read every
+   * visible card on every keystroke in the search box.
+   *
+   * Only written when the wording changes: assigning the same text again
+   * makes a screen reader repeat it, and searching is a lot of keystrokes
+   * that do not change the answer.
+   */
+  function announceCount(count) {
+    const text =
+      count === null
+        ? ""
+        : count === 0
+          ? "No recipes match your search."
+          : `${count} ${count === 1 ? "recipe" : "recipes"}`;
+    if (resultCountEl.textContent !== text) resultCountEl.textContent = text;
   }
 
   // --- Ingredient row editor ---
@@ -278,7 +300,48 @@
     existingPhotoPath = recipe ? recipe.imagePath : "";
     recipeForm.elements.imageUrl.value = image.startsWith("http") ? image : "";
     updatePhotoPreview();
+    formBaseline = formSnapshot();
     recipeDialog.showModal();
+  }
+
+  /**
+   * Everything the editor is holding, as one comparable string. Taken as
+   * the form opens and again when something tries to close it, so an
+   * accidental dismissal can be told from an untouched one.
+   */
+  function formSnapshot() {
+    const f = recipeForm.elements;
+    return JSON.stringify([
+      f.name.value,
+      f.description.value,
+      f.servings.value,
+      f.prepMinutes.value,
+      f.cookMinutes.value,
+      f.steps.value,
+      f.tags.value,
+      f.imageUrl.value,
+      pendingImage,
+      existingPhotoPath,
+      readIngredientRows(),
+    ]);
+  }
+
+  /**
+   * Closing the editor is the one way to lose work in this app: a recipe
+   * typed out of a cookbook is minutes of it, and the backdrop on a phone
+   * is a thin margin around a long scrolling form — exactly where a thumb
+   * lands. Both ways out still work. They just ask first, and only when
+   * there is something to lose, so open-look-leave stays a single tap.
+   */
+  async function tryCloseEditor() {
+    if (formSnapshot() !== formBaseline &&
+        !(await RecipeAsk.ask("Discard this recipe? What you have typed will be lost.", {
+          confirmLabel: "Discard",
+          danger: true,
+        }))) {
+      return;
+    }
+    recipeDialog.close();
   }
 
   function currentFormImage() {
@@ -788,31 +851,12 @@
   });
 
   searchInput.addEventListener("input", () => {
-    searchQuery = searchInput.value.trim().toLowerCase();
+    searchTerms = RecipeSearch.parseTerms(searchInput.value);
     render();
   });
 
   favoritesBtn.addEventListener("click", () => {
     favoritesOnly = !favoritesOnly;
-    render();
-  });
-
-  // --- "What can I cook?" pantry mode ---
-  const pantryToggle = $("#pantry-toggle");
-  const pantryPanel = $("#pantry-panel");
-  const pantryInput = $("#pantry-input");
-
-  pantryToggle.addEventListener("click", () => {
-    pantryOn = !pantryOn;
-    pantryPanel.hidden = !pantryOn;
-    pantryToggle.classList.toggle("chip-active", pantryOn);
-    pantryToggle.setAttribute("aria-pressed", String(pantryOn));
-    if (pantryOn) pantryInput.focus();
-    render();
-  });
-
-  pantryInput.addEventListener("input", () => {
-    pantryTerms = RecipeSearch.parsePantryTerms(pantryInput.value);
     render();
   });
 
@@ -987,10 +1031,14 @@
     if (recipe) openRecipeDialog(recipe);
   });
 
-  $("#detail-delete-btn").addEventListener("click", () => {
+  $("#detail-delete-btn").addEventListener("click", async () => {
     const recipe = store.getById(detailId);
     if (!recipe) return;
-    if (!confirm(`Delete “${recipe.name}”? This can't be undone.`)) return;
+    const ok = await RecipeAsk.ask(`Delete “${recipe.name}”? This can't be undone.`, {
+      confirmLabel: "Delete",
+      danger: true,
+    });
+    if (!ok) return;
     // Take the stored photo with it. Best effort — an orphaned file costs
     // a little quota, a failed delete shouldn't block removing the recipe.
     const cloud = window.RecipeCloud;
@@ -1005,12 +1053,23 @@
     render();
   });
 
-  // Close dialogs when clicking the backdrop.
-  for (const dialog of [recipeDialog, detailDialog, prefsDialog, aiHelpDialog, pasteDialog]) {
+  // Close dialogs when clicking the backdrop. These hold nothing that
+  // isn't already saved, so they go without asking.
+  for (const dialog of [detailDialog, prefsDialog, aiHelpDialog, pasteDialog]) {
     dialog.addEventListener("click", (event) => {
       if (event.target === dialog) dialog.close();
     });
   }
+
+  // The editor holds typed work, so both its accidental exits are guarded.
+  recipeDialog.addEventListener("click", (event) => {
+    if (event.target !== recipeDialog) return undefined;
+    return tryCloseEditor(); // returned so a test can await the answer
+  });
+  recipeDialog.addEventListener("cancel", (event) => {
+    event.preventDefault(); // Escape: decide for ourselves whether this closes
+    return tryCloseEditor();
+  });
 
   // --- Overflow menu ---
   // <details> doesn't close on outside clicks or after choosing an item.

@@ -109,12 +109,13 @@ function loadUI(options = {}) {
   // search.js is optional so this helper works either side of the
   // extraction — the characterisation tests must not have to change.
   const withSearch = fs.existsSync(path.join(SRC, "search.js"))
-    ? ["search.js", "app.js"]
-    : ["app.js"];
+    ? ["search.js", "ask.js", "app.js"]
+    : ["ask.js", "app.js"];
   for (const name of withSearch) {
     const src = fs.readFileSync(path.join(SRC, name), "utf8");
     new Function("window", src)(win);
     if (name === "search.js") globalThis.RecipeSearch = win.RecipeSearch;
+    if (name === "ask.js") globalThis.RecipeAsk = win.RecipeAsk;
   }
 
   return { win, el: win.document.el, app: win.RecipeApp, store: win.RecipeApp.store, restore };

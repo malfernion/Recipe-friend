@@ -321,15 +321,21 @@ function harness(opts = {}) {
     CSS: { escape: (s) => s },
     location: { origin: "https://test.local", pathname: "/", hash: "" },
     navigator: { clipboard: { writeText: async (text) => { clipboard.push(text); } } },
-    confirm: (message) => {
-      confirms.push(message);
-      return typeof answer === "function" ? answer(message) : answer;
-    },
     alert() {},
     setTimeout: (fn) => { void fn; return 0; },
     clearTimeout() {},
   });
   win.document = doc;
+  // ask.js is a <dialog> the person answers; here it is the answer itself,
+  // recorded so the tests can still read what they were asked.
+  const RecipeAsk = {
+    ask: async (message) => {
+      confirms.push(message);
+      return typeof answer === "function" ? answer(message) : answer;
+    },
+  };
+  win.RecipeAsk = RecipeAsk;
+  globalThis.RecipeAsk = RecipeAsk;
 
   const statuses = [];
   const api = new win.RecipeApi(cloud.client);

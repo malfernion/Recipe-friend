@@ -517,3 +517,110 @@ test("J6.1 · with no clipboard to write to, the link is offered rather than dro
   await ui.el("detail-share-btn").fire("click");
   assert.ok(offered && offered.includes("#add="), "the link is put somewhere it can be copied by hand");
 });
+
+// --- J2.9 · not throwing typed work away ---------------------------------
+
+/**
+ * Drive the editor's two accidental exits, reading what the confirm
+ * dialog was asked and answering for it.
+ */
+function editorWith(ui) {
+  const asked = [];
+  const dialog = ui.el("confirm-dialog");
+  const message = ui.el("confirm-message");
+  const show = dialog.showModal;
+  dialog.showModal = () => {
+    asked.push(message.textContent);
+    show();
+  };
+  return {
+    asked,
+    answers: (yes) => { dialog.answer = yes ? "yes" : ""; },
+    open: () => ui.el("recipe-dialog").open,
+    tapOutside: () => ui.el("recipe-dialog").fire("click"),
+    pressEscape: () => {
+      const prevented = { yes: false };
+      const settled = ui.el("recipe-dialog").fire("cancel", {
+        preventDefault: () => { prevented.yes = true; },
+      });
+      return Promise.resolve(settled).then(() => prevented.yes);
+    },
+    type: (name) => { ui.el("recipe-form").elements.name.value = name; },
+  };
+}
+
+test("J2.9 · leaving an untouched form alone closes it without asking", async () => {
+  const ui = loadUI();
+  const editor = editorWith(ui);
+  openNewRecipeForm(ui);
+  assert.equal(editor.open(), true);
+
+  await editor.tapOutside();
+  assert.equal(editor.open(), false, "nothing was typed, so nothing is at risk");
+  assert.deepEqual(editor.asked, [], "and open-look-leave stays a single tap");
+});
+
+test("J2.9 · a tap outside a half-typed recipe asks before discarding it", async () => {
+  const ui = loadUI();
+  const editor = editorWith(ui);
+  openNewRecipeForm(ui);
+  editor.type("Grandmother's pie");
+
+  editor.answers(false);
+  await editor.tapOutside();
+  assert.equal(editor.open(), true, "answering no leaves the recipe where it was");
+  assert.equal(editor.asked.length, 1);
+  assert.match(editor.asked[0], /Discard this recipe\?/);
+
+  editor.answers(true);
+  await editor.tapOutside();
+  assert.equal(editor.open(), false, "answering yes still lets it go");
+});
+
+test("J2.9 · Escape asks too, and keeps the form open when the answer is no", async () => {
+  const ui = loadUI();
+  const editor = editorWith(ui);
+  openNewRecipeForm(ui);
+  editor.type("Grandmother's pie");
+
+  editor.answers(false);
+  // The app takes the decision off the browser, which would otherwise
+  // have closed the dialog before anyone was asked.
+  assert.equal(await editor.pressEscape(), true, "the browser's own close is stopped first");
+  assert.equal(editor.open(), true);
+  assert.equal(editor.asked.length, 1);
+});
+
+test("J2.9 · Cancel is an explicit choice, so it does not ask", () => {
+  const ui = loadUI();
+  const editor = editorWith(ui);
+  openNewRecipeForm(ui);
+  editor.type("Grandmother's pie");
+
+  ui.el("cancel-dialog-btn").fire("click");
+  assert.equal(editor.open(), false);
+  assert.deepEqual(editor.asked, [], "the button says what it does; asking twice is nagging");
+});
+
+test("J2.10 · deleting a recipe asks first, and no means no", async () => {
+  const ui = openedDinner();
+  const dialog = ui.el("confirm-dialog");
+  const asked = [];
+  const show = dialog.showModal;
+  dialog.showModal = () => {
+    asked.push(ui.el("confirm-message").textContent);
+    show();
+  };
+
+  dialog.answer = "";
+  await ui.el("detail-delete-btn").fire("click");
+  assert.equal(ui.store.recipes.length, 1, "answering no leaves the recipe where it was");
+  assert.equal(ui.el("detail-dialog").open, true, "and does not close the recipe either");
+  assert.match(asked[0], /Dinner/, "the recipe is named rather than described as 'this recipe'");
+  assert.match(asked[0], /can't be undone/);
+
+  dialog.answer = "yes";
+  await ui.el("detail-delete-btn").fire("click");
+  assert.deepEqual(ui.store.recipes, [], "and yes still deletes it");
+  assert.equal(ui.el("detail-dialog").open, false);
+});

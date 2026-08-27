@@ -361,8 +361,11 @@
       $("#invite-list").addEventListener("click", async (event) => {
         const btn = event.target.closest("[data-revoke]");
         if (!btn) return;
-        if (!confirm("Revoke this invite link? Anyone still holding it won't be able to join."))
-          return;
+        const ok = await RecipeAsk.ask(
+          "Revoke this invite link? Anyone still holding it won't be able to join.",
+          { confirmLabel: "Revoke", danger: true }
+        );
+        if (!ok) return;
         try {
           await this.api.revokeInvite(btn.dataset.revoke);
           const out = $("#invite-out");
@@ -381,7 +384,11 @@
       $("#member-list").addEventListener("click", async (event) => {
         const btn = event.target.closest("[data-remove]");
         if (!btn) return;
-        if (!confirm("Remove this person from the book?")) return;
+        const ok = await RecipeAsk.ask("Remove this person from the book?", {
+          confirmLabel: "Remove",
+          danger: true,
+        });
+        if (!ok) return;
         try {
           await this.api.removeMember(this.sync.bookId, btn.dataset.remove);
           await this.refresh();
@@ -421,7 +428,11 @@
           "This cannot be undone — export first if you want a copy. " +
             "An export carries recipes, not photos."
         );
-        if (!confirm(parts.join("\n\n"))) return;
+        const ok = await RecipeAsk.ask(parts.join("\n\n"), {
+          confirmLabel: "Delete book",
+          danger: true,
+        });
+        if (!ok) return;
 
         try {
           await this.api.deleteBook(current.id);
@@ -445,7 +456,11 @@
       $("#leave-book-btn").addEventListener("click", async () => {
         const current = this.currentBook();
         if (!current || current.isOwner) return;
-        if (!confirm(`Leave “${current.name}”? Its recipes stay with the book.`)) return;
+        const ok = await RecipeAsk.ask(
+          `Leave “${current.name}”? Its recipes stay with the book.`,
+          { confirmLabel: "Leave", danger: true }
+        );
+        if (!ok) return;
         try {
           await this.api.leaveBook(current.id);
           // Drop this book's local cache so it doesn't linger on the device.
@@ -556,9 +571,10 @@
       }
 
       if (preview.alreadyMember) {
-        const ok = confirm(
+        const ok = await RecipeAsk.ask(
           `You're already in “${preview.bookName}”.\n\n` +
-            "Switch to it now? Recipes you save will go into that book until you switch back."
+            "Switch to it now? Recipes you save will go into that book until you switch back.",
+          { confirmLabel: "Switch" }
         );
         if (!ok) return false;
         // Redeeming again is a no-op for an existing member — the server
@@ -570,13 +586,14 @@
         return true;
       }
 
-      const ok = confirm(
+      const ok = await RecipeAsk.ask(
         `Join “${preview.bookName}”?\n\n` +
           `${preview.ownerName} is sharing this recipe book with you.\n\n` +
           "You'll be able to see everything in it, and everyone in the book — " +
           "including you — can add, edit and delete its recipes.\n\n" +
           "Recipe Friend will switch to this book, so new recipes you save " +
-          "will go into it until you switch back."
+          "will go into it until you switch back.",
+        { confirmLabel: "Join" }
       );
       if (!ok) {
         this.app.toast("Invite declined — nothing was joined.");

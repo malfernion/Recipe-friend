@@ -93,21 +93,20 @@
   <main class="container">
     <section class="toolbar" aria-label="Search and filter">
       <input type="search" id="search-input" class="search-input"
-             placeholder="Search recipes, ingredients, tags…" aria-label="Search recipes">
+             placeholder="Search recipes, or list: chicken, rice"
+             aria-label="Search recipes, or list ingredients separated by commas">
       <div class="filter-row">
-        <button id="favorites-filter" class="chip chip-fav" aria-pressed="false">★ Favourites</button>
-        <button id="pantry-toggle" class="chip" aria-pressed="false" aria-controls="pantry-panel">What can I cook?</button>
+        <button id="favorites-filter" class="chip" aria-pressed="false">★ Favourites</button>
         <div id="tag-filters" class="tag-filter-list"></div>
-      </div>
-      <div id="pantry-panel" class="pantry-panel" hidden>
-        <input type="text" id="pantry-input" class="search-input"
-               placeholder="Ingredients you have — e.g. chicken, tomatoes, rice"
-               aria-label="Ingredients you have">
-        <p class="pantry-hint">Recipes using any of these rise to the top, best matches first.</p>
       </div>
     </section>
 
-    <section id="recipe-list" class="recipe-grid" aria-live="polite"></section>
+    <!--
+      The count is the live region, not the grid. Announcing the grid
+      re-read every visible card on every keystroke in the search box.
+    -->
+    <p id="result-count" class="visually-hidden" role="status" aria-live="polite"></p>
+    <section id="recipe-list" class="recipe-grid"></section>
 
     <div id="empty-state" class="empty-state" hidden>
       <p class="empty-emoji">🥕</p>
@@ -351,6 +350,17 @@ https://malfernion.github.io/Recipe-friend/#paste</pre>
     </div>
   </dialog>
 
+  <!-- Asked before anything that cannot be undone. See js/ask.js. -->
+  <dialog id="confirm-dialog" class="recipe-dialog confirm-dialog">
+    <form method="dialog">
+      <p id="confirm-message" class="confirm-message"></p>
+      <div class="dialog-actions">
+        <button type="submit" value="" class="btn btn-ghost">Cancel</button>
+        <button type="submit" value="yes" id="confirm-yes" class="btn btn-danger">OK</button>
+      </div>
+    </form>
+  </dialog>
+
   <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
 
   <script src="js/scale.js"></script>
@@ -360,6 +370,7 @@ https://malfernion.github.io/Recipe-friend/#paste</pre>
   <script src="js/storage.js"></script>
   <script src="js/share.js"></script>
   <script src="js/search.js"></script>
+  <script src="js/ask.js"></script>
   <script src="js/app.js"></script>
   <script src="js/vendor/supabase.js"></script>
   <script src="js/config.js"></script>

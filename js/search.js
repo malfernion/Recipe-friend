@@ -34,57 +34,69 @@
   }
 
   /**
-   * Split what someone typed into "What can I cook?" into terms.
-   * Single letters are dropped — they match everything and mean nothing.
+   * Split what someone typed into terms. A query is a comma-separated
+   * list: one term is an ordinary search, several are a list of things
+   * they have (J3.3). Blanks are dropped; a single letter is not, because
+   * as a lone term it is a legitimate narrowing of a long list.
    */
-  function parsePantryTerms(text) {
+  function parseTerms(text) {
     return String(text || "")
       .split(",")
       .map((s) => s.trim().toLowerCase())
-      .filter((s) => s.length >= 2);
+      .filter(Boolean);
   }
 
-  /** Which of these terms the recipe's ingredients mention (J3.3). */
-  function pantryMatches(recipe, terms) {
+  /**
+   * Which of these terms this recipe answers to (J3.3). The haystack is
+   * built once per recipe rather than once per term — every term is
+   * matched against the same text, so there is nothing to rebuild.
+   */
+  function matchedTerms(recipe, terms, prefs) {
     if (!terms || terms.length === 0) return [];
-    const lines = recipe.ingredients.map((i) => `${i.item} ${i.unit}`.toLowerCase());
+    const hay = haystack(recipe, prefs);
     return terms.filter((term) => {
+      if (hay.includes(term)) return true;
       // Also try a crude singular so "tomatoes" finds "tomato purée" and
       // vice versa (J3.4). Short stems would match far too much.
-      const singular = term.replace(/(es|s)$/, "");
-      return lines.some((l) => l.includes(term) || (singular.length >= 3 && l.includes(singular)));
+      const stem = term.replace(/(es|s)$/, "");
+      return stem.length >= 3 && hay.includes(stem);
     });
   }
 
   /**
    * Does this recipe survive the current filters?
-   * criteria: {query, tag, favoritesOnly, pantryTerms, prefs}
+   * criteria: {terms, tag, favoritesOnly, prefs}
+   *
+   * A recipe answering none of the terms is not shown. That makes a list
+   * of ingredients a question about what you can cook tonight rather than
+   * a re-ordering of everything you have ever saved (J3.3).
    */
   function matchesFilters(recipe, criteria) {
     const c = criteria || {};
     if (c.favoritesOnly && !recipe.favorite) return false;
     if (c.tag && !recipe.tags.includes(c.tag)) return false;
-    if (c.query && !haystack(recipe, c.prefs).includes(c.query)) return false;
-    if (c.pantryTerms && c.pantryTerms.length > 0 && pantryMatches(recipe, c.pantryTerms).length === 0) {
-      return false;
-    }
-    return true;
+    if (!c.terms || c.terms.length === 0) return true;
+    return matchedTerms(recipe, c.terms, c.prefs).length > 0;
   }
 
   /**
    * The recipes to show, in the order to show them: filtered, and — when
-   * cooking from what's in the cupboard — best matches first, stable
-   * within an equal count so the list does not shuffle on every keystroke.
+   * several terms were listed — best matches first, stable within an equal
+   * count so the list does not shuffle on every keystroke.
+   *
+   * One term is skipped rather than ranked: everything shown matches it
+   * exactly once, so sorting by count is a no-op on a stable sort. The
+   * skip saves recomputing the matches, and changes nothing observable.
    */
   function visibleRecipes(recipes, criteria) {
     const c = criteria || {};
     const visible = recipes.filter((r) => matchesFilters(r, c));
-    if (!c.pantryTerms || c.pantryTerms.length === 0) return visible;
+    if (!c.terms || c.terms.length < 2) return visible;
     return visible
-      .map((r, i) => ({ r, i, n: pantryMatches(r, c.pantryTerms).length }))
+      .map((r, i) => ({ r, i, n: matchedTerms(r, c.terms, c.prefs).length }))
       .sort((a, b) => b.n - a.n || a.i - b.i)
       .map((x) => x.r);
   }
 
-  global.RecipeSearch = { readable, parsePantryTerms, pantryMatches, matchesFilters, visibleRecipes };
+  global.RecipeSearch = { readable, parseTerms, matchedTerms, matchesFilters, visibleRecipes };
 })(window);
