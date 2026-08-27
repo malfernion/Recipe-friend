@@ -64,11 +64,12 @@ Someone types in a recipe from their head or a book.
    can get different results for the same query.
 2. Tag chips and the Favourites filter narrow the list, and combine with
    search.
-3. "What can I cook?" takes a list of ingredients and ranks recipes by how
-   many they use, best first, each card naming which of the ingredients it
-   uses.
-4. Ingredient matching tolerates simple plurals, so "tomatoes" finds
-   "tomato purée".
+3. A search can be a list: separate terms with commas and recipes are
+   ranked by how many they match, best first, each card naming which ones
+   matched. A recipe matching none of the terms is not shown. One term
+   ranks nothing — everything shown matches it — so the collection keeps
+   its own order.
+4. Matching tolerates simple plurals, so "tomatoes" finds "tomato purée".
 5. **Search covers the current book only.** Switching books changes what is
    searchable. This is deliberate: each book keeps its own cache, and a
    cross-book result would be ambiguous about where it lives.

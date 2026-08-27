@@ -388,20 +388,6 @@ body {
   color: var(--ink-soft);
 }
 
-.pantry-panel {
-  display: flex;
-  flex-direction: column;
-  gap: 0.25rem;
-}
-
-.pantry-hint {
-  margin: 0;
-  font-family: var(--serif);
-  font-style: italic;
-  font-size: 0.82rem;
-  color: var(--ink-faint);
-}
-
 /* ---------- Recipe grid ---------- */
 .recipe-grid {
   display: grid;

@@ -13,9 +13,8 @@ accounts and sync.
   photos are downscaled in the browser and kept in private storage; nothing
   in the bucket is publicly readable.
 - **Search and filter** — across names, ingredients and tags, plus tag chips
-  and favourites.
-- **"What can I cook?"** — list what you have and matching recipes rise to
-  the top.
+  and favourites. A search is a comma-separated list, so typing what you
+  have — `chicken, rice` — shows what you can cook, best matches first.
 - **Portion scaling and measurement preferences** — amounts rescale on the
   fly and appear in your own units, without ever editing the stored recipe.
 - **Shared recipe books** — invite a household into a book; everyone can add

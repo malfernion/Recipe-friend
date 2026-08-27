@@ -9,7 +9,7 @@
   const store = new RecipeStore();
 
   // --- UI state (not persisted) ---
-  let searchQuery = "";
+  let searchTerms = []; // the query, split on commas (J3.3)
   let favoritesOnly = false;
   let activeTag = null;
   let editingId = null; // recipe id being edited, or null when adding
@@ -17,8 +17,6 @@
   let detailId = null; // recipe id shown in the detail dialog
   let pendingImage = ""; // data URI chosen via the file picker, pre-save
   let existingPhotoPath = ""; // photo already in Storage for the recipe being edited
-  let pantryOn = false;
-  let pantryTerms = []; // normalized "what can I cook?" ingredients
   let detailScale = 1; // display-only scaling factor for the open detail view
 
   // --- Elements ---
@@ -53,24 +51,25 @@
     return total > 0 ? `${total} min` : null;
   }
 
-  /**
-   * What the person is currently looking for, as RecipeSearch wants it.
-   * Pantry terms only count while the panel is open, so a list left behind
-   * from a closed panel does not quietly keep filtering.
-   */
+  /** What the person is currently looking for, as RecipeSearch wants it. */
   function criteria() {
     return {
-      query: searchQuery,
+      terms: searchTerms,
       tag: activeTag,
       favoritesOnly,
-      pantryTerms: pantryOn ? pantryTerms : [],
       prefs: store.prefs,
     };
   }
 
-  /** Which of the user's pantry terms this recipe's ingredients mention. */
-  function pantryMatches(recipe) {
-    return RecipeSearch.pantryMatches(recipe, pantryOn ? pantryTerms : []);
+  /**
+   * Which of the listed terms this recipe answers to — named on the card
+   * so a ranked list explains its own order (J3.3). One term explains
+   * nothing worth saying: every result matches it, and the reader just
+   * typed it.
+   */
+  function matchedTerms(recipe) {
+    if (searchTerms.length < 2) return [];
+    return RecipeSearch.matchedTerms(recipe, searchTerms, store.prefs);
   }
 
   /**
@@ -111,7 +110,7 @@
       .filter(Boolean)
       .join(" · ");
 
-    const matched = pantryMatches(recipe);
+    const matched = matchedTerms(recipe);
     return `
       <article class="recipe-card" data-id="${escapeHTML(recipe.id)}" tabindex="0"
                role="button" aria-label="Open ${escapeHTML(recipe.name)}">
@@ -135,7 +134,7 @@
         <p class="card-meta">${escapeHTML(meta)}</p>
         ${
           matched.length
-            ? `<p class="card-matches">Has ${matched.map((t) => escapeHTML(t)).join(" · ")}</p>`
+            ? `<p class="card-matches">Matches ${matched.map((t) => escapeHTML(t)).join(" · ")}</p>`
             : ""
         }
         ${
@@ -788,31 +787,12 @@
   });
 
   searchInput.addEventListener("input", () => {
-    searchQuery = searchInput.value.trim().toLowerCase();
+    searchTerms = RecipeSearch.parseTerms(searchInput.value);
     render();
   });
 
   favoritesBtn.addEventListener("click", () => {
     favoritesOnly = !favoritesOnly;
-    render();
-  });
-
-  // --- "What can I cook?" pantry mode ---
-  const pantryToggle = $("#pantry-toggle");
-  const pantryPanel = $("#pantry-panel");
-  const pantryInput = $("#pantry-input");
-
-  pantryToggle.addEventListener("click", () => {
-    pantryOn = !pantryOn;
-    pantryPanel.hidden = !pantryOn;
-    pantryToggle.classList.toggle("chip-active", pantryOn);
-    pantryToggle.setAttribute("aria-pressed", String(pantryOn));
-    if (pantryOn) pantryInput.focus();
-    render();
-  });
-
-  pantryInput.addEventListener("input", () => {
-    pantryTerms = RecipeSearch.parsePantryTerms(pantryInput.value);
     render();
   });
 
