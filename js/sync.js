@@ -1,6 +1,10 @@
 /**
  * sync.js — two-way sync between the local recipe box and Supabase (M2).
  *
+ * Only reconciliation lives here now. Everything else this app asks the
+ * server for — books, members, invites, photos, preferences — is data
+ * access rather than sync, and moved to api.js.
+ *
  * Model: localStorage stays the working copy so the app renders instantly
  * and works offline; the server is the shared truth between devices.
  * Reconciliation is last-write-wins per recipe, comparing the local
@@ -14,215 +18,64 @@
   "use strict";
 
   const PUSH_DEBOUNCE_MS = 1200;
-  const PHOTO_BUCKET = "recipe-photos";
 
   const toMillis = (iso) => (iso ? new Date(iso).getTime() : 0);
   const toIso = (ms) => new Date(ms || Date.now()).toISOString();
 
   class RecipeSync {
-    constructor(store, client, onStatus) {
+    constructor(store, api, onStatus) {
       this.store = store;
-      this.client = client;
+      this.api = api;
       this.onStatus = onStatus || (() => {});
       this.bookId = null;
-      this.userId = null;
       this.pending = false; // local edits waiting to go up
       this.running = false;
       this.timer = null;
+    }
+
+    /** Whose session this is. One copy of it, kept on the api. */
+    get userId() {
+      return this.api.userId;
+    }
+    set userId(id) {
+      this.api.userId = id;
     }
 
     status(state, detail) {
       this.onStatus(state, detail);
     }
 
-    /**
-     * Every book this user belongs to: [{id, name, role, isOwner}].
-     *
-     * `isOwner` comes from books.owner, never from the membership row's
-     * `role`. Ownership is what the server actually enforces, and reading
-     * it from the same place the policies do means the UI cannot be talked
-     * into showing — or hiding — the wrong controls.
-     */
-    async listBooks() {
-      const { data, error } = await this.client
-        .from("book_members")
-        .select("book_id, role, books(name, owner)")
-        .eq("user_id", this.userId);
-      if (error) throw error;
-      return (data || []).map((m) => ({
-        id: m.book_id,
-        role: m.role,
-        name: (m.books && m.books.name) || "Recipes",
-        isOwner: Boolean(m.books && m.books.owner === this.userId),
-      }));
-    }
 
-    /** Create a book owned by this user and join it. */
-    async createBook(name) {
-      const { data: book, error } = await this.client
-        .from("books")
-        .insert({ name: String(name).trim().slice(0, 80) || "Recipes", owner: this.userId })
-        .select("id, name")
-        .single();
-      if (error) throw error;
-      const { error: memberErr } = await this.client
-        .from("book_members")
-        .insert({ book_id: book.id, user_id: this.userId, role: "owner" });
-      if (memberErr) throw memberErr;
-      return { id: book.id, name: book.name, role: "owner", isOwner: true };
-    }
 
-    async renameBook(bookId, name) {
-      const { error } = await this.client
-        .from("books")
-        .update({ name: String(name).trim().slice(0, 80) })
-        .eq("id", bookId);
-      if (error) throw error;
-    }
 
-    /** Everyone in a book, with display names where visible. */
-    async listMembers(bookId) {
-      const { data, error } = await this.client
-        .from("book_members")
-        .select("user_id, role, profiles(display_name)")
-        .eq("book_id", bookId);
-      if (error) throw error;
-      return (data || []).map((m) => ({
-        userId: m.user_id,
-        role: m.role,
-        name: (m.profiles && m.profiles.display_name) || "Someone",
-        isMe: m.user_id === this.userId,
-      }));
-    }
 
-    /**
-     * Mint an invite code. Generated client-side so it is URL-safe — the
-     * column default is base64, which can contain "+" and "/".
-     *
-     * An invite is a bearer token: whoever holds the link gets write access
-     * to the book. So it is good for one join by default, and the server
-     * counts uses rather than trusting this.
-     */
-    async createInvite(bookId, maxUses = 1) {
-      const bytes = new Uint8Array(12);
-      if (!global.crypto || !global.crypto.getRandomValues) {
-        // No CSPRNG means a guessable invite. Refuse rather than mint one.
-        throw new Error("this browser cannot generate a secure invite code");
-      }
-      global.crypto.getRandomValues(bytes);
-      const code = btoa(String.fromCharCode(...bytes))
-        .replaceAll("+", "-")
-        .replaceAll("/", "_")
-        .replace(/=+$/, "");
-      const { error } = await this.client
-        .from("invites")
-        .insert({
-          code,
-          book_id: bookId,
-          created_by: this.userId,
-          max_uses: Math.min(50, Math.max(1, Math.round(maxUses) || 1)),
-        });
-      if (error) throw error;
-      return code;
-    }
 
-    /** Live invites for a book, newest first — owners only, by policy. */
-    async listInvites(bookId) {
-      const { data, error } = await this.client
-        .from("invites")
-        .select("code, expires_at, used_count, max_uses")
-        .eq("book_id", bookId)
-        .gt("expires_at", new Date().toISOString())
-        .order("created_at", { ascending: false });
-      if (error) throw error;
-      return (data || []).map((i) => ({
-        code: i.code,
-        expiresAt: i.expires_at,
-        usedCount: i.used_count,
-        maxUses: i.max_uses,
-      }));
-    }
 
-    /** Tear up an invite that hasn't been used yet (or has been). */
-    async revokeInvite(code) {
-      const { error } = await this.client.from("invites").delete().eq("code", code);
-      if (error) throw error;
-    }
 
-    /**
-     * What an invite is offering, without accepting it. The holder has no
-     * read access to the book yet, so this goes through a definer function
-     * that returns only what is needed to decide.
-     */
-    async previewInvite(code) {
-      const { data, error } = await this.client.rpc("preview_invite", { invite_code: code });
-      if (error) throw error;
-      const row = Array.isArray(data) ? data[0] : data;
-      if (!row) throw new Error("invalid or expired invite");
-      return {
-        bookName: row.book_name,
-        ownerName: row.owner_name,
-        alreadyMember: Boolean(row.already_member),
-      };
-    }
 
-    /** Join a book from an invite code (validated server-side). */
-    async redeemInvite(code) {
-      const { data, error } = await this.client.rpc("redeem_invite", { invite_code: code });
-      if (error) throw error;
-      const row = Array.isArray(data) ? data[0] : data;
-      if (!row) throw new Error("invalid or expired invite");
-      return { id: row.book_id, name: row.book_name };
-    }
 
-    async leaveBook(bookId) {
-      const { error } = await this.client
-        .from("book_members")
-        .delete()
-        .eq("book_id", bookId)
-        .eq("user_id", this.userId);
-      if (error) throw error;
-    }
 
-    /** How many live recipes a book holds — used to warn before deleting. */
-    async countRecipes(bookId) {
-      const { data, error } = await this.client
-        .from("recipes")
-        .select("id")
-        .eq("book_id", bookId)
-        .is("deleted_at", null);
-      if (error) throw error;
-      return (data || []).length;
-    }
 
-    /**
-     * Delete a book. Its recipes, members and invites cascade away in the
-     * database, so this destroys the collection for everyone in it.
-     */
-    async deleteBook(bookId) {
-      const { error } = await this.client.from("books").delete().eq("id", bookId);
-      if (error) throw error;
-    }
 
-    async removeMember(bookId, userId) {
-      const { error } = await this.client
-        .from("book_members")
-        .delete()
-        .eq("book_id", bookId)
-        .eq("user_id", userId);
-      if (error) throw error;
-    }
+
+
+
+
+
+
+
+
+
+
+
+
+
 
     /**
      * What to call a book the app makes for someone rather than one they
      * named themselves — their first (J1.3), and any later replacement for
      * a book that has gone.
      */
-    static ownBookName(displayName) {
-      const who = String(displayName || "").trim().slice(0, 60);
-      return who ? `${who}'s recipes` : "Recipes";
-    }
-
     /**
      * Resolve which book this session syncs with, preferring the one the
      * user was last using on this device.
@@ -232,10 +85,10 @@
       // Kept because a replacement book may have to be named long after
       // sign-in, when only the sync object is to hand.
       this.displayName = displayName || "";
-      const books = await this.listBooks();
+      const books = await this.api.listBooks();
       if (books.length === 0) {
         // The signup trigger normally creates one; make our own if not.
-        const book = await this.createBook(RecipeSync.ownBookName(displayName));
+        const book = await this.api.createBook(global.RecipeApi.ownBookName(displayName));
         this.bookId = book.id;
         return this.bookId;
       }
@@ -283,31 +136,16 @@
         // dropped the moment this returns, so the new path has to go up
         // with the move rather than wait for the next push. Patch the
         // server's own data, so an edit made on another device survives.
-        const { data: row, error: readErr } = await this.client
-          .from("recipes")
-          .select("data")
-          .eq("id", recipeId)
-          .maybeSingle();
-        if (readErr) throw readErr;
+        const row = await this.api.readRecipeData(recipeId);
         // No row means the push above never landed — fail here, before
         // any file is touched, so the caller keeps what it still has.
         if (!row) throw new Error("that recipe hasn't reached the server yet");
         patch.data = { ...(row.data || local), imagePath: newPath };
       }
-      if (oldPath) {
-        const { error: copyErr } = await this.client.storage
-          .from(PHOTO_BUCKET)
-          .copy(oldPath, newPath);
-        if (copyErr) throw copyErr;
-      }
+      if (oldPath) await this.api.copyPhoto(oldPath, newPath);
 
-      const { data: moved, error } = await this.client
-        .from("recipes")
-        .update(patch)
-        .eq("id", recipeId)
-        .select("id");
-      if (error) throw error;
-      if (!moved || moved.length === 0) {
+      const movedCount = await this.api.patchRecipe(recipeId, patch);
+      if (movedCount === 0) {
         throw new Error("that recipe hasn't reached the server yet");
       }
 
@@ -316,7 +154,7 @@
       // little quota, so a failure here isn't worth failing the move over.
       if (oldPath) {
         try {
-          await this.deletePhoto(fromBookId, recipeId);
+          await this.api.deletePhoto(fromBookId, recipeId);
         } catch (err) {
           console.warn("Recipe Friend: the moved recipe's old photo is left behind.", err);
         }
@@ -324,41 +162,11 @@
       return newPath;
     }
 
-    /**
-     * Put a recipe photo in Storage and return its path. Keyed by book and
-     * recipe, so re-saving replaces the old file rather than accumulating
-     * orphans. The bucket is private, so a path — not a URL — is what gets
-     * stored on the recipe; readable links are minted on demand below.
-     */
-    async uploadPhoto(bookId, recipeId, blob) {
-      const path = `${bookId}/${recipeId}.jpg`;
-      const { error } = await this.client.storage
-        .from(PHOTO_BUCKET)
-        .upload(path, blob, { contentType: "image/jpeg", upsert: true, cacheControl: "3600" });
-      if (error) throw error;
-      return path;
-    }
 
-    /**
-     * A short-lived readable URL for a stored photo. Only members of the
-     * owning book can mint one, and it expires, so nothing about a photo
-     * is permanently public.
-     */
-    async signedPhotoUrl(path, expiresInSeconds = 3600) {
-      const { data, error } = await this.client.storage
-        .from(PHOTO_BUCKET)
-        .createSignedUrl(path, expiresInSeconds);
-      if (error) throw error;
-      return data.signedUrl;
-    }
 
-    /** Remove a recipe's photo. Best effort — a leftover file is harmless. */
-    async deletePhoto(bookId, recipeId) {
-      const { error } = await this.client.storage
-        .from(PHOTO_BUCKET)
-        .remove([`${bookId}/${recipeId}.jpg`]);
-      if (error) throw error;
-    }
+
+
+
 
     /** Point sync at a different book; the caller swaps the local cache. */
     setBook(bookId) {
@@ -366,25 +174,9 @@
       this.bookId = bookId;
     }
 
-    /** The signed-in user's stored unit preferences, or null if unset. */
-    async pullPrefs() {
-      const { data, error } = await this.client
-        .from("profiles")
-        .select("unit_prefs")
-        .eq("user_id", this.userId);
-      if (error) throw error;
-      const row = data && data[0];
-      return (row && row.unit_prefs) || null;
-    }
 
-    /** Preferences follow the person, not the recipe book. */
-    async pushPrefs(prefs) {
-      const { error } = await this.client
-        .from("profiles")
-        .update({ unit_prefs: { mass: prefs.mass || "", volume: prefs.volume || "" } })
-        .eq("user_id", this.userId);
-      if (error) throw error;
-    }
+
+
 
     /**
      * Merge server rows with the local box, then push whatever the server
@@ -396,21 +188,15 @@
       this.pending = false;
       this.status("syncing");
       try {
-        const { data: rows, error } = await this.client
-          .from("recipes")
-          .select("id, data, updated_at, deleted_at")
-          .eq("book_id", this.bookId);
-        if (error) throw error;
+        const rows = await this.api.fetchRecipes(this.bookId);
 
-        const { recipes, tombstones, toPush } = this.merge(rows || []);
+        const { recipes, tombstones, toPush } = this.merge(rows);
         this.store.applyMerge(recipes, tombstones);
 
-        if (toPush.length > 0) {
-          const { error: pushErr } = await this.client.from("recipes").upsert(toPush);
-          if (pushErr) throw pushErr;
-        }
-        this.status("synced", { pushed: toPush.length, pulled: (rows || []).length });
-        return { pushed: toPush.length, pulled: (rows || []).length };
+        if (toPush.length > 0) await this.api.pushRecipes(toPush);
+
+        this.status("synced", { pushed: toPush.length, pulled: rows.length });
+        return { pushed: toPush.length, pulled: rows.length };
       } catch (err) {
         console.warn("Recipe Friend: sync failed.", err);
         this.pending = true; // retry on the next local change or sign-in

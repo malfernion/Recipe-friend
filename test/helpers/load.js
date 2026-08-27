@@ -36,7 +36,13 @@ function loadApp(...modules) {
   globalThis.CompressionStream = globalThis.CompressionStream || streams.CompressionStream;
   globalThis.DecompressionStream = globalThis.DecompressionStream || streams.DecompressionStream;
 
-  for (const name of modules) {
+  // html.js is a leaf everything that renders depends on, so it always
+  // goes in first rather than being repeated in every caller's list.
+  // html.js and api.js are leaves the others depend on, so they always go
+  // in first rather than being repeated in every caller's list.
+  const leaves = ["html.js"];
+  if (modules.includes("sync.js") || modules.includes("api.js")) leaves.push("api.js");
+  for (const name of [...leaves, ...modules.filter((m) => !leaves.includes(m))]) {
     const src = fs.readFileSync(path.join(SRC, name), "utf8");
     new Function("window", src)(win);
   }
@@ -77,9 +83,9 @@ function loadUI(options = {}) {
   // set here rather than after, because app.js reads them on the way in.
   if (options.hash) win.location.hash = options.hash;
   if (options.gated) win.document.body.classList.add("gated");
-  const base = loadApp("units.js", "scale.js", "storage.js", "share.js");
+  const base = loadApp("api.js", "units.js", "scale.js", "storage.js", "share.js");
 
-  for (const key of ["RecipeUnits", "RecipeScale", "RecipeStore", "RecipeShare"]) {
+  for (const key of ["RecipeHTML", "RecipeApi", "RecipeUnits", "RecipeScale", "RecipeStore", "RecipeShare"]) {
     win[key] = base[key];
     globalThis[key] = base[key];
   }

@@ -43,13 +43,14 @@ function harness() {
   };
 
   const statuses = [];
-  const sync = new win.RecipeSync(store, client, (s) => statuses.push(s));
+  const api = new win.RecipeApi(client);
+  const sync = new win.RecipeSync(store, api, (s) => statuses.push(s));
   sync.setBook(BOOK);
   sync.userId = "u1";
   store.useBook(BOOK);
 
   return {
-    store, sync, calls, statuses,
+    store, sync, api, calls, statuses,
     setRemote: (r) => { rows = r; },
     breakNetwork: (err) => { failWith = err; },
     /** A server row for a recipe. */

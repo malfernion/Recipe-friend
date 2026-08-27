@@ -165,10 +165,12 @@ js/storage.js                  RecipeStore — local persistence and sanitisatio
 js/app.js                      UI: rendering, search/filter, dialogs, import/export
 js/scale.js                    Quantity parsing, formatting, portion scaling
 js/units.js                    Measurement preferences and unit conversion
+js/html.js                     Escaping, in one place
+js/api.js                      Everything the app asks the server for
 js/search.js                   Search, filters, and "what can I cook?" ranking
 js/share.js                    Encode/decode single-recipe share links
 js/account.js                  Google sign-in, session, sync bootstrap
-js/sync.js                     Two-way sync with Supabase (last-write-wins)
+js/sync.js                     Reconciling the local box with the book
 js/books.js                    Recipe books, members, and invite links
 js/config.js                   Supabase project URL and publishable key
 supabase/schema.sql            Tables, RLS policies, triggers, functions

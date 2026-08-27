@@ -101,7 +101,7 @@
    * what the profile already holds wins, otherwise this device seeds it.
    */
   async function reconcilePrefs(sync, store) {
-    const remote = await sync.pullPrefs();
+    const remote = await sync.api.pullPrefs();
     const local = store.prefs;
     const hasRemote = remote && (remote.mass || remote.volume);
     const hasLocal = Boolean(local.mass || local.volume);
@@ -110,14 +110,16 @@
         store.setPrefs(remote); // display-only: stored recipes are untouched (J8.3)
       }
     } else if (hasLocal) {
-      await sync.pushPrefs(local);
+      await sync.api.pushPrefs(local);
     }
   }
 
   async function startSync(session) {
     const app = window.RecipeApp;
     if (!app || !window.RecipeSync) return;
-    const sync = new window.RecipeSync(app.store, client, showStatus);
+    const api = new window.RecipeApi(client);
+    const sync = new window.RecipeSync(app.store, api, showStatus);
+    window.RecipeCloud.api = api;
     window.RecipeCloud.sync = sync;
     // Local edits from here on push automatically (debounced).
     app.store.onChange = () => sync.schedulePush();
@@ -129,7 +131,7 @@
       app.store.useBook(sync.bookId);
       if (window.RecipeBooks) {
         window.RecipeBooks.rememberSelection(session.user.id, sync.bookId);
-        books = new window.RecipeBooks.BooksUI(sync, app);
+        books = new window.RecipeBooks.BooksUI(sync, api, app);
         window.RecipeCloud.books = books;
         books.wire();
       }
