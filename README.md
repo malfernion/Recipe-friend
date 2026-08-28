@@ -17,6 +17,10 @@ accounts and sync.
   have — `chicken, rice` — shows what you can cook, best matches first.
 - **Portion scaling and measurement preferences** — amounts rescale on the
   fly and appear in your own units, without ever editing the stored recipe.
+- **Cook mode** — a *Keep screen on* toggle in the recipe view holds the
+  screen awake while you cook, so a phone propped against the bread bin
+  does not lock with your hands covered in flour. Off until asked for,
+  remembered on that device, and let go the moment the recipe closes.
 - **Shared recipe books** — invite a household into a book; everyone can add
   and edit, while each person keeps their own units. Invite links are
   single-use, expire in 48 hours, can be revoked, and never join anyone to
@@ -164,6 +168,7 @@ js/scale.js                    Quantity parsing, formatting, portion scaling
 js/units.js                    Measurement preferences and unit conversion
 js/html.js                     Escaping, in one place
 js/api.js                      Everything the app asks the server for
+js/cookmode.js                 Keeping the screen awake while cooking
 js/search.js                   Search, filters, and "what can I cook?" ranking
 js/share.js                    Encode/decode single-recipe share links
 js/ask.js                      The confirm dialog, asked before anything undoable

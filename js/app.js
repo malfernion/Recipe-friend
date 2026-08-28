@@ -623,6 +623,29 @@
     btn.hidden = !(cloud && cloud.books && cloud.books.books.length > 1);
   }
 
+  /**
+   * Keeping the screen awake while cooking (J4.9-J4.14). Off until asked
+   * for, remembered on this device, and released the moment the recipe
+   * closes — a phone back in a pocket must not still be awake.
+   */
+  const cookMode = new RecipeCookMode.CookMode({
+    navigator,
+    storage: window.localStorage,
+    onChange: () => syncCookButton(),
+  });
+
+  function syncCookButton() {
+    const btn = $("#detail-cook-btn");
+    if (!btn) return;
+    // Not offered at all where the browser cannot do it (J4.13).
+    btn.hidden = !cookMode.supported;
+    if (!cookMode.supported) return;
+    const on = cookMode.active;
+    btn.setAttribute("aria-pressed", String(on));
+    btn.classList.toggle("cook-on", on);
+    btn.textContent = on ? "☀ Screen staying on" : "☾ Keep screen on";
+  }
+
   function openDetailDialog(recipe) {
     // Keep the scale when re-rendering the same open recipe (e.g. after a
     // favourite toggle); reset it when a different recipe opens.
@@ -631,7 +654,11 @@
     detailContent.innerHTML = recipeDetailHTML(recipe, "From your recipe box", true);
     syncDetailFavButton(recipe);
     syncMoveButton();
-    if (!detailDialog.open) detailDialog.showModal();
+    syncCookButton();
+    if (!detailDialog.open) {
+      detailDialog.showModal();
+      cookMode.enter();
+    }
   }
 
   // Portion stepper: with known servings, step one serving at a time;
@@ -1017,6 +1044,24 @@
   });
 
   $("#detail-close-btn").addEventListener("click", () => detailDialog.close());
+
+  // Escape and the backdrop close a <dialog> without going through any
+  // button, so the lock is let go here rather than at each call site (J4.10).
+  detailDialog.addEventListener("close", () => {
+    cookMode.leave();
+    syncCookButton();
+  });
+
+  $("#detail-cook-btn").addEventListener("click", async () => {
+    await cookMode.toggle();
+    syncCookButton();
+  });
+
+  // A wake lock does not survive the page being hidden, and the browser
+  // does not hand it back — so take it again on the way in (J4.11).
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "visible") cookMode.resume();
+  });
 
   $("#detail-fav-btn").addEventListener("click", () => {
     const recipe = store.toggleFavorite(detailId);

@@ -624,3 +624,90 @@ test("J2.10 · deleting a recipe asks first, and no means no", async () => {
   assert.deepEqual(ui.store.recipes, [], "and yes still deletes it");
   assert.equal(ui.el("detail-dialog").open, false);
 });
+
+// ---------------------------------------------------------------------
+// J4.9–J4.14 · Cook mode, driven through the recipe view
+// ---------------------------------------------------------------------
+
+/** A recipe open in the app, with a wake lock we can watch. */
+function cooking({ supported = true } = {}) {
+  const ui = loadUI();
+  const calls = { requested: 0, released: 0 };
+  const listeners = [];
+  if (supported) {
+    ui.win.navigator.wakeLock = {
+      request: async () => {
+        calls.requested++;
+        return {
+          addEventListener: (_e, fn) => listeners.push(fn),
+          release: async () => { calls.released++; },
+        };
+      },
+    };
+  } else {
+    delete ui.win.navigator.wakeLock;
+  }
+  return { ui, calls, dropLock: () => listeners.forEach((fn) => fn()) };
+}
+
+test("J4.9 · the recipe view offers to keep the screen on, and does not by itself", async () => {
+  const { ui, calls } = cooking();
+  const saved = ui.store.add(aRecipe({ name: "Slow Braise" }));
+  ui.app.render();
+  openDetail(ui, saved.id);
+  await new Promise((r) => setImmediate(r));
+
+  assert.equal(ui.el("detail-cook-btn").hidden, false, "the control is there");
+  assert.equal(calls.requested, 0, "but the screen is not held until asked");
+  assert.match(ui.el("detail-cook-btn").textContent, /Keep screen on/);
+});
+
+test("J4.9 · pressing it holds the screen and says so", async () => {
+  const { ui, calls } = cooking();
+  const saved = ui.store.add(aRecipe({ name: "Slow Braise" }));
+  ui.app.render();
+  openDetail(ui, saved.id);
+  await ui.el("detail-cook-btn").fire("click");
+  await new Promise((r) => setImmediate(r));
+
+  assert.equal(calls.requested, 1);
+  assert.match(ui.el("detail-cook-btn").textContent, /staying on/,
+    "invisible state that costs battery has to be visible");
+});
+
+test("J4.10 · closing the recipe any way at all lets the screen go", async () => {
+  const { ui, calls } = cooking();
+  const saved = ui.store.add(aRecipe({ name: "Slow Braise" }));
+  ui.app.render();
+  openDetail(ui, saved.id);
+  await ui.el("detail-cook-btn").fire("click");
+  await new Promise((r) => setImmediate(r));
+  assert.equal(calls.requested, 1);
+
+  // Escape and the backdrop both fire `close` without touching a button.
+  ui.el("detail-dialog").fire("close");
+  await new Promise((r) => setImmediate(r));
+  assert.equal(calls.released, 1, "a phone in a pocket is not still awake");
+});
+
+test("J4.13 · a browser that cannot keep the screen awake is not offered the choice", async () => {
+  const { ui } = cooking({ supported: false });
+  const saved = ui.store.add(aRecipe({ name: "Slow Braise" }));
+  ui.app.render();
+  openDetail(ui, saved.id);
+  await new Promise((r) => setImmediate(r));
+  assert.equal(ui.el("detail-cook-btn").hidden, true);
+});
+
+test("J4.14 · cook mode is never a reason a recipe fails to open", async () => {
+  const ui = loadUI();
+  ui.win.navigator.wakeLock = { request: async () => { throw new Error("refused"); } };
+  const saved = ui.store.add(aRecipe({ name: "Slow Braise" }));
+  ui.app.render();
+  openDetail(ui, saved.id);
+  await ui.el("detail-cook-btn").fire("click");
+  await new Promise((r) => setImmediate(r));
+
+  assert.equal(ui.el("detail-dialog").open, true, "the recipe is still on screen");
+  assert.match(ui.el("detail-content").innerHTML, /Slow Braise/);
+});

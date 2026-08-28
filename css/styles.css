@@ -1451,6 +1451,13 @@ body.gated .app-footer {
   color: var(--danger);
 }
 
+/* Cook mode: while the screen is being held awake, say so — it is
+   otherwise invisible state that quietly costs battery. */
+.cook-on {
+  color: var(--accent);
+  border-color: var(--accent);
+}
+
 .review-warning {
   font-family: var(--sans);
   font-size: 0.85rem;

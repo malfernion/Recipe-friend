@@ -106,6 +106,25 @@ Someone types in a recipe from their head or a book.
    accepted rather than worked around — below a twentieth of a unit there is
    nothing useful to say, and the recipe as written is always one tap away
    at full portions.
+9. **Cook mode** keeps the screen awake while a recipe is open, so a phone
+   propped against the bread bin does not lock halfway through. It is a
+   toggle in the recipe view and it is **off until asked for** — a screen
+   that never sleeps is a battery decision, not one to make for someone.
+10. It is let go when the recipe closes, however it closes — the Close
+    button, Escape, or the backdrop. A phone that goes back in a pocket
+    still awake is the failure this criterion exists to prevent.
+11. It survives a glance away. Browsers drop a wake lock whenever the page
+    is hidden, so looking at a text message would otherwise end it silently
+    for the rest of the cook; it is taken again on returning.
+12. The choice is remembered **on the device, not on the profile**. Unlike
+    measurement preferences (J8.2), which follow the person, keeping a
+    screen awake is about the phone propped in front of you — the laptop
+    you typed the recipe on should not inherit it.
+13. Where the browser cannot keep the screen awake, the control is not
+    shown at all rather than offered and doing nothing.
+14. Cook mode is never a reason a recipe fails to open. If the screen lock
+    cannot be taken — an unsupported browser, a refusal, a low battery —
+    the recipe still opens and the toggle simply reports that it is off.
 
 ## J5 · Bringing in a recipe from outside
 
@@ -273,6 +292,7 @@ accident:
 - The app cannot tell a deleted book from one you were removed from, and
   does not pretend otherwise (J7.14).
 - Amounts below 0.05 display as 0 (J4.8).
+- Cook mode is remembered per device, not per person (J4.12).
 - Search results depend on the reader's unit preferences (J3.1).
 
 ## What the tests cover, and what they do not
