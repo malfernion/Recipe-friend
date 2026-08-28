@@ -83,9 +83,9 @@ function loadUI(options = {}) {
   // set here rather than after, because app.js reads them on the way in.
   if (options.hash) win.location.hash = options.hash;
   if (options.gated) win.document.body.classList.add("gated");
-  const base = loadApp("api.js", "units.js", "scale.js", "storage.js", "share.js");
+  const base = loadApp("api.js", "units.js", "scale.js", "storage.js", "share.js", "cookmode.js");
 
-  for (const key of ["RecipeHTML", "RecipeApi", "RecipeUnits", "RecipeScale", "RecipeStore", "RecipeShare"]) {
+  for (const key of ["RecipeHTML", "RecipeApi", "RecipeUnits", "RecipeScale", "RecipeStore", "RecipeShare", "RecipeCookMode"]) {
     win[key] = base[key];
     globalThis[key] = base[key];
   }
