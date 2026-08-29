@@ -60,6 +60,18 @@ Someone types in a recipe from their head or a book.
    closes without asking.
 10. **Deleting a saved recipe asks first**, names the recipe, and says it
     cannot be undone. Answering no leaves it exactly where it was.
+11. **The editor has an address too, so Back closes it rather than the
+    app.** The recipe view got one first (J4.17), which taught people
+    that Back closes what is open — and made it worse that from the
+    editor it still walked out of the site, taking whatever had been
+    typed with it and asking nothing, since a navigation is not a
+    dismissal. Back is now a dismissal like any other and gets the same
+    question as Escape (J2.9); answering "keep editing" puts the entry
+    back, so Back still means Back next time. Editing a recipe stacks on
+    top of reading it, so Back from the editor returns to the recipe
+    rather than all the way out to the list. Deleting the recipe you were
+    editing leaves nothing to go back to, and the address stops naming
+    it rather than offering a way to reopen what is gone.
 
 ## J3 · Finding something to cook
 
@@ -110,9 +122,12 @@ Someone types in a recipe from their head or a book.
    propped against the bread bin does not lock halfway through. It is a
    toggle in the recipe view and it is **off until asked for** — a screen
    that never sleeps is a battery decision, not one to make for someone.
-10. It is let go when the recipe closes, however it closes — the Close
-    button, Escape, or the backdrop. A phone that goes back in a pocket
-    still awake is the failure this criterion exists to prevent.
+10. It is let go when the recipe closes, however it closes — the ×,
+    Escape, Back, handing over to the editor, or the backdrop where there
+    is one to click. (Full screen there is not: the recipe covers the
+    viewport on a phone in either orientation, so the backdrop is a way
+    out only on the sizes that keep a margin.) A phone that goes back in
+    a pocket still awake is the failure this criterion exists to prevent.
 11. It survives a glance away. Browsers drop a wake lock whenever the page
     is hidden, so looking at a text message would otherwise end it silently
     for the rest of the cook; it is taken again on returning.
@@ -170,7 +185,17 @@ Someone types in a recipe from their head or a book.
     is nothing to delete until there is something saved, so a new recipe
     and one still under review from a link do not offer it. Deleting
     still asks first and names the recipe (J2.10).
-21. **Saving is the one filled button in the app.** With Edit reduced to
+21. **Opening a recipe says which recipe opened.** Focus goes to the
+    heading, not to whichever control happens to be first in the markup —
+    which was the portions stepper, and then the favourite star, neither
+    of which names what has just filled the screen.
+22. **The page behind is held still.** A modal dialog makes the page
+    inert but leaves it scrollable: on a wide screen, turning the wheel
+    over the backdrop scrolled the list behind the open recipe by 500px,
+    so closing it left you somewhere you never chose to be. The lock goes
+    on the root element, because that is what scrolls — a rule on the
+    body alone does nothing.
+23. **Saving is the one filled button in the app.** With Edit reduced to
     a glyph on the title line, the recipe view has no primary action to
     compete with it, and the editor's Save keeps that weight at the foot
     of the form. Its label stays on one line at every width: down to
@@ -363,7 +388,7 @@ recipe is, what it says on screen, and what survives a round trip. Those
 are the failures that would be silent — a recipe quietly losing its tags is
 worse than a page that will not load.
 
-Nine of the 96 criteria have no test naming them. Five more things the
+Nine of the 99 criteria have no test naming them. Five more things the
 tests do not reach, recorded so the gap is visible:
 
 - **The 48-hour lifetime and single use of an invite** are the database's,
@@ -381,11 +406,12 @@ tests do not reach, recorded so the gap is visible:
   workflow files. There is no code to exercise, and J5.10 records a reason
   for a decision rather than a behaviour.
 - **What the recipe view looks like at a given size** (J4.15, J4.16,
-  J4.19, J4.21) is media queries and inline flow, and the stub DOM has no
+  J4.19, J4.23) is media queries and inline flow, and the stub DOM has no
   layout: it has no viewport, so it cannot be asked what fits on one.
-  J4.17, J4.18 and J4.20 are behaviour and markup and are held by tests;
-  the rest was measured in a real browser instead, and the numbers are
-  below so a regression has something to be a regression from.
+  J4.17, J4.18, J4.20, J4.21, J4.22 and J2.11 are behaviour and markup and
+  are held by tests; the rest was measured in a real browser instead, and
+  the numbers are below so a regression has something to be a regression
+  from.
 
   Opening this recipe — 11 ingredients, 8 steps, a three-line title —
   and counting what is on screen before any scrolling:

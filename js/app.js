@@ -38,6 +38,25 @@
   // --- Helpers ---
   const escapeHTML = RecipeHTML.escapeHTML;
 
+  /**
+   * Hold the page still behind a full-screen recipe (J4.22).
+   *
+   * A modal <dialog> makes the page inert, not unscrollable: reaching the
+   * end of a long method and carrying on scrolls the recipe list behind
+   * it, so closing the recipe leaves you somewhere you never chose to be.
+   * `overscroll-behavior: contain` on the dialog stops the chaining where
+   * it is honoured; this stops the page moving at all.
+   */
+  function syncScrollLock() {
+    const open = detailDialog.open || recipeDialog.open;
+    document.body.classList.toggle("dialog-open", open);
+    // The scrolling element is <html>, not <body>, so a rule on the body
+    // alone leaves the page free to move — measured, after trying exactly
+    // that. The guard is for the stub DOM, which has a body and no root.
+    const root = document.documentElement;
+    if (root && root.classList) root.classList.toggle("dialog-open", open);
+  }
+
   let toastTimer = null;
   function toast(message) {
     toastEl.textContent = message;
@@ -252,7 +271,7 @@
    * saving adds rather than updates, keeping the incoming id so opening the
    * same link twice never duplicates.
    */
-  function openRecipeDialog(recipe, review) {
+  function openRecipeDialog(recipe, review, { restoring = false } = {}) {
     editingId = recipe && !review ? recipe.id : null;
     incomingId = review && recipe ? recipe.id : null;
     dialogTitle.textContent = review ? "Review recipe" : recipe ? "Edit recipe" : "New recipe";
@@ -305,7 +324,10 @@
     recipeForm.elements.imageUrl.value = image.startsWith("http") ? image : "";
     updatePhotoPreview();
     formBaseline = formSnapshot();
+    const wasOpen = recipeDialog.open;
     recipeDialog.showModal();
+    if (!wasOpen && !restoring) pushRoute(editorHash());
+    syncScrollLock();
   }
 
   /**
@@ -337,15 +359,21 @@
    * lands. Both ways out still work. They just ask first, and only when
    * there is something to lose, so open-look-leave stays a single tap.
    */
-  async function tryCloseEditor() {
+  /**
+   * Returns whether the editor actually closed, so Back can put its
+   * history entry back when the answer is "keep editing".
+   */
+  async function tryCloseEditor({ quiet = false } = {}) {
     if (formSnapshot() !== formBaseline &&
         !(await RecipeAsk.ask("Discard this recipe? What you have typed will be lost.", {
           confirmLabel: "Discard",
           danger: true,
         }))) {
-      return;
+      return false;
     }
-    recipeDialog.close();
+    if (quiet) closeQuietly(recipeDialog);
+    else recipeDialog.close();
+    return true;
   }
 
   function currentFormImage() {
@@ -688,37 +716,138 @@
     syncMoveButton();
     syncCookButton();
     if (!wasOpen) {
-      if (!restoring) pushRecipeHash(recipe.id);
+      if (!restoring) pushRoute(`#recipe=${recipe.id}`);
       detailDialog.showModal();
+      // showModal() takes the first focusable thing it finds, which is
+      // whichever control happens to be first in the markup — the star,
+      // today; the portions stepper before that. Neither says what has
+      // just opened. The heading does (J4.22).
+      const heading = $("#detail-heading");
+      if (heading && heading.focus) heading.focus();
+      syncScrollLock();
       cookMode.enter();
     }
   }
 
-  const recipeHash = (id) => `#recipe=${id}`;
+  /**
+   * --- Where you are, in the address bar (J4.17, J2.11) ---------------
+   *
+   * Two screens have an address: the recipe you are reading, and the
+   * editor. Browsers do not put a <dialog> in history, so Back would walk
+   * out of the app from either — and out of the editor it would take
+   * whatever had been typed with it, without asking, which is the one
+   * thing J2.9 exists to prevent.
+   *
+   * Each open pushes an entry, each close takes one back, and popstate
+   * reconciles what is on screen with what the address now says. Editing
+   * a recipe stacks on top of reading it, so Back from the editor returns
+   * to the recipe rather than all the way out to the list.
+   *
+   * Everything else — books, units, paste, the AI prompt — stays a plain
+   * dialog. None of them holds anything you would mind losing to a stray
+   * Back, and an address each would be noise.
+   */
+  const ROUTES = [
+    { name: "recipe", re: /^#recipe=(.+)$/ },
+    { name: "edit", re: /^#edit=(.+)$/ },
+    { name: "new", re: /^#new$/ },
+    { name: "review", re: /^#review$/ },
+  ];
 
-  function pushRecipeHash(id) {
+  const isEditorRoute = (name) => name === "edit" || name === "new" || name === "review";
+
+  function currentRoute() {
+    for (const route of ROUTES) {
+      const match = location.hash.match(route.re);
+      if (match) return { name: route.name, id: match[1] ? decodeURIComponent(match[1]) : null };
+    }
+    return { name: "list", id: null };
+  }
+
+  /** The address for the editor as it is currently open. */
+  function editorHash() {
+    if (incomingId) return "#review";
+    if (editingId) return `#edit=${editingId}`;
+    return "#new";
+  }
+
+  function pushRoute(hash) {
     try {
-      history.pushState({ recipe: id }, "", recipeHash(id));
+      history.pushState({ hash }, "", hash);
     } catch {
-      /* history is a convenience here; the recipe still opens without it */
+      /* history is a convenience here; the screen still opens without it */
+    }
+  }
+
+  function toListAddress() {
+    try {
+      history.replaceState(null, "", location.pathname + location.search);
+    } catch {
+      /* nothing to rewrite */
+    }
+  }
+
+  /*
+    Closing a screen unwinds the entry that opened it — except when
+    history is already doing the closing (Back removed the entry before we
+    got here), or one screen is handing over to another and means to keep
+    its entry underneath.
+  */
+  let suppressUnwind = 0;
+
+  function closeQuietly(dialog) {
+    suppressUnwind += 1;
+    try {
+      dialog.close();
+    } finally {
+      suppressUnwind -= 1;
+    }
+  }
+
+  function unwind(mine) {
+    if (suppressUnwind) return;
+    if (!mine) return;
+    try {
+      history.back();
+    } catch {
+      /* nothing to unwind */
     }
   }
 
   /**
-   * Open whatever `#recipe=<id>` names, if we hold it. A miss leaves the
-   * fragment alone rather than clearing it: signed in, the recipe may
-   * simply not have synced down yet, and account.js calls this again once
-   * it has.
+   * Open whatever the address names, if we can. A recipe we do not hold
+   * is a miss rather than an error: signed in, it may simply not have
+   * synced down yet, and account.js calls this again once it has.
    */
   function openFromHash() {
-    const match = location.hash.match(/^#recipe=(.+)$/);
-    if (!match) return false;
     if (document.body.classList.contains("gated")) return false;
-    const recipe = store.getById(decodeURIComponent(match[1]));
-    if (!recipe) return false;
-    if (detailDialog.open && detailId === recipe.id) return true;
-    openDetailDialog(recipe, { restoring: true });
-    return true;
+    const route = currentRoute();
+    if (route.name === "recipe") {
+      if (detailDialog.open && detailId === route.id) return true;
+      const recipe = store.getById(route.id);
+      if (!recipe) return false;
+      if (recipeDialog.open) closeQuietly(recipeDialog);
+      openDetailDialog(recipe, { restoring: true });
+      return true;
+    }
+    if (route.name === "edit") {
+      if (recipeDialog.open && editingId === route.id) return true;
+      const recipe = store.getById(route.id);
+      if (!recipe) return false;
+      if (detailDialog.open) closeQuietly(detailDialog);
+      openRecipeDialog(recipe, false, { restoring: true });
+      return true;
+    }
+    if (route.name === "new") {
+      if (recipeDialog.open) return true;
+      if (detailDialog.open) closeQuietly(detailDialog);
+      openRecipeDialog(null, false, { restoring: true });
+      return true;
+    }
+    // A review holds a recipe that is not in the box yet, so there is
+    // nothing to rebuild it from once it has gone.
+    if (route.name === "review") return recipeDialog.open;
+    return false;
   }
 
   // Portion stepper: with known servings, step one serving at a time;
@@ -1116,32 +1245,47 @@
   // pushed, or the entry outlives the recipe and Back re-opens something
   // the person has already closed. `poppingBack` marks the close that Back
   // itself caused — that entry is already gone.
-  let poppingBack = false;
   detailDialog.addEventListener("close", () => {
+    // Before the history guard: the lock goes whichever way the recipe
+    // closed, a handover to the editor included (J4.10).
     cookMode.leave();
     syncCookButton();
-    if (!poppingBack && location.hash.startsWith("#recipe=")) {
-      try {
-        history.back();
-      } catch {
-        /* nothing to unwind */
-      }
-    }
+    syncScrollLock();
+    unwind(currentRoute().name === "recipe");
   });
 
-  // Back closes the recipe rather than leaving the app (J4.17).
-  window.addEventListener("popstate", () => {
-    if (location.hash.startsWith("#recipe=")) {
-      openFromHash();
-      return;
+  recipeDialog.addEventListener("close", () => {
+    syncScrollLock();
+    unwind(isEditorRoute(currentRoute().name));
+  });
+
+  /**
+   * Back, Forward, or a hash the app did not set: make the screen match
+   * the address (J4.17, J2.11).
+   */
+  window.addEventListener("popstate", async () => {
+    const route = currentRoute();
+
+    // Leaving the editor by Back is still leaving the editor, so typed
+    // work gets the question it gets from Escape (J2.9). "Keep editing"
+    // puts the entry back, so Back still means Back next time.
+    if (recipeDialog.open && !isEditorRoute(route.name)) {
+      const hash = editorHash();
+      if (!(await tryCloseEditor({ quiet: true }))) {
+        pushRoute(hash);
+        return;
+      }
     }
-    if (!detailDialog.open) return;
-    poppingBack = true;
-    try {
-      detailDialog.close();
-    } finally {
-      poppingBack = false;
-    }
+
+    if (openFromHash()) return;
+
+    if (detailDialog.open) closeQuietly(detailDialog);
+    if (recipeDialog.open) closeQuietly(recipeDialog);
+    // Back into a recipe that has since been deleted or moved away: the
+    // address must not go on naming it. Only ever reached from a live
+    // navigation, so this cannot strip a link that is merely waiting on
+    // a sync — that path goes through openFromHash on load instead.
+    if (route.name !== "list") toListAddress();
   });
 
   $("#detail-cook-btn").addEventListener("click", async () => {
@@ -1164,8 +1308,14 @@
 
   $("#detail-edit-btn").addEventListener("click", () => {
     const recipe = store.getById(detailId);
-    detailDialog.close();
-    if (recipe) openRecipeDialog(recipe);
+    if (!recipe) {
+      detailDialog.close();
+      return;
+    }
+    // A handover, not an exit: the recipe's entry stays underneath so
+    // Back from the editor returns to the recipe you were reading.
+    closeQuietly(detailDialog);
+    openRecipeDialog(recipe);
   });
 
   // Deleting happens from the editor (J4.20): by then you have said you

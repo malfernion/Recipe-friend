@@ -32,7 +32,9 @@ function makeElement(id) {
     setAttribute() {},
     getAttribute() { return null; },
     removeAttribute() {},
-    focus() {},
+    // Recorded rather than ignored: where focus lands when a screen opens
+    // is the first thing a screen reader says about it.
+    focus() { el.focused = true; },
     select() {},
     click() { el.fire("click", {}); },
     showModal() { el.open = true; },
@@ -202,14 +204,20 @@ function makeWindow() {
       stack[stack.length - 1] = { hash };
       win.location.hash = hash;
     },
+    /*
+      Returns whatever the popstate listeners return, so a test can await
+      the navigation. Deciding whether to close the editor means asking
+      about unsaved work, which is a promise; without this a test reads
+      the DOM a turn before the answer lands.
+    */
     back() {
       if (stack.length <= 1) {
-        win.leftTheApp = true; // what a bare <dialog> does today
-        return;
+        win.leftTheApp = true; // what a bare <dialog> does without an address
+        return undefined;
       }
       stack.pop();
       win.location.hash = stack[stack.length - 1].hash;
-      win.fire("popstate", { state: null });
+      return win.fire("popstate", { state: null });
     },
   };
 

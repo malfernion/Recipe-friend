@@ -65,6 +65,17 @@ html {
   scrollbar-gutter: stable;
 }
 
+/*
+  A modal <dialog> makes the page inert but leaves it scrollable, so a
+  long method scrolled to its end carries on into the recipe list behind
+  it (J4.22). The gutter above is what keeps this from shifting the
+  layout sideways as the scrollbar goes.
+*/
+html.dialog-open,
+body.dialog-open {
+  overflow: hidden;
+}
+
 body {
   margin: 0;
   font-family: var(--sans);

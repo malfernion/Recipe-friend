@@ -828,3 +828,81 @@ test("J4.18 · the Portions stepper sits with the ingredients it changes", () =>
   assert.ok(heading < stepper && stepper < list,
     "above the heading it read as being about the recipe; the only thing it changes is the list below it");
 });
+
+// ---------------------------------------------------------------------
+// J2.11, J4.21, J4.22 · Finishing the full-screen recipe view
+//
+// The view was made to fill the screen and given an address before the
+// editor had either, which left Back meaning "close this" on one screen
+// and "leave the app" on the next — and the second one could take typed
+// work with it.
+// ---------------------------------------------------------------------
+
+test("J2.11 · the editor has an address, so Back closes it rather than the app", () => {
+  const ui = loadUI();
+  ui.el("add-recipe-btn").fire("click");
+  assert.equal(ui.win.location.hash, "#new", "a new recipe is somewhere you can be");
+
+  ui.win.history.back();
+  assert.equal(ui.el("recipe-dialog").open, false, "the editor closed");
+  assert.notEqual(ui.win.leftTheApp, true, "and Back was spent on it, not on walking out");
+  assert.equal(ui.win.location.hash, "");
+});
+
+test("J2.11 · editing from a recipe stacks, so Back returns to the recipe", async () => {
+  const ui = openedDinner();
+  const recipeHash = ui.win.location.hash;
+
+  ui.el("detail-edit-btn").fire("click");
+  assert.equal(ui.el("recipe-dialog").open, true);
+  assert.equal(ui.win.location.hash, `#edit=${ui.recipe.id}`);
+
+  await ui.win.history.back();
+  assert.equal(ui.el("recipe-dialog").open, false, "the editor closed");
+  assert.equal(ui.el("detail-dialog").open, true, "and the recipe you were reading came back");
+  assert.equal(ui.win.location.hash, recipeHash);
+});
+
+test("J2.9, J2.11 · Back out of the editor asks before it drops typed work", async () => {
+  const ui = openedDinner();
+  ui.el("detail-edit-btn").fire("click");
+  const editorHash = ui.win.location.hash;
+  ui.el("recipe-form").elements.name.value = "Dinner, but better";
+
+  ui.el("confirm-dialog").answer = ""; // keep editing
+  await ui.win.history.back();
+  assert.equal(ui.el("recipe-dialog").open, true, "typed work is not dropped by a stray Back");
+  assert.equal(ui.win.location.hash, editorHash,
+    "and the entry goes back, so Back still means Back next time");
+
+  ui.el("confirm-dialog").answer = "yes"; // discard
+  await ui.win.history.back();
+  assert.equal(ui.el("recipe-dialog").open, false, "answering yes lets it go");
+  assert.equal(ui.el("detail-dialog").open, true, "onto the recipe it was opened from");
+});
+
+test("J4.21 · opening a recipe says which recipe opened", () => {
+  const ui = openedDinner();
+  assert.equal(ui.el("detail-heading").focused, true,
+    "focus lands on the recipe's name, not on whichever control is first in the markup");
+});
+
+test("J4.22 · the page behind is held still while a recipe is open", () => {
+  const ui = openedDinner();
+  assert.equal(ui.win.document.body.classList.contains("dialog-open"), true);
+  ui.el("detail-close-btn").fire("click");
+  assert.equal(ui.win.document.body.classList.contains("dialog-open"), false,
+    "and released again, or the list could never be scrolled");
+});
+
+test("J4.17 · Back into a recipe that has been deleted does not name it any more", async () => {
+  const ui = openedDinner();
+  ui.el("detail-edit-btn").fire("click");
+  ui.el("confirm-dialog").answer = "yes";
+  await ui.el("edit-delete-btn").fire("click");
+  assert.deepEqual(ui.store.recipes, [], "the recipe is gone");
+
+  await ui.win.history.back();
+  assert.equal(ui.el("detail-dialog").open, false, "nothing is resurrected");
+  assert.equal(ui.win.location.hash, "", "and the address stops pointing at it");
+});
