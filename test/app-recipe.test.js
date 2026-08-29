@@ -659,7 +659,7 @@ test("J4.9 · the recipe view offers to keep the screen on, and does not by itse
 
   assert.equal(ui.el("detail-cook-btn").hidden, false, "the control is there");
   assert.equal(calls.requested, 0, "but the screen is not held until asked");
-  assert.match(ui.el("detail-cook-btn").textContent, /Keep screen on/);
+  assert.match(ui.el("detail-cook-btn").textContent, /Screen on/);
 });
 
 test("J4.9 · pressing it holds the screen and says so", async () => {
@@ -671,7 +671,7 @@ test("J4.9 · pressing it holds the screen and says so", async () => {
   await new Promise((r) => setImmediate(r));
 
   assert.equal(calls.requested, 1);
-  assert.match(ui.el("detail-cook-btn").textContent, /staying on/,
+  assert.match(ui.el("detail-cook-btn").textContent, /Staying on/,
     "invisible state that costs battery has to be visible");
 });
 
@@ -710,4 +710,93 @@ test("J4.14 · cook mode is never a reason a recipe fails to open", async () => 
 
   assert.equal(ui.el("detail-dialog").open, true, "the recipe is still on screen");
   assert.match(ui.el("detail-content").innerHTML, /Slow Braise/);
+});
+
+// ---------------------------------------------------------------------
+// J4.17 · An open recipe is a place, not a state
+//
+// Full-screen on a phone, the recipe view reads as a page, and a page is
+// left with the Back button. On a bare <dialog> that walks out of the app
+// — mid-cook, taking your place and the wake lock with it. These hold the
+// address that makes Back mean "close the recipe" instead.
+// ---------------------------------------------------------------------
+
+test("J4.17 · opening a recipe gives it an address", () => {
+  const ui = openedDinner();
+  assert.equal(ui.win.location.hash, `#recipe=${ui.recipe.id}`,
+    "the address bar says which recipe is open");
+});
+
+test("J4.17 · Back closes the recipe rather than leaving the app", () => {
+  const ui = openedDinner();
+  ui.win.history.back();
+
+  assert.equal(ui.el("detail-dialog").open, false, "the recipe closed");
+  assert.notEqual(ui.win.leftTheApp, true,
+    "and Back was spent on the recipe, not on walking out of the app");
+  assert.equal(ui.win.location.hash, "", "the address is back to the list");
+});
+
+test("J4.17 · closing the recipe takes its history entry with it", () => {
+  const ui = openedDinner();
+  const before = ui.win.history.length;
+  ui.el("detail-close-btn").fire("click");
+
+  assert.equal(ui.el("detail-dialog").open, false);
+  assert.equal(ui.win.history.length, before - 1,
+    "an entry left behind would let Back re-open a recipe already closed");
+  assert.equal(ui.win.location.hash, "");
+});
+
+test("J4.17 · a recipe reopened from its address is the one named", () => {
+  const ui = loadUI();
+  const other = ui.store.add(aRecipe({ name: "Something Else" }));
+  const wanted = ui.store.add(DINNER);
+  ui.app.render();
+
+  // What a reload leaves behind: the box is there and the address names
+  // one of them, with nothing yet open.
+  ui.win.location.hash = `#recipe=${wanted.id}`;
+  assert.equal(ui.app.openFromHash(), true);
+
+  assert.equal(ui.el("detail-dialog").open, true, "the recipe came back");
+  assert.match(ui.el("detail-content").innerHTML, /<h2 class="detail-title">Dinner</);
+  assert.doesNotMatch(ui.el("detail-content").innerHTML, /Something Else/,
+    `and it is the recipe the address named, not merely ${other.name}`);
+});
+
+test("J4.17 · an address naming a recipe we do not hold opens nothing", () => {
+  const ui = loadUI({ hash: "#recipe=22222222-2222-4222-8222-222222222222" });
+  assert.equal(ui.app.openFromHash(), false);
+  assert.equal(ui.el("detail-dialog").open, false, "and nothing is invented to fill it");
+  assert.equal(ui.win.location.hash, "#recipe=22222222-2222-4222-8222-222222222222",
+    "the fragment survives, so a later sync can still honour it");
+});
+
+test("J4.10, J4.17 · closing with Back lets the screen lock go too", async () => {
+  const { ui, calls } = cooking();
+  const saved = ui.store.add(aRecipe({ name: "Slow Braise" }));
+  ui.app.render();
+  openDetail(ui, saved.id);
+  await ui.el("detail-cook-btn").fire("click");
+  await new Promise((r) => setImmediate(r));
+  assert.equal(calls.released, 0);
+
+  ui.win.history.back();
+  await new Promise((r) => setImmediate(r));
+
+  assert.equal(calls.released, 1,
+    "a phone going back in a pocket must not still be awake, whichever exit was used");
+});
+
+test("J4.18 · the Portions stepper sits with the ingredients it changes", () => {
+  const ui = openedDinner();
+  const html = ui.html();
+  const heading = html.indexOf("<h3>Ingredients</h3>");
+  const stepper = html.indexOf('class="scale-row"');
+  const list = html.indexOf('class="detail-ingredients"');
+
+  assert.ok(heading !== -1 && stepper !== -1 && list !== -1, "all three are on screen");
+  assert.ok(heading < stepper && stepper < list,
+    "above the heading it read as being about the recipe; the only thing it changes is the list below it");
 });

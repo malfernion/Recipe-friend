@@ -17,7 +17,12 @@ accounts and sync.
   have — `chicken, rice` — shows what you can cook, best matches first.
 - **Portion scaling and measurement preferences** — amounts rescale on the
   fly and appear in your own units, without ever editing the stored recipe.
-- **Cook mode** — a *Keep screen on* toggle in the recipe view holds the
+- **A recipe view built for a worktop** — it takes the whole screen on a
+  phone, puts ingredients beside the method wherever there is width for
+  two columns (a phone on its side included), and keeps its controls to
+  one row. An open recipe has its own address, so Back closes it instead
+  of leaving the app and a reload mid-cook comes back to where you were.
+- **Cook mode** — a *Screen on* toggle in the recipe view holds the
   screen awake while you cook, so a phone propped against the bread bin
   does not lock with your hands covered in flour. Off until asked for,
   remembered on that device, and let go the moment the recipe closes.
@@ -68,8 +73,8 @@ type in the search box, pick a photo, click Export, open an invite link.
 
 Every test name quotes a criterion from [`docs/journeys.md`](docs/journeys.md),
 so a failure points at behaviour that was agreed rather than at an
-implementation detail. **78 of the 83 criteria have a test naming them**;
-the five that do not are listed at the end of the journeys, along with the
+implementation detail. **86 of the 94 criteria have a test naming them**;
+the eight that do not are listed at the end of the journeys, along with the
 database, which is deliberately outside the net.
 
 The database is deliberately not covered — see the note at the end of the

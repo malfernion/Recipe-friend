@@ -584,9 +584,7 @@
 
     return `
       <p class="detail-kicker">${escapeHTML(kicker)}</p>
-      <h2 class="detail-title">${escapeHTML(recipe.name)}
-        ${recipe.favorite ? '<span class="detail-fav" title="Favourite">★</span>' : ""}
-      </h2>
+      <h2 class="detail-title">${escapeHTML(recipe.name)}</h2>
       ${(() => {
         const src = photoSrc(recipe);
         return src
@@ -603,17 +601,23 @@
               .join("")}</div>`
           : ""
       }
-      ${scaleControls}
-      <h3>Ingredients</h3>
-      <ul class="detail-ingredients">
-        ${recipe.ingredients
-          .map((i) => `<li>${escapeHTML(displayIngredient(i, factor))}</li>`)
-          .join("")}
-      </ul>
-      <h3>Steps</h3>
-      <ol class="detail-steps">
-        ${recipe.steps.map((s) => `<li>${escapeHTML(s)}</li>`).join("")}
-      </ol>`;
+      <div class="detail-body">
+        <section class="detail-col detail-col-ingredients">
+          <h3>Ingredients</h3>
+          ${scaleControls}
+          <ul class="detail-ingredients">
+            ${recipe.ingredients
+              .map((i) => `<li>${escapeHTML(displayIngredient(i, factor))}</li>`)
+              .join("")}
+          </ul>
+        </section>
+        <section class="detail-col detail-col-steps">
+          <h3>Steps</h3>
+          <ol class="detail-steps">
+            ${recipe.steps.map((s) => `<li>${escapeHTML(s)}</li>`).join("")}
+          </ol>
+        </section>
+      </div>`;
   }
 
   /** Only offer Move when the signed-in user has more than one book. */
@@ -643,22 +647,63 @@
     const on = cookMode.active;
     btn.setAttribute("aria-pressed", String(on));
     btn.classList.toggle("cook-on", on);
-    btn.textContent = on ? "☀ Screen staying on" : "☾ Keep screen on";
+    // Short enough to share one row with the rest of the bar on a phone,
+    // but still worded — a bare moon is the control nobody would find.
+    btn.textContent = on ? "☀ Staying on" : "☾ Screen on";
   }
 
-  function openDetailDialog(recipe) {
+  /**
+   * An open recipe is a place, not a state (J4.15-J4.17).
+   *
+   * Full-screen on a phone, it reads as a page, and people leave a page
+   * with the Back button — which, on a bare <dialog>, walks out of the app
+   * instead. So opening one pushes `#recipe=<id>`: Back closes the recipe,
+   * a refresh mid-cook comes back to it, and the address bar says where
+   * you are. `restoring` marks the opens that are replaying history rather
+   * than making it, so the two do not push each other in circles.
+   */
+  function openDetailDialog(recipe, { restoring = false } = {}) {
+    const wasOpen = detailDialog.open;
     // Keep the scale when re-rendering the same open recipe (e.g. after a
     // favourite toggle); reset it when a different recipe opens.
-    if (detailId !== recipe.id || !detailDialog.open) detailScale = 1;
+    if (detailId !== recipe.id || !wasOpen) detailScale = 1;
     detailId = recipe.id;
     detailContent.innerHTML = recipeDetailHTML(recipe, "From your recipe box", true);
     syncDetailFavButton(recipe);
     syncMoveButton();
     syncCookButton();
-    if (!detailDialog.open) {
+    if (!wasOpen) {
+      if (!restoring) pushRecipeHash(recipe.id);
       detailDialog.showModal();
       cookMode.enter();
     }
+  }
+
+  const recipeHash = (id) => `#recipe=${id}`;
+
+  function pushRecipeHash(id) {
+    try {
+      history.pushState({ recipe: id }, "", recipeHash(id));
+    } catch {
+      /* history is a convenience here; the recipe still opens without it */
+    }
+  }
+
+  /**
+   * Open whatever `#recipe=<id>` names, if we hold it. A miss leaves the
+   * fragment alone rather than clearing it: signed in, the recipe may
+   * simply not have synced down yet, and account.js calls this again once
+   * it has.
+   */
+  function openFromHash() {
+    const match = location.hash.match(/^#recipe=(.+)$/);
+    if (!match) return false;
+    if (document.body.classList.contains("gated")) return false;
+    const recipe = store.getById(decodeURIComponent(match[1]));
+    if (!recipe) return false;
+    if (detailDialog.open && detailId === recipe.id) return true;
+    openDetailDialog(recipe, { restoring: true });
+    return true;
   }
 
   // Portion stepper: with known servings, step one serving at a time;
@@ -684,8 +729,12 @@
 
   function syncDetailFavButton(recipe) {
     const btn = $("#detail-fav-btn");
-    btn.textContent = recipe.favorite ? "★ Favourited" : "☆ Favourite";
+    // A filled star against an outline is the whole message here, so the
+    // word goes and the accessible name carries what the glyph cannot.
+    btn.textContent = recipe.favorite ? "★" : "☆";
     btn.setAttribute("aria-pressed", String(recipe.favorite));
+    btn.setAttribute("aria-label", recipe.favorite ? "Favourited" : "Favourite");
+    btn.classList.toggle("is-on", recipe.favorite);
   }
 
   // --- Import / export ---
@@ -1047,9 +1096,37 @@
 
   // Escape and the backdrop close a <dialog> without going through any
   // button, so the lock is let go here rather than at each call site (J4.10).
+  //
+  // Every one of those exits also has to unwind the history entry the open
+  // pushed, or the entry outlives the recipe and Back re-opens something
+  // the person has already closed. `poppingBack` marks the close that Back
+  // itself caused — that entry is already gone.
+  let poppingBack = false;
   detailDialog.addEventListener("close", () => {
     cookMode.leave();
     syncCookButton();
+    if (!poppingBack && location.hash.startsWith("#recipe=")) {
+      try {
+        history.back();
+      } catch {
+        /* nothing to unwind */
+      }
+    }
+  });
+
+  // Back closes the recipe rather than leaving the app (J4.17).
+  window.addEventListener("popstate", () => {
+    if (location.hash.startsWith("#recipe=")) {
+      openFromHash();
+      return;
+    }
+    if (!detailDialog.open) return;
+    poppingBack = true;
+    try {
+      detailDialog.close();
+    } finally {
+      poppingBack = false;
+    }
   });
 
   $("#detail-cook-btn").addEventListener("click", async () => {
@@ -1133,10 +1210,13 @@
 
   // Handle for the sync layer (account.js/sync.js): shared store plus a
   // way to redraw once remote changes land.
-  window.RecipeApp = { store, render, toast, showPendingShare };
+  window.RecipeApp = { store, render, toast, showPendingShare, openFromHash };
 
   render();
   handleIncomingShare();
+  // Signed out, or before the book has synced, there is nothing to open
+  // yet; account.js calls this again once there is.
+  openFromHash();
   // A share link opened in an already-loaded tab only changes the fragment.
   window.addEventListener("hashchange", handleIncomingShare);
 })();

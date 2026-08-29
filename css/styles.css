@@ -280,6 +280,25 @@ body {
 }
 
 /* ---------- Buttons ---------- */
+/*
+  iOS Safari keeps double-tap-to-zoom whatever the viewport meta says, so
+  tapping "+" six times to take a recipe from six portions to twelve zooms
+  the page instead. `manipulation` drops the double-tap gesture on these
+  controls and leaves pinch-zoom alone — the accessible gesture stays, the
+  accidental one goes. (Chrome already suppresses it on a width=device-width
+  page; this is the browser that does not.)
+*/
+.btn,
+.chip,
+.icon-btn,
+.scale-btn,
+.scale-reset,
+.fav-btn,
+.more-item,
+.more-summary {
+  touch-action: manipulation;
+}
+
 .btn {
   font-family: var(--sans);
   font-size: 0.72rem;
@@ -293,6 +312,47 @@ body {
   cursor: pointer;
   color: var(--ink-soft);
   transition: color 0.15s ease, background-color 0.15s ease, border-color 0.15s ease;
+}
+
+/*
+  A square control carrying a glyph instead of a word. Sized to the 44px
+  touch floor from the outset rather than nudged up under `pointer: coarse`
+  — there is no text here to grow it back.
+*/
+.icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.75rem;
+  height: 2.75rem;
+  flex: none;
+  font-family: var(--sans);
+  font-size: 1.2rem;
+  line-height: 1;
+  background: none;
+  border: none;
+  border-radius: 0;
+  padding: 0;
+  cursor: pointer;
+  color: var(--ink-soft);
+  transition: color 0.15s ease;
+}
+
+.icon-btn:hover {
+  color: var(--ink);
+}
+
+.icon-btn.is-on {
+  color: var(--star);
+}
+
+.icon-btn-danger:hover {
+  color: var(--danger);
+}
+
+/* The close control: bigger glyph, since "×" reads smaller than it sets. */
+#detail-close-btn {
+  font-size: 1.75rem;
 }
 
 .btn-ghost {
@@ -336,6 +396,8 @@ body {
 .btn:focus-visible,
 .chip:focus-visible,
 .fav-btn:focus-visible,
+.icon-btn:focus-visible,
+.scale-btn:focus-visible,
 .more-summary:focus-visible,
 .more-item:focus-visible,
 .recipe-card:focus-visible,
@@ -618,8 +680,10 @@ body {
   border-radius: 0;
   background: var(--paper-raised);
   color: var(--ink);
+  --dialog-pad-t: 2.25rem;
+  --dialog-pad-x: 2.25rem;
   --dialog-pad-b: 1.75rem;
-  padding: 2.25rem 2.25rem var(--dialog-pad-b);
+  padding: var(--dialog-pad-t) var(--dialog-pad-x) var(--dialog-pad-b);
   width: min(600px, calc(100vw - 2rem));
   max-height: min(88dvh, 960px);
   overflow-y: auto;
@@ -848,6 +912,40 @@ body {
 }
 
 /* ---------- Detail dialog ---------- */
+/*
+  Favourite and Close, above the recipe. Sticky so Close stays reachable
+  through a long method — on a full-screen view there is no backdrop left
+  to tap, so the × is the way out and it cannot scroll away.
+*/
+.detail-topbar {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  position: sticky;
+  top: calc(-1 * var(--dialog-pad-t, 0px));
+  z-index: 2;
+  margin: calc(-1 * var(--dialog-pad-t, 0px)) 0 0.25rem;
+  padding: 0.35rem 0;
+  background: var(--paper-raised);
+}
+
+/*
+  Ingredients and steps, side by side where there is width for them.
+  Below that breakpoint this is a plain block and the sections stack.
+*/
+.detail-body {
+  display: block;
+}
+
+/*
+  Stacked, the Ingredients heading follows the tags directly and needs
+  daylight above it — but a full heading margin here costs a whole
+  ingredient off the bottom of a 375px phone, so it gets less than one.
+*/
+.detail-col > h3:first-child {
+  margin-top: 0.85rem;
+}
+
 .detail-kicker {
   margin: 0 0 0.5rem;
   font-size: 0.68rem;
@@ -863,13 +961,6 @@ body {
   font-weight: 420;
   font-size: 2.1rem;
   line-height: 1.12;
-}
-
-.detail-fav {
-  color: var(--star);
-  font-size: 1.3rem;
-  vertical-align: 0.15em;
-  margin-left: 0.2rem;
 }
 
 .detail-img {
@@ -953,7 +1044,10 @@ body {
   display: flex;
   align-items: center;
   gap: 0.75rem;
-  margin-top: 1.5rem;
+  /* Sits directly under the Ingredients heading now, with the quantities
+     it changes — it used to float above the heading, where it read as
+     being about the recipe rather than about the list. */
+  margin: 0 0 0.9rem;
   padding: 0.55rem 0.9rem;
   border: 1px solid var(--rule);
   background: var(--paper);
@@ -1098,13 +1192,26 @@ body {
   .recipe-dialog {
     width: calc(100vw - 1rem);
     max-height: calc(100dvh - 1rem);
+    --dialog-pad-t: 1.5rem;
+    --dialog-pad-x: 1.25rem;
     --dialog-pad-b: 1.25rem;
-    padding: 1.5rem 1.25rem var(--dialog-pad-b);
   }
 
   .dialog-actions {
     flex-wrap: wrap;
     gap: 0.75rem 1rem;
+  }
+
+  /*
+    The recipe's bar does not wrap. A growing spacer and flex-wrap cannot
+    both be had: the spacer eats the rest of line one and every control
+    after it starts line two, which is what made this a three-row
+    staircase. Four short controls fit one line at 320px, so the wrap is
+    what goes.
+  */
+  .detail-actions {
+    flex-wrap: nowrap;
+    gap: 0.4rem;
   }
 
   /*
@@ -1145,6 +1252,114 @@ body {
   .ing-row .ing-item {
     flex: 1 0 100%;
     order: 1;
+  }
+
+  /*
+    At 320px the one-row bar is about a dozen pixels too wide, and it may
+    not wrap — the spacer would put every control after it on a second
+    line. The tracking and the padding give up those pixels instead; the
+    44px targets and the words on the controls both stay.
+  */
+  .detail-actions {
+    gap: 0.25rem;
+  }
+
+  .detail-actions .btn {
+    letter-spacing: 0.1em;
+    padding-inline: 0.15rem;
+  }
+
+  .detail-actions .btn-primary {
+    padding: 0.7rem 0.85rem;
+  }
+
+  /*
+    The portions box is 335px wide at its roomiest, which is wider than
+    this screen. The slack comes out of the gaps and the value's reserved
+    width — never the two 44px buttons, which are the whole point of it,
+    and never below the width of the longest thing the value says, or the
+    buttons would shift under a finger tapping them repeatedly.
+  */
+  .scale-row {
+    gap: 0.4rem;
+    padding-inline: 0.5rem;
+  }
+
+  .scale-value {
+    min-width: 4.25rem;
+  }
+}
+
+/* ---------- The recipe view on small and short screens ----------
+   Measured before this existed: on a 375x667 phone the opened recipe
+   showed the Ingredients heading and no ingredients, because a centred
+   card spends its height on a backdrop gap it does not need and a
+   three-row action bar. Landscape was worse — the preamble plus the bar
+   came to more than the whole viewport.
+
+   Two independent conditions, because two different things go wrong:
+   a narrow screen has no room to give a backdrop, and a short one has no
+   height to give a margin. Either one earns the full screen. */
+@media (max-width: 819px), (max-height: 560px) {
+  .detail-dialog {
+    width: 100vw;
+    max-width: 100vw;
+    height: 100dvh;
+    max-height: 100dvh;
+    margin: 0;
+    border: none;
+    box-shadow: none;
+  }
+
+  /* Full width is not full measure: prose past ~70 characters is harder
+     to find your place in, which is the one thing a recipe must not be.
+     The bars keep the full width — their backgrounds have to reach the
+     edges, or content scrolls visibly past them. */
+  .detail-dialog > #detail-content {
+    max-width: 46rem;
+    margin-inline: auto;
+  }
+
+  .detail-dialog::backdrop {
+    backdrop-filter: none;
+  }
+}
+
+/* Wide enough for two columns — phone landscape (852) and up, but not a
+   tablet held portrait (744), where one column already reads well. The
+   method is the taller half, so it takes the slack. */
+/* The wider sheet is for screens with the height to keep a margin. A short
+   one is full-bleed above, and must not have its width put back here —
+   both queries match a phone held sideways. */
+@media (min-width: 820px) and (min-height: 561px) {
+  .detail-dialog {
+    width: min(1100px, calc(100vw - 2rem));
+  }
+}
+
+@media (min-width: 820px) {
+  .detail-dialog > #detail-content {
+    max-width: none;
+  }
+
+  .detail-body {
+    display: grid;
+    grid-template-columns: minmax(15rem, 24rem) 1fr;
+    gap: 0 3rem;
+    align-items: start;
+  }
+
+  /* Side by side, the two headings should sit on one line. Stacked, the
+     first one still wants its space above it. */
+  .detail-col > h3:first-child {
+    margin-top: 0;
+  }
+
+  /* The ingredients are what you look back at while your hands are busy,
+     so they stay put while the method scrolls past them. */
+  .detail-col-ingredients {
+    position: sticky;
+    top: 3.5rem;
   }
 }
 

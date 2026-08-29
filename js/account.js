@@ -142,6 +142,9 @@
       }
       await sync.syncNow();
       app.render();
+      // A #recipe= link opened cold has been waiting for the book to
+      // arrive; now it has (J4.17).
+      if (app.openFromHash) app.openFromHash();
       if (books) {
         books.refresh().catch((err) => console.warn("Recipe Friend: books unavailable.", err));
       }

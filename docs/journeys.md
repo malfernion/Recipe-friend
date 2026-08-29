@@ -125,6 +125,33 @@ Someone types in a recipe from their head or a book.
 14. Cook mode is never a reason a recipe fails to open. If the screen lock
     cannot be taken — an unsupported browser, a refusal, a low battery —
     the recipe still opens and the toggle simply reports that it is off.
+15. **The recipe takes the whole screen where the screen is small or
+    short.** A centred card spends height on a margin and a backdrop, and
+    a phone has none to spare: measured on a 375×667 phone, the card
+    showed the Ingredients heading and no ingredients. Either dimension
+    being tight — narrow, or short because the phone is on its side —
+    earns the full screen. Wide, tall screens keep the card.
+16. **Where there is width for two columns, ingredients and steps sit
+    side by side**, and the ingredients stay put while the method scrolls.
+    A phone on its side is short, not narrow, and the second column is
+    what makes that shape usable at all. A tablet held upright is neither,
+    and one column already reads well there.
+17. **An open recipe has an address.** Full-screen, it reads as a page,
+    and a page is left with the Back button — which on a bare dialog
+    walks out of the app, mid-cook. So opening one pushes
+    `#recipe=<id>`: Back closes the recipe, a reload comes back to it,
+    and closing it takes the entry with it. An address naming a recipe
+    that is not here opens nothing and keeps the fragment, because signed
+    in it may simply not have synced down yet.
+18. The Portions stepper sits with the ingredients it changes, under the
+    Ingredients heading rather than above it. Above, it read as being
+    about the recipe; the only things it changes are in the list below it.
+19. **The controls fit one row on a phone.** Favourite and Close are
+    about the screen rather than the recipe, so they sit above it and
+    Close is an ×; what stays below is what is reached for mid-cook.
+    Delete and Share carry glyphs, and deleting still asks first and
+    names the recipe (J2.10) — a guarded destructive control may be an
+    icon, an unguarded one may not.
 
 ## J5 · Bringing in a recipe from outside
 
@@ -294,6 +321,15 @@ accident:
 - Amounts below 0.05 display as 0 (J4.8).
 - Cook mode is remembered per device, not per person (J4.12).
 - Search results depend on the reader's unit preferences (J3.1).
+- A recipe's address (J4.17) carries an id and no recipe data. It opens
+  something only for someone who already has that recipe, so it is a
+  bookmark, not a second kind of share link (J6.6 still holds).
+- The recipe view keeps its full preamble — kicker, title, description,
+  meta and tags — above the ingredients on every screen. On the shortest
+  ones that is still most of the first screenful. Shrinking it was
+  considered and deliberately deferred: what it costs is measured in the
+  note below, so the next person to look does not have to measure it
+  again.
 
 ## What the tests cover, and what they do not
 
@@ -302,7 +338,8 @@ recipe is, what it says on screen, and what survives a round trip. Those
 are the failures that would be silent — a recipe quietly losing its tags is
 worse than a page that will not load.
 
-Four more things the tests do not reach, recorded so the gap is visible:
+Eight of the 94 criteria have no test naming them. Five more things the
+tests do not reach, recorded so the gap is visible:
 
 - **The 48-hour lifetime and single use of an invite** are the database's,
   not the app's (J7.4). The client asks only for links that have not
@@ -318,6 +355,31 @@ Four more things the tests do not reach, recorded so the gap is visible:
 - **Deployment and the keepalive ping** (J11) are a static host and two
   workflow files. There is no code to exercise, and J5.10 records a reason
   for a decision rather than a behaviour.
+- **What the recipe view looks like at a given size** (J4.15, J4.16,
+  J4.19) is media queries, and the stub DOM has no layout: it has no
+  viewport, so it cannot be asked what fits on one. J4.17 and J4.18 are
+  behaviour and markup and are held by tests; the rest was measured in a
+  real browser instead, and the numbers are below so a regression has
+  something to be a regression from.
+
+  Opening this recipe — 11 ingredients, 8 steps, a three-line title —
+  and counting what is on screen before any scrolling:
+
+  | Viewport | Ingredients visible | Steps | Action bar |
+  |---|---|---|---|
+  | iPhone SE 375×667 | 0 → **2** | 0 | 197px, 3 rows → **85px, 1 row** |
+  | iPhone 14 393×852 | 0 → **7** | 0 | 197px → **85px** |
+  | Phone landscape 852×393 | 0 → 0 | 0 → 0 | 104px → **93px** |
+  | Narrow 320×568 | 0 → 0 | 0 | 197px → **85px** |
+  | iPad mini 744×1133 | 10 → **11** | 0 → **2** | 104px → **93px** |
+  | iPad mini 1133×744 | 3 → **5** | 0 → **4** | 104px → **93px** |
+  | Desktop 1440×900 | 7 → **9** | 0 → **7** | 104px → **93px** |
+
+  Two entries still read zero, and both are the deferred preamble rather
+  than the layout: at 320×568 and at 852×393 the kicker, title,
+  description, meta and tags come to more than the screen has, so the
+  first ingredient starts below the fold however much room the view
+  itself gives back.
 
 **The database is deliberately outside the net.** The row-level security
 policies, `redeem_invite`, `preview_invite` and the Storage rules are the
