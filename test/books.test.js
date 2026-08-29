@@ -110,13 +110,19 @@ function fakeCloud() {
   const files = new Map();
   let nextId = 1;
 
+  /*
+    PostgREST resolves an embed through a foreign key. book_members has one
+    to books, so `books(name, owner)` works — and none to profiles, since
+    both point at auth.users instead. Embedding `profiles(...)` from here
+    is a request the real server answers with "could not find a
+    relationship", so the fake must not answer it either: it used to, and
+    that is why an empty member list went unnoticed for as long as it did.
+  */
   const embed = (row) => {
     const book = db.books.find((b) => b.id === row.book_id);
-    const profile = db.profiles.find((p) => p.user_id === row.user_id);
     return {
       ...row,
       books: book ? { name: book.name, owner: book.owner } : null,
-      profiles: profile ? { display_name: profile.display_name } : null,
     };
   };
   const join = (bookId, userId, role) => {
@@ -132,6 +138,7 @@ function fakeCloud() {
       if (op === "eq") return cell === val;
       if (op === "gt") return cell > val;
       if (op === "is") return val === null ? cell === null || cell === undefined : cell === val;
+      if (op === "in") return [].concat(val).includes(cell);
       return true;
     });
 
@@ -214,6 +221,7 @@ function fakeCloud() {
       eq(col, val) { q.filters.push([col, "eq", val]); return api; },
       gt(col, val) { q.filters.push([col, "gt", val]); return api; },
       is(col, val) { q.filters.push([col, "is", val]); return api; },
+      in(col, vals) { q.filters.push([col, "in", vals]); return api; },
       order() { return api; },
       single() { q.single = true; return Promise.resolve(run(q)); },
       maybeSingle() { q.maybeSingle = true; return Promise.resolve(run(q)); },
@@ -1448,6 +1456,51 @@ test("J7.16 · a copy the server refuses leaves both books as they were", async 
   assert.ok(h.store.getById(recipe.id));
   assert.deepEqual(h.store.tombstones, []);
   assert.equal(h.lastToast(), "Couldn't copy that recipe.");
+});
+
+// ---------------------------------------------------------------------
+// J7.18 · seeing who is in a book
+// ---------------------------------------------------------------------
+
+test("J7.18 · the roster names everyone in the book, including you", async () => {
+  const h = harness();
+  h.cloud.join(MINE, THEM, "editor");
+  await h.books.refresh();
+
+  assert.deepEqual(
+    h.books.members.map((m) => [m.name, m.role, m.isMe]),
+    [["Dave", "owner", true], ["Sam", "editor", false]]
+  );
+  const html = h.el("member-list").innerHTML;
+  assert.match(html, /Dave/, "you are in the list too");
+  assert.match(html, /Sam/, "and so is everyone else — by name, not as 'Someone'");
+});
+
+test("J7.18 · a roster that cannot be read says so, rather than showing an empty book", async () => {
+  const h = harness();
+  h.cloud.join(MINE, THEM, "editor");
+  // Only the roster: listBooks reads the same table, and refresh lets that
+  // one reject on purpose so a network blip never looks like a deleted book.
+  h.api.listMembers = async () => {
+    throw new Error("could not find a relationship between book_members and profiles");
+  };
+
+  await h.books.refresh();
+
+  assert.match(h.el("member-list").innerHTML, /Couldn’t load who is in this book/);
+  assert.doesNotMatch(h.el("member-list").innerHTML, /Sam/);
+});
+
+test("J7.18 · names are a courtesy: an unreadable profile still leaves a roster", async () => {
+  const h = harness();
+  h.cloud.join(MINE, THEM, "editor");
+  h.cloud.fail("profiles.select", new Error("row level security"));
+
+  await h.books.refresh();
+
+  assert.deepEqual(h.books.members.map((m) => m.role), ["owner", "editor"],
+    "who is here matters more than what they are called");
+  assert.match(h.el("member-list").innerHTML, /Someone/);
 });
 
 // ---------------------------------------------------------------------

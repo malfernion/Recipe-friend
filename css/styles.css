@@ -1712,6 +1712,20 @@ body.gated .app-footer {
   What somebody may do, as a control rather than a label, wherever the
   reader is the one who can change it (J7.17).
 */
+.invite-role-field {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.invite-role-label {
+  font-size: 0.64rem;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+}
+
 .member-role-pick,
 #invite-role {
   font-family: var(--sans);

@@ -90,9 +90,15 @@
       }
       try {
         this.members = await this.api.listMembers(this.sync.bookId);
+        this.membersFailed = false;
       } catch (err) {
+        // An empty roster and an unreadable one look identical on screen,
+        // and one of them is a bug. Say which this is (J7.18): a book you
+        // share with somebody, reporting nobody, is how a broken query
+        // went unnoticed here for months.
         console.warn("Recipe Friend: could not load members.", err);
         this.members = [];
+        this.membersFailed = true;
       }
       // Only owners can read the invites table, so a failure here is the
       // normal case for a book you were invited into, not an error.
@@ -193,7 +199,11 @@
       const iOwn = Boolean(current && current.isOwner);
 
       const memberList = $("#member-list");
-      if (memberList) {
+      if (memberList && this.membersFailed) {
+        memberList.innerHTML =
+          '<li class="member-item member-trouble">Couldn\u2019t load who is in this book. ' +
+          "Check your connection and open Books again.</li>";
+      } else if (memberList) {
         memberList.innerHTML = this.members
           .map(
             (m) => `
