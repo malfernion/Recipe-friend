@@ -537,7 +537,7 @@ so the app can tell them what to buy.
    — so a combination that should not have happened is visible, and one
    that should have is obvious. **Where the recipes wrote the item
    differently, the line says what each of them wrote**: "3 peppers ·
-   Bolognese 2 (red pepper), Curry 1 (black pepper)". Without that this
+   Bolognese 2 (peppers), Curry 1 (pepper)". Without that this
    criterion is a promise it cannot keep — the plural rule (J13.4) is what
    makes the wrong merge, and naming the recipes it came from does not
    show you that one of them said something else.
@@ -577,6 +577,11 @@ so the app can tell them what to buy.
    have just said you are finished by settling it, so it does not also
    ask. It says what it did and offers Undo. Settling the last line with ✗
    counts: a week you already had everything for was still planned.
+   **Undo is the one thing here that needs a network.** A finished plan is
+   recorded for the whole book, and taking a record back has to reach the
+   server or another device will simply hand it back. It says so rather
+   than appearing to work, which is the exception J12.12's offline promise
+   has to carry.
 3. Finishing needs at least one recipe. An empty plan has nothing to
    record and offers no Done.
 4. **Clear discards a plan without recording it.** A week that never
@@ -646,6 +651,13 @@ accident:
   a supermarket is.
 - Nothing carries from one plan to the next. Saying "we have onions" is
   about this shop (J13.9).
+- **Two plans are two plans, and the newer one wins whole.** Settlements
+  merge per item within a plan (J12.11), but never between one plan and
+  the next, or "we have onions" — said about a shop that is over — comes
+  back on the following list. The cost is that a plan built on a device
+  which has never synced this book is lost when it meets the book's own:
+  both really are plans, and a book has one (J12.2). Merging them instead
+  would resurrect exactly what clearing a plan is for (J14.4).
 - **Tolerating plurals when combining (J13.4) merges some things that are
   not the same thing.** "Pepper" and "peppers" are one line, and ground
   pepper and bell peppers are not one shop. The rule earns its place on
