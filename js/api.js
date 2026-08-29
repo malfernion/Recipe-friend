@@ -166,6 +166,23 @@
       }));
     }
 
+    /**
+     * Change what somebody may do in a book. Owners only, and never
+     * their own row — the database says so too (007); this is the door,
+     * not the lock.
+     */
+    async setMemberRole(bookId, userId, role) {
+      const { data, error } = await this.client
+        .from("book_members")
+        .update({ role: role === "viewer" ? "viewer" : "editor" })
+        .eq("book_id", bookId)
+        .eq("user_id", userId)
+        .select("user_id");
+      if (error) throw error;
+      if ((data || []).length === 0) throw new Error("that role could not be changed");
+      return role;
+    }
+
     // --- invites --------------------------------------------------------
 
     /**
@@ -176,7 +193,7 @@
      * to the book. So it is good for one join by default, and the server
      * counts uses rather than trusting this.
      */
-    async createInvite(bookId, maxUses = 1) {
+    async createInvite(bookId, maxUses = 1, role = "editor") {
       const bytes = new Uint8Array(12);
       if (!global.crypto || !global.crypto.getRandomValues) {
         // No CSPRNG means a guessable invite. Refuse rather than mint one.
@@ -194,6 +211,9 @@
           book_id: bookId,
           created_by: this.userId,
           max_uses: Math.min(50, Math.max(1, Math.round(maxUses) || 1)),
+          // An invite cannot hand out ownership: a book has one owner and
+          // it is the person in books.owner (007).
+          role: role === "viewer" ? "viewer" : "editor",
         });
       if (error) throw error;
       return code;
@@ -236,6 +256,8 @@
         bookName: row.book_name,
         ownerName: row.owner_name,
         alreadyMember: Boolean(row.already_member),
+        // Older invites, minted before 007, carry no role and mean editor.
+        role: row.role === "viewer" ? "viewer" : "editor",
       };
     }
 

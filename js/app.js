@@ -675,6 +675,35 @@
    * out of a book other people are reading, so it belongs to whoever owns
    * this one (J7.10, J7.16).
    */
+  /**
+   * Whether this book is ours to change (J7.17).
+   *
+   * Row-level security is the real gate; this is about not offering a
+   * control that would fail. Favourite goes too, because a favourite is a
+   * property of the recipe and so a write like any other (J3.6) — which
+   * is the cost of keeping the household's shortlist shared.
+   */
+  let canEditBook = true;
+
+  function setCanEdit(editable) {
+    canEditBook = Boolean(editable);
+    const write = [
+      "#add-recipe-btn",
+      "#empty-add-btn",
+      "#import-btn",
+      "#paste-btn",
+      "#ai-help-btn",
+      "#detail-edit-btn",
+      "#detail-fav-btn",
+    ];
+    for (const sel of write) {
+      const el = $(sel);
+      if (el) el.hidden = !canEditBook;
+    }
+    document.body.classList.toggle("read-only", !canEditBook);
+    syncTransferButtons();
+  }
+
   function syncTransferButtons() {
     const cloud = window.RecipeCloud;
     const books = (cloud && cloud.books && cloud.books.books) || [];
@@ -682,8 +711,13 @@
     const ownsThisBook = Boolean(
       cloud && cloud.sync && books.some((b) => b.id === cloud.sync.bookId && b.isOwner)
     );
-    $("#detail-copy-btn").hidden = !elsewhere;
-    $("#detail-move-btn").hidden = !(elsewhere && ownsThisBook);
+    // Copy needs somewhere to put it; move needs that and this book to
+    // be yours to take it out of.
+    const somewhereToPut = (cloud && cloud.books && cloud.books.writableBooks
+      ? cloud.books.writableBooks().filter((b) => b.id !== cloud.sync.bookId).length > 0
+      : elsewhere);
+    $("#detail-copy-btn").hidden = !somewhereToPut;
+    $("#detail-move-btn").hidden = !(somewhereToPut && ownsThisBook);
   }
 
   /**
@@ -1399,7 +1433,7 @@
 
   // Handle for the sync layer (account.js/sync.js): shared store plus a
   // way to redraw once remote changes land.
-  window.RecipeApp = { store, render, toast, showPendingShare, openFromHash };
+  window.RecipeApp = { store, render, toast, showPendingShare, openFromHash, setCanEdit };
 
   render();
   handleIncomingShare();

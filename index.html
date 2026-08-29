@@ -268,6 +268,13 @@
     <h3 class="books-heading">Sharing <span id="sharing-book-name" class="sharing-book-name"></span></h3>
     <ul id="member-list" class="member-list"></ul>
     <div class="invite-row">
+      <label class="invite-role-field">
+        <span class="visually-hidden">What the invite allows</span>
+        <select id="invite-role">
+          <option value="editor">Can add and edit</option>
+          <option value="viewer">Can read only</option>
+        </select>
+      </label>
       <button type="button" class="btn btn-ghost" id="invite-btn">Create invite link</button>
       <button type="button" class="btn btn-danger" id="leave-book-btn">Leave this book</button>
       <button type="button" class="btn btn-danger" id="delete-book-btn" hidden>Delete this book</button>

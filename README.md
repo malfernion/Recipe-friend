@@ -26,10 +26,16 @@ accounts and sync.
   screen awake while you cook, so a phone propped against the bread bin
   does not lock with your hands covered in flour. Off until asked for,
   remembered on that device, and let go the moment the recipe closes.
-- **Shared recipe books** — invite a household into a book; everyone can add
-  and edit, while each person keeps their own units. Invite links are
-  single-use, expire in 48 hours, can be revoked, and never join anyone to
-  anything without their say-so.
+- **Shared recipe books** — invite a household into a book, as someone who
+  can add and edit or someone who can only read, changeable afterwards from
+  the member list. Each person keeps their own units. Invite links are
+  single-use, expire in 48 hours, can be revoked, say which kind they are
+  before anyone accepts, and never join anyone to anything without their
+  say-so.
+- **Copy and move** — copy a recipe into any book you can write to, which
+  is how a book you only read is still worth being in. Moving one out of a
+  book is the owner's, asks first, and leaves a tombstone so it does not
+  come back from somebody else's cache.
 - **Sync across devices, offline-first** — the browser copy is the working
   copy, so the app is instant and keeps working without a network.
 - **Share links** — **Share** copies a link carrying one recipe in the URL
@@ -73,7 +79,7 @@ type in the search box, pick a photo, click Export, open an invite link.
 
 Every test name quotes a criterion from [`docs/journeys.md`](docs/journeys.md),
 so a failure points at behaviour that was agreed rather than at an
-implementation detail. **91 of the 100 criteria have a test naming them**;
+implementation detail. **92 of the 101 criteria have a test naming them**;
 the nine that do not are listed at the end of the journeys, along with the
 database, which is deliberately outside the net.
 
@@ -117,8 +123,13 @@ switch between them, and invite others.
 An invite link is a key, not an announcement: whoever opens it can join. So
 each link is good for **one** person, expires after **48 hours**, and can be
 revoked from the Books dialog. Opening an invite never joins you to anything
-on its own — the app names the book and its owner, spells out that everyone
-in a book can edit and delete its recipes, and waits for you to accept.
+on its own — the app names the book and its owner, spells out what that
+particular link grants, and waits for you to accept.
+
+A member either can add and edit, or can read and copy out and nothing
+more. The owner chooses at invite time and can change it later. Ownership
+is separate: it lives on the book, and only the owner can rename it,
+delete it, invite, remove people, or move a recipe out.
 
 Signed in, recipes sync in the background and the most recently edited
 version of a recipe wins. Deletes travel as tombstones so a recipe deleted

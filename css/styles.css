@@ -76,6 +76,16 @@ body.dialog-open {
   overflow: hidden;
 }
 
+/*
+  A book you can read and not change (J7.17). The controls that write are
+  hidden from JS; the star on each card is rendered per card, so it goes
+  from here. Row-level security is what actually refuses — this is about
+  not offering a control that would fail.
+*/
+body.read-only .fav-btn {
+  display: none;
+}
+
 body {
   margin: 0;
   font-family: var(--sans);
@@ -1696,6 +1706,32 @@ body.gated .app-footer {
   flex: 1;
   font-family: var(--serif);
   font-size: 1rem;
+}
+
+/*
+  What somebody may do, as a control rather than a label, wherever the
+  reader is the one who can change it (J7.17).
+*/
+.member-role-pick,
+#invite-role {
+  font-family: var(--sans);
+  font-size: 0.66rem;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--ink-soft);
+  background: var(--paper);
+  border: 1px solid var(--rule-strong);
+  border-radius: 0;
+  padding: 0.45rem 0.5rem;
+  min-height: 44px;
+  touch-action: manipulation;
+}
+
+.member-role-pick:focus-visible,
+#invite-role:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
 }
 
 .member-remove {

@@ -57,12 +57,17 @@ function makeDoc() {
  * The event a browser hands a delegated listener: a target whose closest()
  * answers for the data- attributes the rendered control carries.
  */
-function control(attrs) {
+function control(attrs, extra = {}) {
   const t = {
     dataset: { ...attrs },
+    ...extra,
     closest(sel) {
       const m = /^\[data-([\w-]+)\]$/.exec(sel);
-      return m && Object.prototype.hasOwnProperty.call(attrs, m[1]) ? t : null;
+      if (!m) return null;
+      // A test names the dataset key; a selector names the attribute.
+      const camel = m[1].replace(/-([a-z])/g, (_, c) => c.toUpperCase());
+      const has = (k) => Object.prototype.hasOwnProperty.call(attrs, k);
+      return has(m[1]) || has(camel) ? t : null;
     },
   };
   return t;
@@ -1443,6 +1448,109 @@ test("J7.16 · a copy the server refuses leaves both books as they were", async 
   assert.ok(h.store.getById(recipe.id));
   assert.deepEqual(h.store.tombstones, []);
   assert.equal(h.lastToast(), "Couldn't copy that recipe.");
+});
+
+// ---------------------------------------------------------------------
+// J7.17 · a book you can read and not change
+// ---------------------------------------------------------------------
+
+/** The current book, held as a viewer rather than an editor. */
+async function asViewer(h) {
+  h.db.books.find((b) => b.id === MINE).owner = THEM;
+  for (const m of h.db.book_members) {
+    if (m.book_id !== MINE) continue;
+    // The fake embeds a snapshot of the book on the membership row, the
+    // way PostgREST returns it, so the snapshot has to move too.
+    if (m.books) m.books.owner = THEM;
+    if (m.user_id === ME) m.role = "viewer";
+  }
+  await h.books.refresh();
+}
+
+test("J7.17 · a viewer's local edits are never pushed", async () => {
+  const h = harness();
+  await asViewer(h);
+  assert.equal(h.sync.readOnly, true, "the book is read-only");
+
+  // Something local, as an offline edit or a stale cache would leave it.
+  h.typed({ name: "Not mine to save" });
+  await h.sync.syncNow();
+
+  assert.deepEqual(h.db.recipes, [], "nothing went up");
+  assert.equal(
+    h.statuses[h.statuses.length - 1],
+    "synced",
+    "and sync says it is done, rather than parking on an error it can never clear"
+  );
+});
+
+test("J7.17 · a viewer's edit does not even schedule a push", async () => {
+  const h = harness();
+  await asViewer(h);
+  h.sync.schedulePush();
+  assert.equal(h.sync.pending, false, "there is nothing to send and nothing to retry");
+});
+
+test("J7.17 · a viewer still pulls what the book holds", async () => {
+  const h = harness();
+  const theirs = aRecipe({ name: "Theirs to share" });
+  h.onServer(theirs, MINE);
+  await asViewer(h);
+
+  await h.sync.syncNow();
+
+  assert.deepEqual(h.store.recipes.map((r) => r.name), ["Theirs to share"],
+    "reading is the whole point of being here");
+});
+
+test("J7.17 · a viewer can copy a recipe out, into a book of their own", async () => {
+  const h = harness();
+  // An explicit id: aRecipe leaves that to the store, and a copy is
+  // addressed by it.
+  const theirs = aRecipe({ name: "Worth taking", id: "33333333-3333-4333-8333-333333333333" });
+  h.onServer(theirs, MINE);
+  await asViewer(h);
+  await h.sync.syncNow();
+
+  await copyThrough(h, theirs.id, SHARED);
+
+  assert.equal(
+    h.db.recipes.filter((r) => r.book_id === SHARED).length,
+    1,
+    "copy takes nothing from anybody, which is what makes it everyone's"
+  );
+});
+
+test("J7.17 · a book only offers itself as somewhere to copy to if you can write there", async () => {
+  const h = harness();
+  await h.books.refresh();
+  assert.deepEqual(h.books.writableBooks().map((b) => b.id).sort(), [MINE, SHARED].sort());
+
+  // Household read-only: it stops being somewhere a recipe can go.
+  h.db.book_members = h.db.book_members.map((m) =>
+    m.book_id === SHARED && m.user_id === ME ? { ...m, role: "viewer" } : m
+  );
+  await h.books.refresh();
+
+  assert.deepEqual(h.books.writableBooks().map((b) => b.id), [MINE]);
+  const recipe = h.typed({ name: "Nowhere to go" });
+  h.books.openMove(recipe.id, "copy");
+  assert.equal(h.el("move-dialog").open, false);
+  assert.equal(h.lastToast(), "Create another book first, then you can copy recipes into it.");
+});
+
+test("J7.17 · an owner can change what somebody may do, and is told which", async () => {
+  const h = harness();
+  h.cloud.join(MINE, THEM, "editor");
+  await h.books.refresh();
+
+  await h.el("member-list").fire("change", {
+    target: control({ roleFor: THEM }, { value: "viewer" }),
+  });
+
+  const them = h.db.book_members.find((m) => m.book_id === MINE && m.user_id === THEM);
+  assert.equal(them.role, "viewer");
+  assert.match(h.lastToast(), /read this book, not change it/);
 });
 
 // ---------------------------------------------------------------------

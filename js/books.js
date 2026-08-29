@@ -45,6 +45,24 @@
       this.wired = false;
     }
 
+    /**
+     * May we change what is in this book? Ownership answers it outright;
+     * otherwise it is the role the membership row carries (J7.17). An
+     * unknown role is treated as read-only: a control that does nothing
+     * is worse than one that is not offered, and the database will refuse
+     * anyway.
+     */
+    canEdit(book) {
+      const b = book || this.currentBook();
+      if (!b) return false;
+      return Boolean(b.isOwner) || b.role === "owner" || b.role === "editor";
+    }
+
+    /** Books this person could put a recipe into. */
+    writableBooks() {
+      return this.books.filter((b) => this.canEdit(b));
+    }
+
     currentBook() {
       return this.books.find((b) => b.id === this.sync.bookId) || null;
     }
@@ -89,8 +107,19 @@
       } else {
         this.invites = [];
       }
+      // What we may do in the book we are already in can change under us:
+      // a role taken down to viewer arrives as an ordinary refresh, with
+      // no other announcement (J7.17).
+      this.applyRole();
       this.renderHeader();
       this.renderDialog();
+    }
+
+    /** Tell sync and the UI what this book allows, from one answer. */
+    applyRole() {
+      const editable = this.canEdit(this.currentBook());
+      this.sync.readOnly = !editable;
+      if (this.app.setCanEdit) this.app.setCanEdit(editable);
     }
 
     /**
@@ -170,7 +199,17 @@
             (m) => `
           <li class="member-item">
             <span class="member-name">${esc(m.name)}${m.isMe ? " (you)" : ""}</span>
-            <span class="member-role">${esc(m.role)}</span>
+            ${
+              iOwn && !m.isMe
+                ? `<label class="member-role-field">
+                     <span class="visually-hidden">What ${esc(m.name)} may do</span>
+                     <select class="member-role-pick" data-role-for="${esc(m.userId)}">
+                       <option value="editor"${m.role === "viewer" ? "" : " selected"}>Can add and edit</option>
+                       <option value="viewer"${m.role === "viewer" ? " selected" : ""}>Can read only</option>
+                     </select>
+                   </label>`
+                : `<span class="member-role">${esc(m.role)}</span>`
+            }
             ${
               iOwn && !m.isMe
                 ? `<button type="button" class="member-remove" data-remove="${esc(m.userId)}"
@@ -237,7 +276,9 @@
 
     async switchTo(bookId) {
       if (!bookId || bookId === this.sync.bookId) return;
-      this.sync.setBook(bookId);
+      const book = this.books.find((b) => b.id === bookId);
+      this.sync.setBook(bookId, { readOnly: !this.canEdit(book) });
+      if (this.app.setCanEdit) this.app.setCanEdit(this.canEdit(book));
       this.app.store.useBook(bookId);
       rememberSelection(this.sync.userId, bookId);
       this.app.render();
@@ -364,17 +405,43 @@
      * two ways a book ends for you — leaving it, or deleting it.
      */
     wireSharing() {
+      const memberList = $("#member-list");
+      if (memberList) {
+        memberList.addEventListener("change", async (event) => {
+          const pick = event.target.closest && event.target.closest("[data-role-for]");
+          if (!pick) return;
+          const userId = pick.dataset.roleFor;
+          const who = this.members.find((m) => m.userId === userId);
+          try {
+            await this.api.setMemberRole(this.sync.bookId, userId, pick.value);
+            await this.refresh();
+            this.app.toast(
+              pick.value === "viewer"
+                ? `${who ? who.name : "They"} can now read this book, not change it.`
+                : `${who ? who.name : "They"} can now add and edit here.`
+            );
+          } catch (err) {
+            console.warn("Recipe Friend: could not change that role.", err);
+            this.app.toast("Couldn't change what they can do.");
+            await this.refresh();
+          }
+        });
+      }
+
       $("#invite-btn").addEventListener("click", async () => {
         const out = $("#invite-out");
         try {
-          const code = await this.api.createInvite(this.sync.bookId);
+          const roleEl = $("#invite-role");
+          const role = roleEl && roleEl.value === "viewer" ? "viewer" : "editor";
+          const code = await this.api.createInvite(this.sync.bookId, 1, role);
           const url = `${location.origin}${location.pathname}#join=${code}`;
           out.hidden = false;
           out.textContent = url;
           await this.refresh();
+          const what = role === "viewer" ? "to read" : "to add and edit";
           try {
             await navigator.clipboard.writeText(url);
-            this.app.toast("Invite link copied — good for one person, for 48 hours.");
+            this.app.toast(`Invite link copied — one person, 48 hours, ${what}.`);
           } catch {
             this.app.toast("Invite link ready — copy it from below.");
           }
@@ -562,7 +629,7 @@
      * recipe out of a book other people are reading (J7.10).
      */
     openMove(recipeId, verb = "copy") {
-      const others = this.books.filter((b) => b.id !== this.sync.bookId);
+      const others = this.writableBooks().filter((b) => b.id !== this.sync.bookId);
       if (others.length === 0) {
         this.app.toast(
           verb === "move"
@@ -627,11 +694,15 @@
         return true;
       }
 
+      const asViewer = preview.role === "viewer";
       const ok = await RecipeAsk.ask(
         `Join “${preview.bookName}”?\n\n` +
           `${preview.ownerName} is sharing this recipe book with you.\n\n` +
-          "You'll be able to see everything in it, and everyone in the book — " +
-          "including you — can add, edit and delete its recipes.\n\n" +
+          (asViewer
+            ? "You'll be able to see everything in it and copy recipes into " +
+              "books of your own, but not change anything here.\n\n"
+            : "You'll be able to see everything in it, and everyone in the book — " +
+              "including you — can add, edit and delete its recipes.\n\n") +
           "Recipe Friend will switch to this book, so new recipes you save " +
           "will go into it until you switch back.",
         { confirmLabel: "Join" }

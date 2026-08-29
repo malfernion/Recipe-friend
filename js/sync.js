@@ -28,6 +28,7 @@
       this.api = api;
       this.onStatus = onStatus || (() => {});
       this.bookId = null;
+      this.readOnly = false; // a book we may read and not write (J7.17)
       this.pending = false; // local edits waiting to go up
       this.running = false;
       this.timer = null;
@@ -99,28 +100,6 @@
     }
 
     /**
-     * Move a recipe into another book. The row keeps its id and simply
-     * changes book — RLS allows it because the check runs against both the
-     * old and the new book, and you must belong to both.
-     *
-     * The photo has to travel with it. Storage policies authorise on the
-     * first segment of the path, so a file left under the old book is
-     * unreadable to anyone in the new one who isn't also in the old one —
-     * the recipe would arrive with no picture and no explanation. The copy
-     * goes first and the move is abandoned if it fails: a recipe that
-     * plainly stayed put is easier to live with than one that has quietly
-     * lost its photo, and the mover can try again.
-     *
-     * A recipe written moments ago may still be waiting inside the push
-     * debounce with no row on the server yet, and the caller drops the
-     * local copy as soon as this returns. So anything pending goes up
-     * first, and every step afterwards insists the row is really there:
-     * an update that matched nothing is not an error to PostgREST, and
-     * taking that silence for success would delete the only copy.
-     *
-     * Returns the recipe's photo path after the move ("" if it has none).
-     */
-    /**
      * The row a copy of this recipe would be, with its photo already
      * filed under the copy's own id.
      *
@@ -130,10 +109,11 @@
      * recipe rather than relocating this one — which is also why the copy
      * needs an id of its own before anything else can happen.
      *
-     * `photoRequired` is the difference in appetite between the two: a
-     * move is about to remove the original, so a photo that cannot be
-     * brought across is a reason to stop; a copy risks nothing by going
-     * without one, and says so instead.
+     * `forMove` is the difference in appetite between the two: a move is
+     * about to remove the original, so it insists the server has the row
+     * to tombstone and treats a photo that will not come across as a
+     * reason to stop. A copy risks nothing by going without one, and says
+     * so instead.
      */
     async prepareCopy(recipeId, targetBookId, { forMove = false } = {}) {
       // A recipe typed seconds ago may still be inside the push debounce
@@ -234,10 +214,15 @@
 
 
 
-    /** Point sync at a different book; the caller swaps the local cache. */
-    setBook(bookId) {
+    /**
+     * Point sync at a different book; the caller swaps the local cache.
+     * Whether we may write to it travels with it, because the answer is
+     * per book, not per person.
+     */
+    setBook(bookId, { readOnly = false } = {}) {
       clearTimeout(this.timer);
       this.bookId = bookId;
+      this.readOnly = readOnly;
     }
 
 
@@ -259,10 +244,11 @@
         const { recipes, tombstones, toPush } = this.merge(rows);
         this.store.applyMerge(recipes, tombstones);
 
-        if (toPush.length > 0) await this.api.pushRecipes(toPush);
+        const pushed = this.readOnly ? 0 : toPush.length;
+        if (pushed > 0) await this.api.pushRecipes(toPush);
 
-        this.status("synced", { pushed: toPush.length, pulled: rows.length });
-        return { pushed: toPush.length, pulled: rows.length };
+        this.status("synced", { pushed, pulled: rows.length });
+        return { pushed, pulled: rows.length };
       } catch (err) {
         console.warn("Recipe Friend: sync failed.", err);
         this.pending = true; // retry on the next local change or sign-in
@@ -353,7 +339,11 @@
 
     /** Local edit happened: coalesce rapid changes into one round trip. */
     schedulePush() {
-      if (!this.bookId) return;
+      // Nothing local is going up from a book we can only read, and
+      // trying is worse than not trying: the push fails on row-level
+      // security, the status line parks on "Sync paused — will retry",
+      // and read-only looks broken rather than restricted (J7.17).
+      if (!this.bookId || this.readOnly) return;
       this.pending = true;
       this.status("pending");
       clearTimeout(this.timer);

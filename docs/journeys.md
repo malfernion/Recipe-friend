@@ -269,14 +269,16 @@ Covers a share link someone sent, and a recipe an assistant wrote out.
 1. Everyone's first book is named after them and can be shared as it is.
    There is no separate "personal" tier to migrate out of.
 2. Anyone can create more books, and switch between them from the header.
-3. Everyone in a book can add, edit and delete its recipes.
+3. Everyone in a book who may write to it can add, edit and delete its
+   recipes (J7.17). Membership alone no longer means write access.
 4. An owner can invite others with a link. A link is **good for one person
    and expires after 48 hours**, and the owner can see the live ones and
    revoke any that went astray.
 5. Opening an invite never joins anyone to anything by itself. The app names
-   the book and its owner, says plainly that everyone in a book can edit and
-   delete its recipes, and waits to be accepted. Membership is something you
-   agree to, not something you can be given.
+   the book and its owner, says plainly what this particular invite grants —
+   adding and editing alongside everyone else, or reading and copying out
+   and nothing more (J7.17) — and waits to be accepted. Membership is
+   something you agree to, not something you can be given.
 6. A member can leave a book; its recipes stay with the book.
 7. An owner cannot leave a book. Their exits are to keep it or to delete it.
 8. An owner can delete a book, which destroys its recipes for every member.
@@ -324,8 +326,8 @@ Covers a share link someone sent, and a recipe an assistant wrote out.
     someone something untrue about a person they cook with.
 15. If the book that went was your only one, a replacement is created, named
     after you exactly as your first book was (J1.3).
-16. **Anyone in a book can copy one of its recipes into another book they
-    belong to.** Copy takes nothing from anybody, which is what makes it
+16. **Anyone in a book can copy one of its recipes into a book they can
+    write to.** Copy takes nothing from anybody, which is what makes it
     everyone's where moving (J7.10) is the owner's — and what will make a
     book you can only read still worth being in.
 
@@ -341,6 +343,34 @@ Covers a share link someone sent, and a recipe an assistant wrote out.
     front of you rather than from a row that may not be up yet. A photo
     that cannot be brought across costs the photo and says so, not the
     copy — nothing is at risk, unlike a move.
+17. **A book can be one you read and do not change.** An owner chooses
+    when they invite — the link says which it is, and the person opening
+    it is told before they accept (J7.5) — and can change it afterwards
+    from the member list. There was no way to change a role at all
+    before: the column existed, no policy consulted it, and no UPDATE
+    policy allowed writing to it.
+
+    Ownership is not a rung on that ladder. It stays on the book, where
+    every existing policy already reads it.
+
+    Three things follow, and are worth saying out loud:
+
+    - **A viewer's client never pushes.** Row-level security would refuse
+      it, and a refused push parks the status line on "Sync paused — will
+      retry" for ever, which makes read-only look broken rather than
+      restricted. It pulls as normal: reading is the point.
+    - **A viewer cannot favourite.** A favourite is a property of the
+      recipe, not of the person (J3.6), so starring is a write like any
+      other. That is the price of the shared shortlist, and it is
+      deliberate.
+    - **Read-only is not confidential.** A viewer sees everything and can
+      Export it or copy it out (J7.16). It means they cannot change your
+      book, not that they cannot keep what is in it — and a role taken
+      back does not retrieve what somebody already has.
+
+    The controls that write are not offered where they would fail, but
+    the database is the gate: the app hiding a button is a courtesy, not
+    a boundary.
 
 ## J8 · Measurements that suit the cook
 
@@ -442,7 +472,7 @@ recipe is, what it says on screen, and what survives a round trip. Those
 are the failures that would be silent — a recipe quietly losing its tags is
 worse than a page that will not load.
 
-Nine of the 100 criteria have no test naming them. Five more things the
+Nine of the 101 criteria have no test naming them. Five more things the
 tests do not reach, recorded so the gap is visible:
 
 - **The 48-hour lifetime and single use of an invite** are the database's,
@@ -492,8 +522,10 @@ tests do not reach, recorded so the gap is visible:
   itself gives back.
 
 **The database is deliberately outside the net.** The row-level security
-policies, `redeem_invite`, `preview_invite` and the Storage rules are the
-security model, and none of them are tested: doing so needs a live Postgres
+policies, `redeem_invite`, `preview_invite`, `move_recipe`, the two
+triggers that make a recipe's book and a membership row's subject
+immutable, and the Storage rules are the security model, and none of them
+are tested: doing so needs a live Postgres
 that CI has not got. They are verified by hand in the Supabase dashboard
 when a migration is applied. This is the largest untested surface in the
 project and is written down here so it stays visible rather than being
