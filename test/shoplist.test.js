@@ -126,7 +126,65 @@ test("J13.4 · lines combine on the item as written, tolerating simple plurals",
   assert.equal(stemWord("tomatoes"), stemWord("tomato"));
   assert.equal(stemWord("limes"), stemWord("lime"));
   assert.equal(stemWord("Cloves "), stemWord("clove"));
-  assert.notEqual(stemWord("onion"), stemWord("garlic"));
+
+  // Tolerating plurals is all it tolerates: two different things stay two
+  // lines, each with its own total, however alike they look.
+  const garlicky = sanitize({
+    name: "Garlicky", servings: 1,
+    ingredients: [{ amount: 2, unit: "", item: "garlic" }, { amount: 1, unit: "", item: "onion" }],
+    steps: ["x"],
+  });
+  const two = build(addMeal(emptyPlan(1000), garlicky, 1001), [garlicky], METRIC);
+  assert.deepEqual(two.lines.map((l) => [l.item, l.required]), [["garlic", 2], ["onion", 1]]);
+});
+
+test("J13.7 · where the recipes wrote the item differently, the line says what each of them wrote", () => {
+  // The plural rule is what makes this merge, and it is the merge the
+  // boundary admits is sometimes wrong: ground pepper and bell peppers
+  // are one line and are not one shop. Naming the recipes is not enough
+  // to see that — the line has to say what each of them wrote.
+  const grinder = sanitize({
+    name: "Steak", servings: 1,
+    ingredients: [{ amount: 1, unit: "tsp", item: "pepper" }],
+    steps: ["x"],
+  });
+  const stirFry = sanitize({
+    name: "Stir fry", servings: 1,
+    ingredients: [{ amount: 2, unit: "tsp", item: "peppers" }],
+    steps: ["x"],
+  });
+  let plan = addMeal(emptyPlan(1000), grinder, 1001);
+  plan = addMeal(plan, stirFry, 1002);
+  const line = build(plan, [grinder, stirFry], METRIC).lines[0];
+
+  assert.equal(line.from.length, 2, "one line, made of two");
+  assert.deepEqual(
+    line.from.map((c) => [c.name, c.text, c.item]),
+    [["Steak", "1", "pepper"], ["Stir fry", "2", "peppers"]],
+    "so the wrong merge is visible on the line rather than silent"
+  );
+});
+
+test("J13.3 · an ingredient with a unit and no item does not say the unit twice", () => {
+  // J2.1 asks for an amount, a unit or an item, not all three, so "400 g"
+  // with nothing after it is a line somebody can write. The unit was the
+  // only name it had and was then printed beside itself: "400 g g".
+  const stock = sanitize({
+    name: "Stock", servings: 1,
+    ingredients: [{ amount: 400, unit: "g", item: "" }, { amount: 2, unit: "cloves", item: "" }],
+    steps: ["x"],
+  });
+  const list = build(addMeal(emptyPlan(1000), stock, 1001), [stock], METRIC);
+  assert.deepEqual(list.lines.map((l) => l.text), ["400 g", "2 cloves"]);
+  assert.deepEqual(list.lines.map((l) => l.unit), ["", ""], "the unit is the item, not beside it");
+
+  // And it still reads right when the size promotes it to another unit.
+  const lots = sanitize({
+    name: "Lots", servings: 1,
+    ingredients: [{ amount: 1500, unit: "g", item: "" }],
+    steps: ["x"],
+  });
+  assert.equal(build(addMeal(emptyPlan(1000), lots, 1001), [lots], METRIC).lines[0].text, "1½ kg");
 });
 
 test("J13.5 · 400 g tomatoes and 1 tin tomatoes are two lines", () => {

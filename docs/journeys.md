@@ -724,9 +724,11 @@ tests do not reach, recorded so the gap is visible:
   itself gives back.
 
 **The database is deliberately outside the net.** The row-level security
-policies, `redeem_invite`, `preview_invite`, `move_recipe`, the two
-triggers that make a recipe's book and a membership row's subject
-immutable, and the Storage rules are the security model, and none of them
+policies — including the ones on `live_plans` and `plans`, which are what
+stop a read-only member planning (J12.10) — `redeem_invite`,
+`preview_invite`, `move_recipe`, the three triggers that make a recipe's
+book, a membership row's subject and a plan's book immutable, and the
+Storage rules are the security model, and none of them
 are tested: doing so needs a live Postgres
 that CI has not got. They are verified by hand in the Supabase dashboard
 when a migration is applied. This is the largest untested surface in the

@@ -40,10 +40,22 @@ test("J12.1 · a plan is a bag of meals, with nothing assigned to a day", () => 
   const plan = emptyPlan(1000);
   assert.deepEqual(plan.meals, []);
   assert.equal(plan.completedAt, null);
-  // Nothing in a meal names a day, a slot or a date beyond when it went in.
-  const withMeal = addMeal(plan, BOLOGNESE, 2000);
-  assert.deepEqual(Object.keys(withMeal.meals[0]).sort(),
-    ["addedAt", "id", "multiplier", "name", "portions", "recipeId"]);
+
+  // Nothing a meal carries names a day, a date, a slot or a mealtime.
+  const meal = addMeal(plan, BOLOGNESE, 2000).meals[0];
+  assert.deepEqual(
+    Object.keys(meal).filter((k) => /day|date|slot|week|when|night|meal ?time/i.test(k)),
+    []
+  );
+
+  // And nothing about the plan depends on when its meals went in: two
+  // recipes added a month apart ask for exactly the same shop as two
+  // added in the same second. The shop does not care which night the
+  // curry is, and neither does the plan.
+  const spread = addMeal(addMeal(plan, BOLOGNESE, 2000), CURRY, 2000 + 30 * DAY);
+  const together = addMeal(addMeal(plan, BOLOGNESE, 5), CURRY, 6);
+  const asked = (p) => p.meals.map((m) => [m.recipeId, m.portions, m.multiplier]);
+  assert.deepEqual(asked(spread), asked(together));
 });
 
 test("J12.5 · portions default to the recipe's own servings", () => {
@@ -115,11 +127,16 @@ test("J12.8 · a recipe that leaves the book leaves the plan", () => {
   assert.equal(pruned.updatedAt, 3000);
 });
 
-test("J12.8 · a plan with nothing to prune is left exactly as it was", () => {
+test("J12.8 · a plan with nothing to prune does not start winning merges it should lose", () => {
   const plan = addMeal(emptyPlan(1000), BOLOGNESE, 2000);
-  // Pruning runs whenever the recipes are read; re-stamping a plan that
-  // did not change would let it start winning merges it should lose.
-  assert.equal(prune(plan, [BOLOGNESE.id], 9999), plan);
+  // Pruning runs whenever the recipes are read, which is constantly.
+  const pruned = prune(plan, [BOLOGNESE.id], 9999);
+  assert.equal(pruned.updatedAt, 2000, "reading the list is not editing the plan");
+
+  // Which is the point: the other phone added the curry a moment ago, and
+  // a plan re-stamped for nothing would beat it and throw the curry away.
+  const theirs = addMeal(plan, CURRY, 5000);
+  assert.deepEqual(mergePlans(pruned, theirs).meals.map((m) => m.name), ["Bolognese", "Curry"]);
 });
 
 test("J13.11 · removing the recipe that put onions on the list does not un-settle onions", () => {
@@ -182,6 +199,28 @@ test("J13.13 · the retraction is stamped like any other settlement, so it wins 
   // And a settlement made after the retraction is the later word again.
   const again = settle(retracted, "onion|unit:", "have", 4, 4000);
   assert.deepEqual(settledFor(mergePlans(retracted, again), "onion|unit:"), { have: 4, got: 0 });
+});
+
+test("J13.13 · a retraction in the same millisecond as the settlement still wins the merge", () => {
+  // ✗ is a fast gesture, and a fast gesture can be taken back inside the
+  // same millisecond. The merge breaks a tie on the larger amount, so a
+  // tie here would be the settlement beating the tap that undid it.
+  const settled = settle(emptyPlan(1000), "onion|unit:", "have", 4, 2000);
+  const retracted = unsettle(settled, "onion|unit:", "have", 2000);
+  assert.ok(retracted.settled["onion|unit:"].have.at > 2000,
+    "one hand's stamps on one line strictly increase, so it cannot tie with itself");
+  for (const merged of [mergePlans(settled, retracted), mergePlans(retracted, settled)]) {
+    assert.deepEqual(settledFor(merged, "onion|unit:"), { have: 0, got: 0 });
+  }
+});
+
+test("J13.13 · taking back somebody else's settlement wins from a phone whose clock is behind", () => {
+  const base = emptyPlan(1000);
+  const theirs = settle(base, "onion|unit:", "have", 4, 9000); // their clock runs ahead
+  const merged = mergePlans(base, theirs);
+  const retracted = unsettle(merged, "onion|unit:", "have", 3000); // ours is minutes behind
+  assert.deepEqual(settledFor(mergePlans(retracted, theirs), "onion|unit:"), { have: 0, got: 0 },
+    "the tap that put the line back is the last word, whatever the two clocks say");
 });
 
 test("J12.11 · settling a line does not make one device's meals win the merge", () => {

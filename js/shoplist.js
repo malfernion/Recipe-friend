@@ -16,8 +16,13 @@
  *     required, have, got, outstanding,   // all in base units
  *     settled,                   // "" | "have" | "got"
  *     toTaste,                   // J13.8 — a presence, not a quantity
- *     from: [{mealId, recipeId, name, base, amount, text}]   // J13.7
+ *     unitIsItem,                // "2 cloves": the unit is the only name
+ *     from: [{mealId, recipeId, name, item, base, amount, text}]   // J13.7
  *   }
+ *
+ * `from[].item` is what that recipe wrote, which the line's own `item`
+ * need not be: J13.7 wants "3 peppers · Bolognese 2 (red pepper), Curry 1
+ * (black pepper)", and only the contribution knows the second half of it.
  */
 (function (global) {
   "use strict";
@@ -96,7 +101,14 @@
       const factor = global.RecipePlan.factorFor(meal, recipe);
 
       for (const ing of recipe.ingredients || []) {
-        const item = String(ing.item || "").trim() || global.RecipeUnits.normalizeLabel(ing.unit);
+        const written = String(ing.item || "").trim();
+        // An ingredient may be a unit with no item — "2 cloves", "a pinch"
+        // — because J2.1 asks for an amount, a unit or an item and not all
+        // three. The unit is then the only name the line has, and saying
+        // it twice is what "400 g g" was: the item fell back to the unit
+        // and the unit was printed beside it. So the line remembers that
+        // its name came from the unit, and prints one of them.
+        const item = written || global.RecipeUnits.normalizeLabel(ing.unit);
         if (!item) continue;
         const hasAmount = ing.amount !== null && ing.amount !== undefined && Number(ing.amount) > 0;
         const bucket = hasAmount ? quantified : toTaste;
@@ -113,6 +125,8 @@
               !hasAmount ? "presence" : family === "mass" ? "g" : family === "volume" ? "ml" : global.RecipeUnits.normalizeLabel(ing.unit),
             required: 0,
             toTaste: !hasAmount,
+            // The item is the unit, so the unit is not printed again.
+            unitIsItem: !written,
             from: new Map(),
             // How much of the total arrived in each unit as written, so a
             // reader who keeps units as entered can be told which unit
@@ -126,8 +140,8 @@
         const converts = line.family === "mass" || line.family === "volume";
         const contribution = !hasAmount ? 0 : converts ? global.RecipeUnits.toBase(scaled, ing.unit) : scaled;
         if (converts) {
-          const written = global.RecipeUnits.normalizeLabel(ing.unit);
-          line.units.set(written, (line.units.get(written) || 0) + contribution);
+          const asWritten = global.RecipeUnits.normalizeLabel(ing.unit);
+          line.units.set(asWritten, (line.units.get(asWritten) || 0) + contribution);
         }
         // "To taste" is never summed (J13.8): one presence is what such a
         // line requires however many recipes ask for it. That is also
@@ -137,7 +151,20 @@
 
         const seen = line.from.get(meal.id);
         if (seen) seen.base += contribution;
-        else line.from.set(meal.id, { mealId: meal.id, recipeId: meal.recipeId, name: meal.name || recipe.name, base: contribution });
+        else
+          line.from.set(meal.id, {
+            mealId: meal.id,
+            recipeId: meal.recipeId,
+            name: meal.name || recipe.name,
+            // What this recipe actually wrote, which is not always what
+            // the line is filed under: the plural rule (J13.4) files
+            // "red pepper" and "black pepper" together, and J13.7 is only
+            // a promise it can keep if the line can say so. A recipe that
+            // spells one item two ways keeps the first spelling — it has
+            // already agreed with itself that they are one thing.
+            item,
+            base: contribution,
+          });
       }
     }
 
@@ -174,12 +201,20 @@
     const readable = amountText && amountText !== "0";
     const ratio = readable && line.required > 0 ? shown.amount / line.required : 0;
 
+    // Where the item is the unit, the unit shown is the item: "1.5 kg",
+    // not "1.5 kg g" and not "1500 g" printed as "1.5 kg g" either. The
+    // converted label is the one to use, since that is the size the
+    // reader is being given (J13.6).
+    const label = line.unitIsItem && readable ? shown.unit : line.item;
+
     return {
       key: line.key,
-      item: line.item,
-      unit: readable ? shown.unit : "",
+      item: label,
+      unit: readable && !line.unitIsItem ? shown.unit : "",
       amount: readable ? shown.amount : null,
-      text: [readable ? amountText : "", readable ? shown.unit : "", line.item].filter(Boolean).join(" "),
+      text: [readable ? amountText : "", readable && !line.unitIsItem ? shown.unit : "", label]
+        .filter(Boolean)
+        .join(" "),
       family: line.family,
       baseUnit: line.baseUnit,
       required: line.required,

@@ -118,17 +118,33 @@
     const app = window.RecipeApp;
     if (!app || !window.RecipeSync) return;
     const api = new window.RecipeApi(client);
-    const sync = new window.RecipeSync(app.store, api, showStatus);
+    // The book's plan is cached and synced like its recipes (J12.2,
+    // J12.3). Adopted from the app if it made one, so the planner is
+    // working with the same object the screen is reading.
+    const planStore =
+      app.planStore || (window.RecipePlanStore ? new window.RecipePlanStore() : null);
+    if (planStore) app.planStore = planStore;
+    const sync = new window.RecipeSync(app.store, api, showStatus, planStore);
     window.RecipeCloud.api = api;
     window.RecipeCloud.sync = sync;
-    // Local edits from here on push automatically (debounced).
+    window.RecipeCloud.planStore = planStore;
+    // Local edits from here on push automatically (debounced) — one
+    // debounce and one status line for both, so a plan and the recipes it
+    // names never disagree about whether the device is in sync.
     app.store.onChange = () => sync.schedulePush();
+    if (planStore) {
+      planStore.onChange = () => sync.schedulePush();
+      app.store.onForgetBook = (bookId) => planStore.forgetBook(bookId);
+    }
     try {
       const remembered =
         window.RecipeBooks && window.RecipeBooks.rememberedSelection(session.user.id);
       await sync.resolveBook(session.user.id, remembered, displayName(session));
-      // The local cache is per book, so point it at this one before syncing.
+      // The local cache is per book, so point it at this one before
+      // syncing. `resolveBook` sets the id directly rather than through
+      // setBook, so the plan cache is pointed at it here too.
       app.store.useBook(sync.bookId);
+      if (planStore) planStore.useBook(sync.bookId);
       if (window.RecipeBooks) {
         window.RecipeBooks.rememberSelection(session.user.id, sync.bookId);
         books = new window.RecipeBooks.BooksUI(sync, api, app);
@@ -164,7 +180,12 @@
     if (bookLabel) bookLabel.hidden = true;
     books = null;
     window.RecipeCloud.books = null;
-    if (app) app.store.onChange = null;
+    if (app) {
+      app.store.onChange = null;
+      app.store.onForgetBook = null;
+      if (app.planStore) app.planStore.onChange = null;
+    }
+    window.RecipeCloud.planStore = null;
     if (window.RecipeCloud.sync) window.RecipeCloud.sync.stop();
     window.RecipeCloud.sync = null;
     showStatus(null);
