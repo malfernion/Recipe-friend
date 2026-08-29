@@ -527,7 +527,12 @@ so the app can tell them what to buy.
    teaspoons and a tablespoon are two lines, and that is the same decision
    as the tin.
 6. Amounts are shown in the reader's preferred units (J8), so two people
-   in one book read one list each their own way.
+   in one book read one list each their own way. **Where the reader keeps
+   units as entered (J8.1) a summed line has no single "as entered" to
+   keep**, so it reads in the unit that most of it came from — the largest
+   contributor's. Someone who writes in cups and asked for no conversion
+   must not be handed a list in millilitres; that is the preference they
+   expressed, arriving by the back door.
 7. Every line says what it is made of — "6 onions · Bolognese 4, Curry 2"
    — so a combination that should not have happened is visible, and one
    that should have is obvious.
@@ -551,7 +556,12 @@ so the app can tell them what to buy.
     Where the browser can share, the same text is shared instead.
 13. Removed lines are not gone. They collapse into a group that says how
     many, and one tap puts one back: ✗ is a fast gesture, and fast
-    gestures are mistyped.
+    gestures are mistyped. **Putting one back retracts that settlement
+    whole**, rather than returning some part of the amount — a settlement
+    is a quantity (J13.9), but the gesture that made it was one tap and so
+    is the gesture that undoes it. The retraction is stamped like any
+    other settlement, so it wins the merge (J12.11) rather than being
+    quietly undone by an older device.
 
 ## J14 · What the plan remembers
 
