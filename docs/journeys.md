@@ -535,7 +535,12 @@ so the app can tell them what to buy.
    expressed, arriving by the back door.
 7. Every line says what it is made of — "6 onions · Bolognese 4, Curry 2"
    — so a combination that should not have happened is visible, and one
-   that should have is obvious.
+   that should have is obvious. **Where the recipes wrote the item
+   differently, the line says what each of them wrote**: "3 peppers ·
+   Bolognese 2 (red pepper), Curry 1 (black pepper)". Without that this
+   criterion is a promise it cannot keep — the plural rule (J13.4) is what
+   makes the wrong merge, and naming the recipes it came from does not
+   show you that one of them said something else.
 8. Lines with no amount ("to taste", J2.3) are grouped at the end and
    never summed. They are things you might be out of, not quantities.
 9. **Settling a line records how much of it is settled, not that it is
@@ -641,6 +646,13 @@ accident:
   a supermarket is.
 - Nothing carries from one plan to the next. Saying "we have onions" is
   about this shop (J13.9).
+- **Tolerating plurals when combining (J13.4) merges some things that are
+  not the same thing.** "Pepper" and "peppers" are one line, and ground
+  pepper and bell peppers are not one shop. The rule earns its place on
+  "onion"/"onions", which is the common case by a distance; the wrong
+  merges are rare, and J13.7 is what makes each one visible on the line
+  rather than silent. Matching more cleverly would need the app to know
+  what food is.
 - **An export carries recipes, not plans** (J10.1). Planning history lives
   in the book's archived plans and does not survive a restore into a new
   account, in the same way a photo does not (J10.4).
