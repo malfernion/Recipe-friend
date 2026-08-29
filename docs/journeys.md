@@ -450,6 +450,144 @@ Covers a share link someone sent, and a recipe an assistant wrote out.
    bypasses row-level security, in a public repository.
 5. The `service_role` key is never used by the app and never committed.
 
+## J12 · Planning a week
+
+Someone picks several recipes, at the portions they mean to cook them at,
+so the app can tell them what to buy.
+
+1. **A plan is a bag of meals, not a calendar.** Recipes go in with the
+   portions wanted; nothing is assigned to a day, a slot or a date. The
+   shop does not care which night the curry is, and neither does the
+   question the plan exists to answer.
+2. **A plan belongs to the book, the way its recipes and its favourites
+   do** (J3.6). One household, one plan: whoever does the shop sees what
+   whoever planned it chose. There is one live plan per book, and it needs
+   no name and no date — it is "the plan".
+3. Each book keeps its own plan in its own local cache, exactly as each
+   book keeps its own recipes (J9.7). Switching books switches plans.
+4. **Planning is a mode over the list, not a screen of its own.** Turning
+   it on leaves search, tag chips, Favourites and the "chicken, rice"
+   ranking (J3) working as they are, and gives every card a way in and a
+   portions stepper. Choosing between recipes is what the list is already
+   for.
+5. Portions default to the recipe's own servings and step the way the
+   recipe view steps them (J4.2) — one serving at a time where servings
+   are known, half a batch where they are not. The plan holds the
+   portions; **the recipe is never edited** (J4.3).
+6. A recipe can be planned more than once — two nights, two entries, its
+   own portions each. The list sums them without caring.
+7. In plan mode the recipe view gains a way to add what is open. Outside
+   plan mode it gains nothing: those controls fit one row on a phone
+   (J4.19), and that is not spent on a control for something you are not
+   doing.
+8. **A recipe that leaves the book leaves the plan.** Deleted, or moved
+   out by its owner (J7.10), it goes from the plan with it — a plan is a
+   list of things to cook, and a recipe nobody in this book has is not one
+   of them. What was already settled against it on the shopping list stays
+   settled (J13.11).
+9. The plan has an address (`#plan`), so Back closes it the way it closes
+   an open recipe (J4.17).
+10. **A read-only member cannot plan.** The plan is the book's, so adding
+    to it is a write, and a viewer's client never pushes (J7.17) — the
+    same rule that stops them favouriting. A viewer gets the recipes and
+    no planner. That is the price of the plan being shared, and it is the
+    first thing to revisit if plans are ever made personal.
+11. **Two people can settle lines at the same time.** Recipes merge whole,
+    most recent edit winning (J9.3), because a recipe has one author at a
+    time; a shopping list has two people in one aisle. So a plan's settled
+    amounts merge **per item**, each carrying when it was settled, and
+    each is an amount rather than a step — whoever's write lands last
+    still says the right total. The meals in a plan merge whole, like a
+    recipe: nobody races to add the curry.
+12. The plan works with no network, like the rest of the app (J9.1) — and
+    it matters more here than anywhere else, because the supermarket is
+    the one building where the phone has no signal.
+
+## J13 · Shopping from a plan
+
+1. The shopping list is every planned recipe's ingredients, scaled to the
+   portions planned, summed into one line per thing to buy.
+2. **Summing happens in base units and is formatted once, at the end.**
+   Formatting first and adding the results loses ingredients: J4.8 renders
+   anything below 0.05 as 0, and three lots of "0 tsp" is not none.
+3. **A shopping quantity is never rendered as 0.** J4.8 accepts it in a
+   recipe, where the recipe as written is one tap away at full portions; a
+   shopping list that says "0 g butter" is telling you to buy nothing.
+   Below that size the line shows the item without an amount.
+4. Lines combine on the item as written, tolerating simple plurals the way
+   search does (J3.4). The app already believes "tomatoes" and "tomato"
+   are the same word when looking for a recipe; believing it here too is
+   one rule rather than two.
+5. **Amounts combine only within a unit family.** 400 g tomatoes and 1 tin
+   tomatoes are two lines under one heading, because nothing in the app
+   knows how big a tin is — the same honesty as J4.6 letting "clove" and
+   "pinch" through untouched.
+6. Amounts are shown in the reader's preferred units (J8), so two people
+   in one book read one list each their own way.
+7. Every line says what it is made of — "6 onions · Bolognese 4, Curry 2"
+   — so a combination that should not have happened is visible, and one
+   that should have is obvious.
+8. Lines with no amount ("to taste", J2.3) are grouped at the end and
+   never summed. They are things you might be out of, not quantities.
+9. **Settling a line records how much of it is settled, not that it is
+   done.** ✗ ("we have this") and ✓ ("this is in the basket") both record
+   the amount that was on the line when pressed. What is left to buy is
+   the difference — so planning another recipe wanting two more onions
+   brings two onions back, without disturbing the three already settled.
+10. A settled amount is never reduced when the requirement falls. Dropping
+    a recipe leaves nothing outstanding; putting it back surfaces exactly
+    the shortfall again, because what was settled was never forgotten.
+11. Settled amounts are held per item, not per recipe, so they survive
+    recipes joining and leaving the plan. Removing the recipe that put
+    onions on the list does not un-settle onions.
+12. **Copy gives what is left**: everything neither removed nor settled,
+    one line per item, amount first. A static site has no supermarket to
+    talk to (J11), so pasting into the shopping app of your choice is the
+    interop — and copying twice must never ask for the same thing twice.
+    Where the browser can share, the same text is shared instead.
+13. Removed lines are not gone. They collapse into a group that says how
+    many, and one tap puts one back: ✗ is a fast gesture, and fast
+    gestures are mistyped.
+
+## J14 · What the plan remembers
+
+1. **Done finishes the plan**, and is the moment a plan is recorded: every
+   recipe in it is stamped as planned, the plan is archived, and an empty
+   one takes its place.
+2. Done happens by itself when the last outstanding line is settled — you
+   have just said you are finished by settling it, so it does not also
+   ask. It says what it did and offers Undo. Settling the last line with ✗
+   counts: a week you already had everything for was still planned.
+3. Finishing needs at least one recipe. An empty plan has nothing to
+   record and offers no Done.
+4. **Clear discards a plan without recording it.** A week that never
+   happened should not claim to have been planned.
+5. **What is recorded is that a recipe was planned, not that it was
+   cooked.** This is a planner, not an oven: a plan finished today may be
+   for a fortnight's time, and nothing here can know whether a pan was
+   ever used. So the word is always "planned", and the date is the date
+   the plan was finished.
+6. A recipe's card and its recipe view say when it was last planned, the
+   ordinary way of saying it — "Planned 3 weeks ago" — because that is the
+   question being asked, not which Tuesday it was.
+7. **A recipe that has never been planned says nothing.** "Never planned"
+   reads as a reproach on a recipe typed in five minutes ago. It still
+   sorts where it matters (J14.9).
+8. A recipe in the live plan says "In the plan" instead, which is more use
+   than a date while you are deciding, and stops it being added twice by
+   accident.
+9. **Not planned lately** is a filter chip beside Favourites and combines
+   with search and tags as the others do (J3.2): least recently planned
+   first, and never-planned before them.
+10. How often a recipe has been planned is counted from the same archive,
+    so "most planned" needs nothing else stored.
+11. **Nothing about planning is stored on the recipe.** A stamp there
+    would bump its `updatedAt`, which reorders the list and would let
+    finishing a plan overwrite an edit made on another device (J9.3). The
+    archive is the record, and the recipe is left alone.
+12. An archived plan keeps the names of the recipes it held, so a recipe
+    deleted afterwards does not leave a blank line in what was planned.
+
 ---
 
 ## Boundaries
@@ -474,6 +612,23 @@ accident:
 - A recipe's address (J4.17) carries an id and no recipe data. It opens
   something only for someone who already has that recipe, so it is a
   bookmark, not a second kind of share link (J6.6 still holds).
+- A plan is a bag of meals, not a calendar: nothing in it is assigned to
+  a day or a date (J12.1).
+- Plans are shared with the book, so a read-only member cannot plan or
+  settle a line at all (J12.10).
+- The shopping list holds only what the planned recipes ask for. There is
+  no free-text item to add "bin bags", no pantry of staples that settles
+  itself, and no ordering by aisle — which would need the app to know what
+  a supermarket is.
+- Nothing carries from one plan to the next. Saying "we have onions" is
+  about this shop (J13.9).
+- **An export carries recipes, not plans** (J10.1). Planning history lives
+  in the book's archived plans and does not survive a restore into a new
+  account, in the same way a photo does not (J10.4).
+- There is no shareable plan link; J6.6 still holds.
+- A shopping quantity is never rendered as 0, though a recipe's is
+  (J13.3 against J4.8). The list is the one place where the difference
+  between "a very little" and "none" is a wasted trip.
 - The recipe view keeps its full preamble — kicker, title, description,
   meta and tags — above the ingredients on every screen. On the shortest
   ones that is still most of the first screenful. Shrinking it was
