@@ -521,7 +521,11 @@ so the app can tell them what to buy.
 5. **Amounts combine only within a unit family.** 400 g tomatoes and 1 tin
    tomatoes are two lines under one heading, because nothing in the app
    knows how big a tin is — the same honesty as J4.6 letting "clove" and
-   "pinch" through untouched.
+   "pinch" through untouched. Mass combines with mass and volume with
+   volume, since those convert; spoons and unrecognised units combine only
+   with the same unit as written, since those do not (J4.6). Three
+   teaspoons and a tablespoon are two lines, and that is the same decision
+   as the tin.
 6. Amounts are shown in the reader's preferred units (J8), so two people
    in one book read one list each their own way.
 7. Every line says what it is made of — "6 onions · Bolognese 4, Curry 2"
