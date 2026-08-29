@@ -162,6 +162,28 @@ test("J13.13 · a removal can be taken back — ✗ is a fast gesture, and fast 
   assert.equal(plan.settled["onion|unit:"].have.at, 3000);
 });
 
+test("J13.13 · putting a line back retracts the whole settlement, not part of an amount", () => {
+  // The requirement grew between the ✗ and the tap that took it back; the
+  // retraction is still the whole of that settlement, because the gesture
+  // that made it was one tap and so is the gesture that undoes it.
+  let plan = settle(emptyPlan(1000), "onion|unit:", "have", 3, 2000);
+  plan = unsettle(plan, "onion|unit:", "have", 3000);
+  assert.equal(outstandingFor(plan, "onion|unit:", 5), 5, "all five are back on the list");
+});
+
+test("J13.13 · the retraction is stamped like any other settlement, so it wins the merge", () => {
+  const settled = settle(emptyPlan(1000), "onion|unit:", "have", 4, 2000);
+  const retracted = unsettle(settled, "onion|unit:", "have", 3000);
+  // The device that never saw the tap still holds the settlement it made.
+  for (const merged of [mergePlans(settled, retracted), mergePlans(retracted, settled)]) {
+    assert.deepEqual(settledFor(merged, "onion|unit:"), { have: 0, got: 0 },
+      "an older device does not quietly put back what was just taken away");
+  }
+  // And a settlement made after the retraction is the later word again.
+  const again = settle(retracted, "onion|unit:", "have", 4, 4000);
+  assert.deepEqual(settledFor(mergePlans(retracted, again), "onion|unit:"), { have: 4, got: 0 });
+});
+
 test("J12.11 · settling a line does not make one device's meals win the merge", () => {
   const base = addMeal(emptyPlan(1000), BOLOGNESE, 1000);
   const shopper = settle(base, "onion|unit:", "got", 4, 5000);
@@ -172,6 +194,21 @@ test("J12.11 · settling a line does not make one device's meals win the merge",
   const merged = mergePlans(shopper, planner);
   assert.deepEqual(merged.meals.map((m) => m.name), ["Bolognese", "Curry"], "nobody races to add the curry");
   assert.deepEqual(settledFor(merged, "onion|unit:"), { have: 0, got: 4 });
+});
+
+test("J12.11 · one person settling while another adds a meal loses neither, whichever order the two copies meet in", () => {
+  const base = addMeal(emptyPlan(1000), BOLOGNESE, 1000);
+  const shopper = settle(base, "onion|unit:", "got", 4, 5000);
+  const planner = addMeal(base, CURRY, 3000);
+  for (const merged of [mergePlans(shopper, planner), mergePlans(planner, shopper)]) {
+    assert.deepEqual(merged.meals.map((m) => m.name), ["Bolognese", "Curry"], "the curry is in the plan");
+    assert.deepEqual(settledFor(merged, "onion|unit:"), { have: 0, got: 4 }, "and the onions are in the basket");
+    assert.equal(touchedAt(merged), 5000, "with a moment for sync to push on that covers both");
+  }
+  // And merging what came out again settles nothing new either way round.
+  const merged = mergePlans(shopper, planner);
+  assert.deepEqual(mergePlans(merged, shopper), merged);
+  assert.deepEqual(mergePlans(merged, planner), merged);
 });
 
 test("J12.11 · two people settling different items keep both settlements", () => {

@@ -594,7 +594,12 @@ so the app can tell them what to buy.
    with search and tags as the others do (J3.2): least recently planned
    first, and never-planned before them.
 10. How often a recipe has been planned is counted from the same archive,
-    so "most planned" needs nothing else stored.
+    so "most often planned" needs nothing else stored. **Every appearance
+    counts**: a recipe planned twice in one plan (J12.6) was planned
+    twice, because it is about to be eaten twice. The count is the lesser
+    of the two questions — when a recipe was last planned is the one being
+    asked (J14.6, J14.9) — but "we seem to have this constantly" deserves
+    an answer that matches what actually went on the list.
 11. **Nothing about planning is stored on the recipe.** A stamp there
     would bump its `updatedAt`, which reorders the list and would let
     finishing a plan overwrite an edit made on another device (J9.3). The

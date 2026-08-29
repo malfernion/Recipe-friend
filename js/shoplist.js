@@ -22,25 +22,6 @@
 (function (global) {
   "use strict";
 
-  // Grams for mass, millilitres for volume.
-  const CANONICAL = Object.freeze({ mass: "metric", volume: "metric" });
-
-  /**
-   * An amount in its family's base unit. The conversion table lives in
-   * units.js and stays there — asking it to convert a thousand of
-   * something and dividing by a thousand keeps the rounding it does for
-   * display (whole grams, two decimals on kilos) far below anything a
-   * shop cares about, and leaves one table in the app rather than two.
-   * Kilos and litres are the one thing it hands back unconverted when the
-   * reader is already metric, and multiplying by a thousand there is an
-   * SI prefix rather than a second opinion about what an ounce weighs.
-   */
-  function toBase(amount, unit) {
-    const probe = global.RecipeUnits.convertIngredient({ amount: amount * 1000, unit, item: "" }, CANONICAL);
-    const scale = probe.unit === "kg" || probe.unit === "l" ? 1000 : 1;
-    return (probe.amount * scale) / 1000;
-  }
-
   /**
    * The word a line is filed under. Lowercased, trimmed, and plural-
    * stemmed by search's rule (J3.4) rather than a second one of our own:
@@ -133,16 +114,21 @@
             required: 0,
             toTaste: !hasAmount,
             from: new Map(),
+            // How much of the total arrived in each unit as written, so a
+            // reader who keeps units as entered can be told which unit
+            // most of the line came from (J13.6).
+            units: new Map(),
           };
           bucket.set(key, line);
         }
 
         const scaled = Number(ing.amount) * factor;
-        const contribution = !hasAmount
-          ? 0
-          : line.family === "mass" || line.family === "volume"
-            ? toBase(scaled, ing.unit)
-            : scaled;
+        const converts = line.family === "mass" || line.family === "volume";
+        const contribution = !hasAmount ? 0 : converts ? global.RecipeUnits.toBase(scaled, ing.unit) : scaled;
+        if (converts) {
+          const written = global.RecipeUnits.normalizeLabel(ing.unit);
+          line.units.set(written, (line.units.get(written) || 0) + contribution);
+        }
         // "To taste" is never summed (J13.8): one presence is what such a
         // line requires however many recipes ask for it. That is also
         // what stops a second recipe wanting salt from un-settling the
@@ -163,8 +149,10 @@
       toBuy: lines.filter((l) => l.settled === ""),
       inBasket: lines.filter((l) => l.settled === "got"),
       alreadyHave: lines.filter((l) => l.settled === "have"),
-      // Every line settled is what finishes a plan by itself (J14.2) — and
-      // an empty plan has nothing to record and never finishes (J14.3).
+      // Nothing left to buy: what Done reports on, and what an empty plan
+      // never reaches, having nothing to record (J14.3). It is a state and
+      // not a gesture, so it is not on its own the moment a plan finishes
+      // itself — see `finishesShop` (J14.2).
       allSettled: lines.length > 0 && lines.every((l) => l.outstanding === 0),
     };
   }
@@ -213,64 +201,54 @@
     };
   }
 
-  // How many grams in an ounce, and millilitres in a fluid ounce, asked of
-  // units.js rather than written down again.
-  const OZ_IN_BASE = toBase(1, "oz");
-  const FL_OZ_IN_BASE = toBase(1, "fl oz");
-
   /**
    * The amount to show and the unit to show it in, in the reader's
-   * preferences (J13.6, J8) and with the unit picked by size the way J8.4
-   * picks it — grams below a kilo, cups at half a cup and up.
+   * preferences (J13.6, J8), with the unit picked by size the way J8.4
+   * picks it — grams below a kilo, cups at half a cup and up. That
+   * picking is units.js's `fromBase`, the same function a recipe's
+   * conversion goes through, so a total and an ingredient read the same
+   * way round.
    *
-   * The conversion is RecipeUnits.convertIngredient's, so the reader's
-   * preferences are applied by the same code that applies them to a
-   * recipe. It converts only between systems, though — a recipe written
-   * in grams keeps its grams (J4.4) — so a metric reader's line is handed
-   * over in ounces and asked for metric back. A summed line has no
-   * written unit to keep: what was entered was several things, in several
-   * units, and the only honest answer is the size of the total. That is
-   * also why "as entered" reads as metric here rather than as nothing:
-   * base units are metric, and 1500 g is better said as 1.5 kg.
+   * Where the reader keeps units as entered (J8.1) there is no system to
+   * convert to, and a summed line has no single "as entered" to keep
+   * either: what was written was several things, possibly in several
+   * units. So it reads in the unit most of it came from — the largest
+   * contributor's (J13.6). Someone who writes in cups and asked for no
+   * conversion must not be handed millilitres, which is the preference
+   * they expressed arriving by the back door. The size is left alone
+   * there: 1500 g stays 1500 g, because promoting it to kilos is a
+   * conversion too, and this reader declined those.
    *
    * Spoons and unrecognised units are already in the only unit they have
    * (J4.6), and are shown in it.
    */
   function displayAmount(line, prefs) {
     if (line.toTaste) return { amount: null, unit: "" };
-    if (line.family === "mass") {
-      const target = (prefs && prefs.mass) || "metric";
-      const via =
-        target === "metric"
-          ? { amount: line.required / OZ_IN_BASE, unit: "oz" }
-          : { amount: line.required, unit: "g" };
-      return picked(converted(via, { mass: target, volume: "" }, line), via);
+    if (line.family !== "mass" && line.family !== "volume") {
+      return { amount: line.required, unit: line.baseUnit };
     }
-    if (line.family === "volume") {
-      const target = (prefs && prefs.volume) || "metric";
-      const via =
-        target === "metric"
-          ? { amount: line.required / FL_OZ_IN_BASE, unit: "fl oz" }
-          : { amount: line.required, unit: "ml" };
-      return picked(converted(via, { mass: "", volume: target }, line), via);
-    }
-    return { amount: line.required, unit: line.baseUnit };
-  }
-
-  function converted(via, prefs, line) {
-    return global.RecipeUnits.convertIngredient({ ...via, item: line.item }, prefs);
+    const system = line.family === "mass" ? prefs && prefs.mass : prefs && prefs.volume;
+    // An amount too small for the reader's units comes back as 0, which
+    // `finish` renders as the item alone (J13.3) — there is one place a
+    // shopping quantity can be zero, and it is caught there.
+    if (system) return global.RecipeUnits.fromBase(line.family, system, line.required);
+    const unit = largestContributor(line);
+    const size = global.RecipeUnits.toBase(1, unit);
+    return { amount: size ? line.required / size : line.required, unit };
   }
 
   /**
-   * units.js hands an amount back in the unit it arrived in when the
-   * conversion would round it away to nothing. Since the unit it arrived
-   * in is the one the reader did not ask for, that is the shopping list's
-   * "below that size" (J13.3): the line shows the item and no amount,
-   * rather than a stray gram for somebody reading in ounces.
+   * The unit most of this line came from, counted in base units so that a
+   * cup outweighs a spoonful of millilitres rather than being outvoted by
+   * a longer list of small ones (J13.6). An exact tie keeps the unit seen
+   * first, so the same plan reads the same way on two phones.
    */
-  function picked(result, via) {
-    if (result.unit === via.unit) return { amount: null, unit: "" };
-    return { amount: result.amount, unit: result.unit };
+  function largestContributor(line) {
+    let best = null;
+    for (const [unit, base] of line.units) {
+      if (!best || base > best.base) best = { unit, base };
+    }
+    return best ? best.unit : line.baseUnit;
   }
 
   /**
@@ -294,6 +272,25 @@
   }
 
   /**
+   * Does settling this line finish the shop (J14.2)? Asked of the list as
+   * it stands, before the gesture: this line still has something
+   * outstanding and every other line has not.
+   *
+   * Done happens by itself because settling the last line is somebody
+   * saying they are finished, which is why it does not also ask. A
+   * requirement falling away says nothing of the kind, and `allSettled`
+   * cannot tell the two apart: dropping a meal, or a recipe leaving the
+   * book from another device (J12.8), can take the last outstanding
+   * amount away with nobody touching the list. A plan that archived
+   * itself on that would be recording a shop nobody said they had done,
+   * and offering Undo for something they never did.
+   */
+  function finishesShop(list, line) {
+    if (!list || !line || !(line.outstanding > 0)) return false;
+    return (list.lines || []).every((l) => l.key === line.key || l.outstanding === 0);
+  }
+
+  /**
    * What is left, ready to paste into whatever shopping app somebody
    * keeps (J13.12): everything neither removed nor settled, one line per
    * item, amount first. A static site has no supermarket to talk to, so
@@ -304,5 +301,5 @@
     return (list && list.toBuy ? list.toBuy : []).map((l) => l.text).join("\n");
   }
 
-  global.RecipeShopList = { build, copyText, itemKey, stemWord, settleAmount, settleLine, unsettleLine };
+  global.RecipeShopList = { build, copyText, itemKey, stemWord, settleAmount, settleLine, unsettleLine, finishesShop };
 })(window);

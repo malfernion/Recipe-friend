@@ -84,6 +84,21 @@
   }
 
   /**
+   * An amount in its family's base unit — grams for mass, millilitres for
+   * volume — or null where the unit is not one that converts, which is
+   * spoons and anything unrecognised (J4.6). Adding several ingredients
+   * up wants the exact number rather than the one `fromBase` has already
+   * rounded for a screen (J13.2), so the table is answered directly.
+   */
+  function toBase(amount, unit) {
+    const canonical = ALIASES[String(unit || "").trim().toLowerCase().replace(/\.$/, "")];
+    if (!canonical) return null;
+    const family = UNITS[canonical].family;
+    if (family !== "mass" && family !== "volume") return null;
+    return Number(amount) * UNITS[canonical].toBase;
+  }
+
+  /**
    * Convert one ingredient to the preferred system. Returns a new
    * ingredient object, or the input unchanged when no conversion applies.
    */
@@ -105,5 +120,9 @@
     return { ...ing, amount: converted.amount, unit: converted.unit };
   }
 
-  global.RecipeUnits = { normalizeLabel, familyOf, convertIngredient };
+  // `fromBase` is how J8.4 picks a unit by size, and a summed shopping
+  // line needs it for a total that was never written in any one unit
+  // (J13.6). It is the same function a recipe's conversion goes through,
+  // so both read the same way round.
+  global.RecipeUnits = { normalizeLabel, familyOf, convertIngredient, toBase, fromBase };
 })(window);

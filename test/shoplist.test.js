@@ -10,11 +10,13 @@ const { loadApp } = require("./helpers/load.js");
 
 const win = loadApp("units.js", "scale.js", "storage.js", "plan.js", "shoplist.js");
 const { emptyPlan, addMeal, removeMeal, stepPortions, prune, settledFor } = win.RecipePlan;
-const { build, copyText, itemKey, stemWord, settleAmount, settleLine, unsettleLine } = win.RecipeShopList;
+const { build, copyText, itemKey, stemWord, settleAmount, settleLine, unsettleLine, finishesShop } = win.RecipeShopList;
 const sanitize = win.RecipeStore.sanitizeRecipe;
 
 const METRIC = { mass: "metric", volume: "metric" };
 const IMPERIAL = { mass: "imperial", volume: "us" };
+// The units somebody has never opened the preferences dialog for (J8.1).
+const AS_ENTERED = { mass: "", volume: "" };
 
 const BOLOGNESE = sanitize({
   name: "Bolognese",
@@ -166,6 +168,98 @@ test("J13.6 · amounts are shown in the reader's preferred units", () => {
     lineFor(build(plan, BOOK, METRIC), "tomato|mass").key,
     lineFor(build(plan, BOOK, IMPERIAL), "tomato|mass").key
   );
+});
+
+test("J13.6 · where the reader keeps units as entered, a summed line reads in the unit most of it came from", () => {
+  // Somebody who writes in cups and asked for no conversion must not be
+  // handed a list in millilitres: that is the preference they expressed,
+  // arriving by the back door.
+  const pancakes = sanitize({
+    name: "Pancakes", servings: 4,
+    ingredients: [{ amount: 2, unit: "cups", item: "milk" }, { amount: 8, unit: "oz", item: "flour" }],
+    steps: ["Fry."],
+  });
+  const plan = addMeal(emptyPlan(1000), pancakes, 1001);
+  assert.deepEqual(build(plan, [pancakes], AS_ENTERED).lines.map((l) => l.text), ["2 cup milk", "8 oz flour"]);
+  assert.deepEqual(build(plan, [pancakes], undefined).lines.map((l) => l.text), ["2 cup milk", "8 oz flour"],
+    "and a reader with no preferences at all has expressed the same one");
+  assert.deepEqual(build(plan, [pancakes], METRIC).lines.map((l) => l.text), ["480 ml milk", "227 g flour"],
+    "while the reader who did ask for metric still gets it");
+});
+
+test("J13.6 · the largest contributor is the one most of the line came from, not the first or the last", () => {
+  const mixed = sanitize({
+    name: "Mixed", servings: 1,
+    ingredients: [
+      { amount: 100, unit: "ml", item: "stock" }, // written first, and the smaller half
+      { amount: 2, unit: "cups", item: "stock" }, // 480ml — this is what the line is
+      { amount: 8, unit: "oz", item: "flour" },   // 226.8g
+      { amount: 1, unit: "kg", item: "flour" },   // and this is what that line is
+    ],
+    steps: ["Mix."],
+  });
+  const plan = addMeal(emptyPlan(1000), mixed, 1001);
+  assert.deepEqual(build(plan, [mixed], AS_ENTERED).lines.map((l) => l.text), ["2.4 cup stock", "1¼ kg flour"]);
+});
+
+test("J8.4 · a summed line picks its unit by size for the reader who asked for a system", () => {
+  const heavy = sanitize({
+    name: "Heavy", servings: 1,
+    ingredients: [{ amount: 750, unit: "g", item: "flour" }, { amount: 60, unit: "ml", item: "milk" }],
+    steps: ["Mix."],
+  });
+  let plan = addMeal(emptyPlan(1000), heavy, 1001);
+  plan = addMeal(plan, heavy, 1002); // 1500g and 120ml between them
+  const metric = build(plan, [heavy], METRIC);
+  assert.equal(lineFor(metric, "flour|mass").text, "1½ kg flour", "grams below a kilo, kilograms above");
+  const us = build(plan, [heavy], IMPERIAL);
+  assert.equal(lineFor(us, "milk|volume").text, "½ cup milk", "and half a cup and more reads in cups");
+});
+
+test("J13.3 · a shopping quantity is never rendered as 0 for a reader in ounces either", () => {
+  // A twelfth of a quarter-ounce is 0.6g: too little for the ounce this
+  // reader asked for, and "0 oz salt" would be telling them to buy none.
+  const pinch = sanitize({
+    name: "Pinch", servings: 12,
+    ingredients: [{ amount: 0.25, unit: "oz", item: "salt" }, { amount: 2, unit: "ml", item: "vanilla" }],
+    steps: ["Stir."],
+  });
+  let plan = addMeal(emptyPlan(1000), pinch, 1001);
+  plan = toPortions(plan, plan.meals[0].id, pinch, 1);
+  for (const prefs of [METRIC, IMPERIAL, AS_ENTERED]) {
+    for (const line of build(plan, [pinch], prefs).lines) {
+      assert.notEqual(line.text.split(" ")[0], "0", `"${line.text}" says buy nothing`);
+      assert.ok(line.amount === null || line.amount > 0);
+      if (line.amount === null) assert.equal(line.unit, "", "and no bare unit either");
+    }
+  }
+});
+
+test("J13.4 · two recipes spelling one item differently make one line", () => {
+  const a = sanitize({ name: "A", servings: 1, ingredients: [{ amount: 2, unit: "", item: "limes" }], steps: ["x"] });
+  const b = sanitize({ name: "B", servings: 1, ingredients: [{ amount: 1, unit: "", item: "lime" }], steps: ["x"] });
+  let plan = addMeal(emptyPlan(1000), a, 1001);
+  plan = addMeal(plan, b, 1002);
+  const list = build(plan, [a, b], METRIC);
+  assert.equal(list.lines.length, 1);
+  assert.equal(list.lines[0].required, 3);
+});
+
+test("J13.5 · millilitres, litres and cups are one line, since those convert", () => {
+  const soup = sanitize({
+    name: "Soup", servings: 1,
+    ingredients: [
+      { amount: 500, unit: "ml", item: "stock" },
+      { amount: 1, unit: "l", item: "stock" },
+      { amount: 1, unit: "cup", item: "stock" },
+    ],
+    steps: ["Simmer."],
+  });
+  const plan = addMeal(emptyPlan(1000), soup, 1001);
+  const list = build(plan, [soup], METRIC);
+  assert.equal(list.lines.length, 1);
+  assert.equal(list.lines[0].required, 1740, "summed in millilitres, before anything is rounded");
+  assert.equal(list.lines[0].text, "1¾ l stock");
 });
 
 test("J13.7 · every line says what it is made of", () => {
@@ -326,6 +420,49 @@ test("J14.2 · settling the last line with ✗ counts — a week you already had
   const list = build(plan, BOOK, METRIC);
   for (const line of list.lines) plan = settleLine(plan, line, "have", 2000);
   assert.equal(build(plan, BOOK, METRIC).allSettled, true);
+});
+
+test("J14.2 · a plan finishes itself when the last outstanding line is settled — and only then", () => {
+  let plan = addMeal(emptyPlan(1000), BOLOGNESE, 1001);
+  plan = addMeal(plan, CAKE, 1002);
+  let list = build(plan, BOOK, METRIC);
+  const last = list.lines[list.lines.length - 1];
+  for (const line of list.lines) {
+    if (line.key === last.key) continue;
+    assert.equal(finishesShop(list, line), false, "there is more than one line left to settle");
+    plan = settleLine(plan, line, "got", 2000);
+    list = build(plan, BOOK, METRIC);
+  }
+  assert.equal(finishesShop(list, lineFor(list, last.key)), true, "this one is the last");
+  plan = settleLine(plan, lineFor(list, last.key), "got", 2100);
+  assert.equal(build(plan, BOOK, METRIC).allSettled, true);
+  assert.equal(finishesShop(build(plan, BOOK, METRIC), lineFor(build(plan, BOOK, METRIC), last.key)), false,
+    "and settling what is already settled finishes nothing a second time");
+});
+
+test("J14.2 · a requirement falling away is nobody saying they are finished", () => {
+  // Everything settled but the cake, which is then dropped from the plan.
+  // Nothing is outstanding any more, and nobody settled the last line —
+  // a plan that archived itself here would be recording a shop that was
+  // never done, and offering Undo for something nobody did.
+  let plan = addMeal(emptyPlan(1000), BOLOGNESE, 1001);
+  plan = addMeal(plan, CAKE, 1002);
+  let list = build(plan, BOOK, METRIC);
+  const cakeLine = list.lines.find((l) => l.item === "bicarbonate of soda");
+  for (const line of list.lines) if (line.key !== cakeLine.key) plan = settleLine(plan, line, "got", 2000);
+
+  const dropped = removeMeal(plan, plan.meals[1].id, 3000);
+  assert.equal(build(dropped, BOOK, METRIC).allSettled, true, "there is genuinely nothing left to buy");
+  assert.equal(finishesShop(build(plan, BOOK, METRIC), cakeLine), true, "settling it would have finished the shop");
+  const gone = build(dropped, BOOK, METRIC);
+  assert.equal(gone.lines.every((l) => finishesShop(gone, l)), false, "but dropping it did not");
+
+  // The same again when the recipe leaves the book from another device
+  // (J12.8) — nobody touched the list at all.
+  const pruned = prune(plan, [BOLOGNESE.id, CURRY.id], 3000);
+  const after = build(pruned, BOOK, METRIC);
+  assert.equal(after.allSettled, true);
+  assert.equal(after.lines.some((l) => finishesShop(after, l)), false);
 });
 
 test("J14.3 · an empty plan has nothing to record and is never all settled", () => {
