@@ -1026,11 +1026,12 @@ body {
 }
 
 /*
-  Stacked, the Ingredients heading follows the tags directly and needs
-  daylight above it — but a full heading margin here costs a whole
-  ingredient off the bottom of a 375px phone, so it gets less than one.
+  The Ingredients heading follows the tags directly and needs daylight
+  above it — but a full heading margin here costs a whole ingredient off
+  the bottom of a 375px phone, so it gets less than one. Only the first
+  heading: Steps follows a list, and wants its full margin back.
 */
-.detail-col > h3:first-child {
+.detail-col:first-child > h3:first-child {
   margin-top: 0.85rem;
 }
 
@@ -1461,9 +1462,6 @@ body {
   }
 }
 
-/* Wide enough for two columns — phone landscape (852) and up, but not a
-   tablet held portrait (744), where one column already reads well. The
-   method is the taller half, so it takes the slack. */
 /* The wider sheet is for screens with the height to keep a margin. A short
    one is full-bleed above, and must not have its width put back here —
    both queries match a phone held sideways. */
@@ -1473,29 +1471,34 @@ body {
   }
 }
 
+/*
+  Wide enough to use the width — phone landscape (852) and up, but not a
+  tablet held portrait (744), where one column already reads well.
+
+  The width goes into each list rather than between the two. Ingredients
+  beside steps was tried first, with the ingredients held sticky, and it
+  reads badly for the one thing this view is for: you get the top half of
+  the shopping and the top half of the method, the two halves scroll
+  differently, and neither list is ever finished. Stacked, there is one
+  thread to follow — all of the ingredients, then all of the method — and
+  each list uses the space it has been given by running into two columns
+  instead of down a long thin one.
+*/
 @media (min-width: 820px) {
   .detail-dialog > #detail-content {
     max-width: none;
   }
 
-  .detail-body {
-    display: grid;
-    grid-template-columns: minmax(15rem, 24rem) 1fr;
-    gap: 0 3rem;
-    align-items: start;
+  .detail-ingredients,
+  .detail-steps {
+    columns: 2;
+    column-gap: 3rem;
   }
 
-  /* Side by side, the two headings should sit on one line. Stacked, the
-     first one still wants its space above it. */
-  .detail-col > h3:first-child {
-    margin-top: 0;
-  }
-
-  /* The ingredients are what you look back at while your hands are busy,
-     so they stay put while the method scrolls past them. */
-  .detail-col-ingredients {
-    position: sticky;
-    top: 3.5rem;
+  /* A step split across a column break is a step read twice. */
+  .detail-ingredients li,
+  .detail-steps li {
+    break-inside: avoid;
   }
 }
 
