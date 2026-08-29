@@ -296,11 +296,12 @@ test("J14.10 · how often a recipe has been planned is counted from the archive"
   const index = plannedIndex([
     week(1000, [BOLOGNESE, CURRY]),
     week(2000, [BOLOGNESE]),
-    week(3000, [BOLOGNESE, BOLOGNESE]), // twice in one week is one week planned
+    week(3000, [BOLOGNESE, BOLOGNESE]), // two nights, two entries (J12.6)
   ]);
-  assert.equal(index[BOLOGNESE.id].count, 3);
+  assert.equal(index[BOLOGNESE.id].count, 4, "every appearance counts — that is what went on the list");
   assert.equal(index[CURRY.id].count, 1);
   assert.equal(index[BREAD.id], undefined);
+  assert.equal(index[BOLOGNESE.id].lastPlannedAt, 3000, "and the last of them is when it was last planned");
 });
 
 test("J14.6 · the archive says when a recipe was last planned", () => {

@@ -289,9 +289,10 @@
    * edit made on another device.
    *
    * Returns { [recipeId]: {lastPlannedAt, count} }. `count` is derived
-   * here every time rather than stored (J14.10). A recipe planned twice in
-   * one week counts once: the plan is the thing being recorded, and it
-   * was planned in one week, not two.
+   * here every time rather than stored (J14.10), and every appearance
+   * counts: a recipe put in a plan twice (J12.6) is about to be eaten
+   * twice, and a plan is a bag with no dates on it (J12.1), so there is
+   * no week to count once instead.
    */
   function plannedIndex(archivedPlans) {
     const index = Object.create(null);
@@ -301,8 +302,8 @@
       // recording it — a week that never happened should not claim to
       // have been planned (J14.4).
       if (!at) continue;
-      for (const recipeId of new Set((plan.meals || []).map((m) => m.recipeId))) {
-        const entry = index[recipeId] || (index[recipeId] = { lastPlannedAt: 0, count: 0 });
+      for (const meal of plan.meals || []) {
+        const entry = index[meal.recipeId] || (index[meal.recipeId] = { lastPlannedAt: 0, count: 0 });
         entry.count += 1;
         if (at > entry.lastPlannedAt) entry.lastPlannedAt = at;
       }
