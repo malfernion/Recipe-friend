@@ -221,6 +221,16 @@ Covers a share link someone sent, and a recipe an assistant wrote out.
    is stored until it is confirmed.
 2. A recipe keeps its identity through that review, so opening the same link
    twice updates the existing recipe instead of adding a second.
+
+   **That identity is one this book gives it, not the sender's.** A recipe
+   id is a primary key across every book on the server, so two books
+   cannot hold the same one; a copy saved under the sender's id claims
+   their row, and the next sync drags the original out of their book and
+   into yours. (Where the sender is a stranger, the row is not yours to
+   claim at all, and the recipe simply never reaches the server.) So an
+   arriving recipe is stored under a fresh id, with the sender's kept
+   beside it as `sharedFrom` — which is what a second opening of the same
+   link matches on, and what J5.3 names the replacement from.
 3. When the recipe is already in the box, the form shows the sender's
    version and says **by name** which recipe saving would replace. Naming it
    matters: "your copy" leaves someone guessing which of their recipes is

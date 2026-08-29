@@ -281,7 +281,7 @@
     // matches something already here, saving replaces that recipe with what
     // is on screen — so name the one at stake rather than saying "my copy"
     // and leaving the person to guess which.
-    const existing = review && recipe ? store.getById(recipe.id) : null;
+    const existing = review && recipe ? store.findIncoming(recipe.id) : null;
     const warning = $("#review-warning");
     if (warning) {
       warning.hidden = !existing;
@@ -525,9 +525,15 @@
     } else if (incomingId) {
       // Already here (the same link opened twice): the review wins, so the
       // recipe is updated rather than the edits being thrown away.
-      const result = store.getById(incomingId)
-        ? { recipe: store.update(incomingId, input) }
-        : store.addShared({ ...input, id: incomingId });
+      //
+      // Otherwise it is new, and takes an id of ours rather than the
+      // sender's — theirs belongs to their book, and ids are unique
+      // across every book on the server. Where it came from is kept as
+      // `sharedFrom` so the same link still finds it next time.
+      const already = store.findIncoming(incomingId);
+      const result = already
+        ? { recipe: store.update(already.id, input) }
+        : store.addShared({ ...input, id: null, sharedFrom: incomingId });
       saved = result && result.recipe;
     } else {
       saved = store.add(input);

@@ -118,6 +118,10 @@
       steps,
       image: sanitizeImage(raw.image),
       imagePath: sanitizePhotoPath(raw.imagePath),
+      // Which recipe this one arrived from, when it came from a link or a
+      // paste (J5.2). Not the same as its id — see findIncoming.
+      sharedFrom:
+        typeof raw.sharedFrom === "string" && UUID_RE.test(raw.sharedFrom) ? raw.sharedFrom : "",
       tags: normalizeStringList(raw.tags, MAX_TAGS, 40).map((t) => t.toLowerCase()),
       favorite: Boolean(raw.favorite),
       createdAt: num(raw.createdAt) || Date.now(),
@@ -352,6 +356,29 @@
      * opening the same link twice never duplicates.
      * Returns {recipe, existed} or null for an unusable payload.
      */
+    /**
+     * The recipe in this book that a given incoming id refers to, if any
+     * (J5.2, J5.3).
+     *
+     * An incoming recipe is stored under an id of our own, because
+     * `recipes.id` is a primary key across every book on the server: two
+     * books cannot hold the same id, and a copy that borrowed the
+     * sender's would collide with theirs. So the sender's id is kept
+     * beside ours as `sharedFrom`, and that is what a second opening of
+     * the same link matches on.
+     *
+     * The id is still checked first, for recipes saved before this was
+     * true — their own id is the only record of where they came from.
+     */
+    findIncoming(incomingId) {
+      if (!incomingId) return null;
+      return (
+        this.getById(incomingId) ||
+        this.recipes.find((r) => r.sharedFrom && r.sharedFrom === incomingId) ||
+        null
+      );
+    }
+
     addShared(raw) {
       const recipe = sanitizeRecipe(raw);
       if (!recipe) return null;
