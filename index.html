@@ -238,14 +238,15 @@
       <span class="dialog-actions-spacer"></span>
       <button type="button" class="btn btn-ghost" id="detail-cook-btn" aria-pressed="false" hidden>☾ Screen on</button>
       <button type="button" class="btn btn-ghost" id="detail-share-btn">Share</button>
+      <button type="button" class="btn btn-ghost" id="detail-copy-btn" hidden>Copy</button>
       <button type="button" class="btn btn-ghost" id="detail-move-btn" hidden>Move</button>
     </div>
   </dialog>
 
   <!-- Move a recipe to another book -->
   <dialog id="move-dialog" class="recipe-dialog">
-    <h2>Move recipe</h2>
-    <p class="books-hint" id="move-intro">Choose where this recipe should live.</p>
+    <h2 id="move-title">Copy recipe</h2>
+    <p class="books-hint" id="move-intro">Choose which book to put a copy in.</p>
     <ul id="move-list" class="book-list"></ul>
     <div class="dialog-actions">
       <button type="button" class="btn btn-ghost" id="move-cancel-btn">Cancel</button>

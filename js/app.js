@@ -668,11 +668,22 @@
       </div>`;
   }
 
-  /** Only offer Move when the signed-in user has more than one book. */
-  function syncMoveButton() {
-    const btn = $("#detail-move-btn");
+  /**
+   * Copy and Move both need somewhere to go, so neither is offered until
+   * there is a second book. Beyond that they part company: copying takes
+   * nothing from anyone and is everyone's, while moving takes the recipe
+   * out of a book other people are reading, so it belongs to whoever owns
+   * this one (J7.10, J7.16).
+   */
+  function syncTransferButtons() {
     const cloud = window.RecipeCloud;
-    btn.hidden = !(cloud && cloud.books && cloud.books.books.length > 1);
+    const books = (cloud && cloud.books && cloud.books.books) || [];
+    const elsewhere = books.length > 1;
+    const ownsThisBook = Boolean(
+      cloud && cloud.sync && books.some((b) => b.id === cloud.sync.bookId && b.isOwner)
+    );
+    $("#detail-copy-btn").hidden = !elsewhere;
+    $("#detail-move-btn").hidden = !(elsewhere && ownsThisBook);
   }
 
   /**
@@ -719,7 +730,7 @@
     renderDetailHead(recipe);
     detailContent.innerHTML = recipeDetailHTML(recipe, true);
     syncDetailFavButton(recipe);
-    syncMoveButton();
+    syncTransferButtons();
     syncCookButton();
     if (!wasOpen) {
       if (!restoring) pushRoute(`#recipe=${recipe.id}`);
@@ -1233,14 +1244,16 @@
     }
   });
 
-  // Moving lives with books, so hand off to that layer. The button only
-  // appears once there is somewhere else to move to.
-  $("#detail-move-btn").addEventListener("click", () => {
+  // Copying and moving both live with books, so hand off to that layer.
+  // Neither button appears until there is somewhere else to put it.
+  const openTransfer = (verb) => () => {
     const cloud = window.RecipeCloud;
     if (!cloud || !cloud.books || !detailId) return;
     detailDialog.close();
-    cloud.books.openMove(detailId);
-  });
+    cloud.books.openMove(detailId, verb);
+  };
+  $("#detail-copy-btn").addEventListener("click", openTransfer("copy"));
+  $("#detail-move-btn").addEventListener("click", openTransfer("move"));
 
   $("#detail-close-btn").addEventListener("click", () => detailDialog.close());
 

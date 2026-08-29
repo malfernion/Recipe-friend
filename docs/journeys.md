@@ -285,14 +285,32 @@ Covers a share link someone sent, and a recipe an assistant wrote out.
    copy — that an export carries recipes and not photos.
 9. Nobody can delete their last remaining book — there would be nowhere for
    new recipes to go.
-10. A recipe can be moved to another book you belong to. It keeps its
-   identity, and its photo moves with it so that the new book's members can
-   see it.
+10. **Moving a recipe to another book is the owner's.** It takes the
+    recipe out of a book other people are reading, so the owner of the
+    book it is leaving is the one who may do it, it asks first, and it
+    names what goes where. The photo goes with it so the new book's
+    members can see it.
+
+    **A recipe belongs to the book it was created in, so a move is a copy
+    under a new id and a tombstone left behind.** It cannot be the same
+    row: an id is a primary key across every book, and rewriting one
+    row's book was what let a recipe be dragged between books by an
+    ordinary push (J5.2). It also left the other members of the old book
+    holding a recipe the server no longer had there, which their next
+    sync pushed straight back. The tombstone is what tells them, and it
+    is only honest because the id really is finished — the copy carries
+    its own.
+
+    Note the limit rather than overstating it: an editor can still copy a
+    recipe and delete the original, because editors may delete (J7.3).
+    Making moving the owner's makes it deliberate, not impossible.
 11. A move that doesn't reach the server leaves the recipe exactly where it
     was and says so. A recipe is never dropped locally on the strength of a
     move that didn't happen — including a recipe typed seconds earlier that
     the server has not yet seen, and one whose photo could not be copied
-    across.
+    across. Nothing is tombstoned on the strength of a refusal, and no
+    photo is filed in the other book before the original is known to be
+    there to tombstone.
 12. An owner can remove someone from a book. The person removed keeps
     nothing from it; the recipes stay with the book.
 13. When a book stops being available to you — its owner deleted it, or
@@ -306,6 +324,23 @@ Covers a share link someone sent, and a recipe an assistant wrote out.
     someone something untrue about a person they cook with.
 15. If the book that went was your only one, a replacement is created, named
     after you exactly as your first book was (J1.3).
+16. **Anyone in a book can copy one of its recipes into another book they
+    belong to.** Copy takes nothing from anybody, which is what makes it
+    everyone's where moving (J7.10) is the owner's — and what will make a
+    book you can only read still worth being in.
+
+    A copy is a new recipe: its own id, its own photo filed under that
+    id, and unstarred, because a copy carries the recipe and not your
+    relationship to it (J6.5). It records no trail back to where it came
+    from — the book it came from may later be deleted, or you may be
+    removed from it, and an attribution that outlives its subject is
+    worse than none.
+
+    It does not ask, because it takes nothing. A recipe still inside the
+    push debounce can be copied, since a copy is built from what is in
+    front of you rather than from a row that may not be up yet. A photo
+    that cannot be brought across costs the photo and says so, not the
+    copy — nothing is at risk, unlike a move.
 
 ## J8 · Measurements that suit the cook
 
@@ -407,7 +442,7 @@ recipe is, what it says on screen, and what survives a round trip. Those
 are the failures that would be silent — a recipe quietly losing its tags is
 worse than a page that will not load.
 
-Nine of the 99 criteria have no test naming them. Five more things the
+Nine of the 100 criteria have no test naming them. Five more things the
 tests do not reach, recorded so the gap is visible:
 
 - **The 48-hour lifetime and single use of an invite** are the database's,

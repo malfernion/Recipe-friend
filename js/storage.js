@@ -457,6 +457,8 @@
 
   // Exposed so the UI can sanitize a shared payload for preview before saving.
   RecipeStore.sanitizeRecipe = sanitizeRecipe;
+  // A copy needs an id of its own before it has a recipe to hang it on.
+  RecipeStore.newId = uid;
 
   global.RecipeStore = RecipeStore;
 })(window);

@@ -69,6 +69,35 @@
       return (data || []).length;
     }
 
+    /**
+     * Put a new recipe straight into another book, without disturbing the
+     * local cache of the book we are looking at. The target book's cache
+     * picks it up the next time it is opened.
+     */
+    async insertRecipe(bookId, id, data) {
+      const { error } = await this.client
+        .from("recipes")
+        .insert({ id, book_id: bookId, data, updated_at: new Date().toISOString() });
+      if (error) throw error;
+      return id;
+    }
+
+    /**
+     * Move a recipe to another book: one server-side step that inserts
+     * the copy and tombstones the original, or does neither (006).
+     * Refused unless you own the book it is leaving.
+     */
+    async moveRecipe(recipeId, targetBookId, newId, data) {
+      const { data: moved, error } = await this.client.rpc("move_recipe", {
+        recipe_id: recipeId,
+        target_book: targetBookId,
+        new_id: newId,
+        new_data: data,
+      });
+      if (error) throw error;
+      return moved || newId;
+    }
+
     /** Copy a stored photo to a new path, e.g. when a recipe changes book. */
     async copyPhoto(fromPath, toPath) {
       const { error } = await this.client.storage.from(PHOTO_BUCKET).copy(fromPath, toPath);

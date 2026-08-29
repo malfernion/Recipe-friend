@@ -316,19 +316,45 @@
         const btn = event.target.closest("[data-target]");
         if (!btn || !this.movingId) return;
         const target = this.books.find((b) => b.id === btn.dataset.target);
+        const where = target ? target.name : "the other book";
         const recipeId = this.movingId;
+        const verb = this.transferVerb;
         this.movingId = null;
         moveDialog.close();
+
+        // A move takes the recipe out of a book other people are reading,
+        // so it asks first and names what goes where — the same courtesy
+        // deleting one gets (J2.10). A copy adds and takes nothing.
+        if (verb === "move") {
+          const recipe = this.app.store.getById(recipeId);
+          const ok = await global.RecipeAsk.ask(
+            `Move “${recipe ? recipe.name : "this recipe"}” to “${where}”? ` +
+              "It leaves this book for everyone who shares it.",
+            { confirmLabel: "Move", danger: true }
+          );
+          if (!ok) return;
+        }
+
         try {
-          await this.sync.moveRecipe(recipeId, btn.dataset.target);
-          // The row still exists, just in another book — forget it here
-          // without a tombstone, which would delete it in its new home.
-          this.app.store.removeLocal(recipeId);
-          this.app.render();
-          this.app.toast(`Moved to “${target ? target.name : "the other book"}”.`);
+          if (verb === "move") {
+            await this.sync.moveRecipe(recipeId, btn.dataset.target);
+            // The copy in the other book carries an id of its own, so this
+            // id really is finished here — and a tombstone is what tells
+            // the other members of this book, instead of their caches
+            // pushing the recipe back (006).
+            this.app.store.remove(recipeId);
+            this.app.render();
+            this.app.toast(`Moved to “${where}”.`);
+          } else {
+            const { photoCopied } = await this.sync.copyRecipe(recipeId, btn.dataset.target);
+            const missing = !photoCopied && this.app.store.getById(recipeId).imagePath;
+            this.app.toast(
+              missing ? `Copied to “${where}”, without its photo.` : `Copied to “${where}”.`
+            );
+          }
         } catch (err) {
-          console.warn("Recipe Friend: could not move recipe.", err);
-          this.app.toast("Couldn't move that recipe.");
+          console.warn(`Recipe Friend: could not ${verb} recipe.`, err);
+          this.app.toast(verb === "move" ? "Couldn't move that recipe." : "Couldn't copy that recipe.");
         }
       });
     }
@@ -530,12 +556,27 @@
     }
 
     /** Offer the other books this recipe could move to. */
-    openMove(recipeId) {
+    /**
+     * The book picker, for either verb. Copy is everyone's — it takes
+     * nothing from anyone. Move is the owner's, because it takes the
+     * recipe out of a book other people are reading (J7.10).
+     */
+    openMove(recipeId, verb = "copy") {
       const others = this.books.filter((b) => b.id !== this.sync.bookId);
       if (others.length === 0) {
-        this.app.toast("Create another book first, then you can move recipes into it.");
+        this.app.toast(
+          verb === "move"
+            ? "Create another book first, then you can move recipes into it."
+            : "Create another book first, then you can copy recipes into it."
+        );
         return;
       }
+      this.transferVerb = verb;
+      $("#move-title").textContent = verb === "move" ? "Move recipe" : "Copy recipe";
+      $("#move-intro").textContent =
+        verb === "move"
+          ? "Choose where this recipe should live. It leaves this book."
+          : "Choose which book to put a copy in. This one keeps its own.";
       this.movingId = recipeId;
       $("#move-list").innerHTML = others
         .map(
