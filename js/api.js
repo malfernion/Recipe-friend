@@ -168,7 +168,7 @@
 
     /**
      * Change what somebody may do in a book. Owners only, and never
-     * their own row — the database says so too (007); this is the door,
+     * their own row — the database says so too (006); this is the door,
      * not the lock.
      */
     async setMemberRole(bookId, userId, role) {
@@ -212,7 +212,7 @@
           created_by: this.userId,
           max_uses: Math.min(50, Math.max(1, Math.round(maxUses) || 1)),
           // An invite cannot hand out ownership: a book has one owner and
-          // it is the person in books.owner (007).
+          // it is the person in books.owner (006).
           role: role === "viewer" ? "viewer" : "editor",
         });
       if (error) throw error;
@@ -256,7 +256,7 @@
         bookName: row.book_name,
         ownerName: row.owner_name,
         alreadyMember: Boolean(row.already_member),
-        // Older invites, minted before 007, carry no role and mean editor.
+        // Older invites, minted before 006, carry no role and mean editor.
         role: row.role === "viewer" ? "viewer" : "editor",
       };
     }

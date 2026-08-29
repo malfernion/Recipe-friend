@@ -1,27 +1,81 @@
--- Migration 007 — a book you can read but not change
+-- Migration 006 — copy and move, and a book you can read but not change
 --
--- Run in the Supabase dashboard SQL Editor after 006.
+-- Run in the Supabase dashboard SQL Editor after 005. One file: it was
+-- drafted as two, split along a seam that only mattered if somebody
+-- verified half of it and stopped, which nobody was going to do.
 --
--- Membership was binary. `book_members.role` existed, defaulted to
--- 'editor' and was checked against ('owner', 'editor') — but no policy
--- ever consulted it. `is_book_owner` reads books.owner, not the role, and
--- the recipes policy was one `for all` on plain membership. So the column
--- decided nothing: in a book meant read, write, edit and delete
--- everything in it, plus upload and remove its photos.
+-- Four things, and the first is the cause of the second.
 --
--- There was also no UPDATE policy on book_members at all, so even the
--- role that existed could never be changed. An owner's only lever over a
--- member was removal.
+-- 1. A recipe's book was mutable, and that was wrong twice over.
 --
--- Three things, then: a third role that can read and not write, policies
--- that actually ask which one you hold, and a way to change it.
+--    Moving a recipe patched book_id on the same row, and the client then
+--    dropped its local copy without a tombstone — deliberately, because a
+--    tombstone carries the recipe's id and would have deleted it in its
+--    new home too. But every *other* member of the old book still held
+--    that recipe in their cache, and reconciliation is last-write-wins
+--    per id: their next sync found no such row in their book, decided
+--    their local copy was the newer one, and pushed it back. The recipe
+--    landed wherever the last device to sync put it.
+--
+--    The same mutability let an ordinary push drag a recipe between
+--    books. Every push sends {id, book_id, ...} and upserts on the
+--    primary key, so saving a recipe whose id already belonged to another
+--    book rewrote that row's book_id rather than creating anything. A
+--    share link opened into a second book was enough to do it.
+--
+--    So book_id is fixed for life, and moving a recipe means inserting a
+--    copy under a new id and tombstoning the original — which the
+--    existing tombstone machinery propagates correctly, because the id
+--    being tombstoned really is finished.
+--
+-- 2. Moving is an owner's act from here on. It removes the recipe from a
+--    book everyone else is reading, which is not something a guest should
+--    do by tapping the wrong control. Note the limit honestly: an editor
+--    can still copy a recipe and then delete the original, because
+--    editors may delete (J7.3). This makes moving deliberate, not
+--    impossible.
+--
+-- 3. Membership was binary. `book_members.role` existed, defaulted to
+--    'editor' and was checked against ('owner', 'editor') — but no policy
+--    ever consulted it. `is_book_owner` reads books.owner, not the role,
+--    and the recipes policy was one `for all` on plain membership. So the
+--    column decided nothing: in a book meant read, write, edit and delete
+--    everything in it, plus upload and remove its photos.
+--
+-- 4. There was no UPDATE policy on book_members at all, so even the role
+--    that existed could never be changed. An owner's only lever over a
+--    member was removal.
 --
 -- Ownership stays where it is — on books.owner, separate from the role
 -- ladder. It is what every existing policy already trusts, and folding it
 -- into the ladder would mean touching all of them for no visible gain.
 
 -- ---------------------------------------------------------------------
--- 1. The role itself
+-- 1. A recipe does not change book
+-- ---------------------------------------------------------------------
+
+create or replace function public.recipes_book_is_fixed()
+returns trigger
+language plpgsql
+as $$
+begin
+  if new.book_id is distinct from old.book_id then
+    raise exception
+      'a recipe cannot change book (%, to %): copy it and delete the original',
+      old.book_id, new.book_id
+      using errcode = 'check_violation';
+  end if;
+  return new;
+end;
+$$;
+
+drop trigger if exists recipes_book_immutable on public.recipes;
+create trigger recipes_book_immutable
+  before update on public.recipes
+  for each row execute function public.recipes_book_is_fixed();
+
+-- ---------------------------------------------------------------------
+-- 2. The role: a member who reads and does not write
 -- ---------------------------------------------------------------------
 
 alter table public.book_members drop constraint if exists book_members_role_check;
@@ -47,7 +101,7 @@ revoke execute on function public.is_book_editor(uuid) from anon;
 grant execute on function public.is_book_editor(uuid) to authenticated;
 
 -- ---------------------------------------------------------------------
--- 2. Reading and writing part company
+-- 3. Reading and writing part company
 -- ---------------------------------------------------------------------
 --
 -- One `for all` policy cannot say "everyone reads, some write", so it
@@ -95,7 +149,7 @@ create policy "book editors remove photos"
   );
 
 -- ---------------------------------------------------------------------
--- 3. Moving, now that "member" is not the same as "may write"
+-- 4. Moving, as one indivisible step, and the owner's alone
 -- ---------------------------------------------------------------------
 --
 -- 006 asked only that you belong to the book a recipe is going to. A
@@ -141,8 +195,13 @@ begin
 end;
 $$;
 
+-- Every function in "public" is a PostgREST endpoint, and a new one is
+-- executable by everybody until told otherwise. This one runs as definer.
+revoke execute on function public.move_recipe(uuid, uuid, uuid, jsonb) from anon, public;
+grant execute on function public.move_recipe(uuid, uuid, uuid, jsonb) to authenticated;
+
 -- ---------------------------------------------------------------------
--- 4. Invites say what they are offering
+-- 5. Invites say what they are offering
 -- ---------------------------------------------------------------------
 
 alter table public.invites
@@ -245,7 +304,7 @@ grant execute on function public.redeem_invite(text) to authenticated;
 grant execute on function public.preview_invite(text) to authenticated;
 
 -- ---------------------------------------------------------------------
--- 5. An owner can change somebody's role
+-- 6. An owner can change somebody's role
 -- ---------------------------------------------------------------------
 --
 -- There was no UPDATE policy on book_members at all, so this was not
@@ -289,3 +348,13 @@ drop trigger if exists book_members_role_only on public.book_members;
 create trigger book_members_role_only
   before update on public.book_members
   for each row execute function public.book_members_role_only();
+
+-- ---------------------------------------------------------------------
+-- Copying needs no function of its own
+-- ---------------------------------------------------------------------
+--
+-- A copy is an ordinary insert into a book you may write to, which
+-- "editor recipes insert" above already allows, and which the per-book
+-- quota trigger already counts. That it needs no new privilege is what
+-- makes it the verb everyone gets, including a viewer copying a recipe
+-- out into a book of their own (J7.16).

@@ -195,7 +195,10 @@ js/config.js                   Supabase project URL and publishable key
 supabase/schema.sql            Tables, RLS policies, triggers, functions
 supabase/migrations/           Additive schema changes, run in order
                                (004 creates the private photo bucket;
-                                005 tightens membership and invites)
+                                005 tightens membership and invites;
+                                006 fixes a recipe to its book, makes
+                                moving one an owner's act, and adds the
+                                read-only member role)
 docs/journeys.md               What the app is meant to do, as criteria
 test/                          Tests, named for the criteria they check
 .github/workflows/deploy-pages.yml   GitHub Pages deployment
