@@ -372,6 +372,22 @@ Covers a share link someone sent, and a recipe an assistant wrote out.
     the database is the gate: the app hiding a button is a courtesy, not
     a boundary.
 
+18. **The Sharing list says who is in this book, by name, including
+    you** — and an owner changes what each of them may do from that same
+    list. A roster that cannot be read says so rather than rendering as
+    an empty book: the two look identical on screen, and one of them is a
+    bug. This one was. `listMembers` asked PostgREST to embed
+    `profiles(display_name)` from `book_members`, which it cannot do —
+    there is no foreign key between those tables, both point at
+    `auth.users` instead — so the query failed, the failure was swallowed,
+    and a shared book reported nobody in it. Names are fetched separately
+    now, and are a courtesy on top of the roster: a member whose profile
+    cannot be read is still listed, as "Someone".
+
+    The control for what a *new* invite grants is a separate thing from
+    the roster, and is labelled and placed so it cannot be mistaken for
+    one of its rows.
+
 ## J8 · Measurements that suit the cook
 
 1. Weights can be shown as grams/kilograms or ounces/pounds; liquid volumes
@@ -472,7 +488,7 @@ recipe is, what it says on screen, and what survives a round trip. Those
 are the failures that would be silent — a recipe quietly losing its tags is
 worse than a page that will not load.
 
-Nine of the 101 criteria have no test naming them. Five more things the
+Nine of the 102 criteria have no test naming them. Five more things the
 tests do not reach, recorded so the gap is visible:
 
 - **The 48-hour lifetime and single use of an invite** are the database's,

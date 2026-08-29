@@ -268,11 +268,16 @@
     <h3 class="books-heading">Sharing <span id="sharing-book-name" class="sharing-book-name"></span></h3>
     <ul id="member-list" class="member-list"></ul>
     <div class="invite-row">
+      <!--
+        Labelled out loud, and next to the button it belongs to. Bare under
+        the Sharing heading it read as though it might be setting somebody's
+        access rather than what the next link will hand out.
+      -->
       <label class="invite-role-field">
-        <span class="visually-hidden">What the invite allows</span>
+        <span class="invite-role-label">A new link lets them</span>
         <select id="invite-role">
-          <option value="editor">Can add and edit</option>
-          <option value="viewer">Can read only</option>
+          <option value="editor">Add and edit</option>
+          <option value="viewer">Read only</option>
         </select>
       </label>
       <button type="button" class="btn btn-ghost" id="invite-btn">Create invite link</button>
@@ -283,8 +288,9 @@
     <ul id="invite-list" class="invite-list"></ul>
     <p id="invite-empty" class="books-hint" hidden>No invite links are live for this book.</p>
     <p class="books-hint">An invite link lets one person join this book, and expires after 48
-       hours. Anyone who joins can add, edit and delete its recipes, so treat a link like a
-       key: send it to one person, and revoke it if it goes astray.</p>
+       hours. It gives them whatever the link was made for — adding and editing alongside
+       everyone else, or reading and copying out and nothing more. Treat a link like a key:
+       send it to one person, and revoke it if it goes astray.</p>
 
     <div class="dialog-actions">
       <button type="button" class="btn btn-primary" id="books-close-btn">Done</button>

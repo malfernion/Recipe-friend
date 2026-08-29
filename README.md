@@ -79,7 +79,7 @@ type in the search box, pick a photo, click Export, open an invite link.
 
 Every test name quotes a criterion from [`docs/journeys.md`](docs/journeys.md),
 so a failure points at behaviour that was agreed rather than at an
-implementation detail. **92 of the 101 criteria have a test naming them**;
+implementation detail. **93 of the 102 criteria have a test naming them**;
 the nine that do not are listed at the end of the journeys, along with the
 database, which is deliberately outside the net.
 

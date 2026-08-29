@@ -151,17 +151,47 @@
       if (error) throw error;
     }
 
-    /** Everyone in a book, with display names where visible. */
+    /**
+     * Everyone in a book, with display names where visible.
+     *
+     * Two queries rather than one embed. PostgREST resolves `profiles(...)`
+     * through a foreign key, and there is none between book_members and
+     * profiles — both point at auth.users instead — so asking for the
+     * embed is answered with "could not find a relationship", and the
+     * whole roster comes back as an error. It looked like an empty book
+     * for as long as nobody checked.
+     *
+     * Names are a courtesy on top of the roster, so a book with unreadable
+     * profiles still lists who is in it.
+     */
     async listMembers(bookId) {
       const { data, error } = await this.client
         .from("book_members")
-        .select("user_id, role, profiles(display_name)")
+        .select("user_id, role")
         .eq("book_id", bookId);
       if (error) throw error;
-      return (data || []).map((m) => ({
+      const members = data || [];
+
+      const names = new Map();
+      if (members.length > 0) {
+        const { data: profiles, error: profileErr } = await this.client
+          .from("profiles")
+          .select("user_id, display_name")
+          .in(
+            "user_id",
+            members.map((m) => m.user_id)
+          );
+        if (profileErr) {
+          console.warn("Recipe Friend: could not read who these people are.", profileErr);
+        } else {
+          for (const p of profiles || []) names.set(p.user_id, p.display_name);
+        }
+      }
+
+      return members.map((m) => ({
         userId: m.user_id,
         role: m.role,
-        name: (m.profiles && m.profiles.display_name) || "Someone",
+        name: names.get(m.user_id) || "Someone",
         isMe: m.user_id === this.userId,
       }));
     }
