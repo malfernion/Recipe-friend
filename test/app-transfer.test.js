@@ -440,7 +440,11 @@ test("J5.2 · opening the same link twice updates the recipe instead of adding a
   await ui.handled();
   ui.confirm();
   assert.equal(ui.store.recipes.length, 1);
-  assert.equal(ui.store.recipes[0].id, SHARED_ID, "the recipe keeps the identity it arrived with");
+  const mine = ui.store.recipes[0].id;
+  assert.notEqual(mine, SHARED_ID,
+    "an id belongs to the book it lives in — borrowing the sender's would collide with theirs");
+  assert.equal(ui.store.recipes[0].sharedFrom, SHARED_ID,
+    "but where it came from is remembered, which is what a second opening matches on");
 
   // The very same link, opened again in the tab that is already there.
   await ui.arrive(link);
@@ -449,8 +453,35 @@ test("J5.2 · opening the same link twice updates the recipe instead of adding a
   ui.confirm();
 
   assert.equal(ui.store.recipes.length, 1, "one recipe, not two");
-  assert.equal(ui.store.recipes[0].id, SHARED_ID);
+  assert.equal(ui.store.recipes[0].id, mine, "and it is the same recipe, not a replacement");
   assert.equal(ui.store.recipes[0].name, "Shared Soup, my way", "the review wins");
+});
+
+test("J5.2 · a link to a recipe living in another of your books does not borrow its id", async () => {
+  const ui = openApp({});
+  // The recipe the link describes is one of ours, in a different book.
+  // An id is unique across every book on the server, so saving this one
+  // under the sender's id would land two books on one row — which used to
+  // drag the original out of the first book on the next sync.
+  ui.store.useBook("aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa");
+  const theirs = ui.store.add(aRecipe({ name: "Nana's Broth" }));
+  const link = await shareLink({ name: "Nana's Broth", id: theirs.id });
+
+  ui.store.useBook("bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb");
+  assert.deepEqual(ui.store.recipes, [], "the other book starts empty");
+
+  await ui.arrive(link);
+  ui.confirm();
+
+  assert.equal(ui.store.recipes.length, 1, "it arrives in this book");
+  assert.notEqual(ui.store.recipes[0].id, theirs.id,
+    "under an id of this book's own, not the one already spoken for");
+  assert.equal(ui.store.recipes[0].sharedFrom, theirs.id);
+
+  // And the recipe it came from is untouched where it lives.
+  ui.store.useBook("aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa");
+  assert.equal(ui.store.recipes.length, 1);
+  assert.equal(ui.store.recipes[0].id, theirs.id);
 });
 
 test("J5.3 · the form names the recipe saving would replace", async () => {

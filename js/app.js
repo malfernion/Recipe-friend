@@ -281,7 +281,7 @@
     // matches something already here, saving replaces that recipe with what
     // is on screen — so name the one at stake rather than saying "my copy"
     // and leaving the person to guess which.
-    const existing = review && recipe ? store.getById(recipe.id) : null;
+    const existing = review && recipe ? store.findIncoming(recipe.id) : null;
     const warning = $("#review-warning");
     if (warning) {
       warning.hidden = !existing;
@@ -525,9 +525,15 @@
     } else if (incomingId) {
       // Already here (the same link opened twice): the review wins, so the
       // recipe is updated rather than the edits being thrown away.
-      const result = store.getById(incomingId)
-        ? { recipe: store.update(incomingId, input) }
-        : store.addShared({ ...input, id: incomingId });
+      //
+      // Otherwise it is new, and takes an id of ours rather than the
+      // sender's — theirs belongs to their book, and ids are unique
+      // across every book on the server. Where it came from is kept as
+      // `sharedFrom` so the same link still finds it next time.
+      const already = store.findIncoming(incomingId);
+      const result = already
+        ? { recipe: store.update(already.id, input) }
+        : store.addShared({ ...input, id: null, sharedFrom: incomingId });
       saved = result && result.recipe;
     } else {
       saved = store.add(input);
@@ -662,11 +668,56 @@
       </div>`;
   }
 
-  /** Only offer Move when the signed-in user has more than one book. */
-  function syncMoveButton() {
-    const btn = $("#detail-move-btn");
+  /**
+   * Copy and Move both need somewhere to go, so neither is offered until
+   * there is a second book. Beyond that they part company: copying takes
+   * nothing from anyone and is everyone's, while moving takes the recipe
+   * out of a book other people are reading, so it belongs to whoever owns
+   * this one (J7.10, J7.16).
+   */
+  /**
+   * Whether this book is ours to change (J7.17).
+   *
+   * Row-level security is the real gate; this is about not offering a
+   * control that would fail. Favourite goes too, because a favourite is a
+   * property of the recipe and so a write like any other (J3.6) — which
+   * is the cost of keeping the household's shortlist shared.
+   */
+  let canEditBook = true;
+
+  function setCanEdit(editable) {
+    canEditBook = Boolean(editable);
+    const write = [
+      "#add-recipe-btn",
+      "#empty-add-btn",
+      "#import-btn",
+      "#paste-btn",
+      "#ai-help-btn",
+      "#detail-edit-btn",
+      "#detail-fav-btn",
+    ];
+    for (const sel of write) {
+      const el = $(sel);
+      if (el) el.hidden = !canEditBook;
+    }
+    document.body.classList.toggle("read-only", !canEditBook);
+    syncTransferButtons();
+  }
+
+  function syncTransferButtons() {
     const cloud = window.RecipeCloud;
-    btn.hidden = !(cloud && cloud.books && cloud.books.books.length > 1);
+    const books = (cloud && cloud.books && cloud.books.books) || [];
+    const elsewhere = books.length > 1;
+    const ownsThisBook = Boolean(
+      cloud && cloud.sync && books.some((b) => b.id === cloud.sync.bookId && b.isOwner)
+    );
+    // Copy needs somewhere to put it; move needs that and this book to
+    // be yours to take it out of.
+    const somewhereToPut = (cloud && cloud.books && cloud.books.writableBooks
+      ? cloud.books.writableBooks().filter((b) => b.id !== cloud.sync.bookId).length > 0
+      : elsewhere);
+    $("#detail-copy-btn").hidden = !somewhereToPut;
+    $("#detail-move-btn").hidden = !(somewhereToPut && ownsThisBook);
   }
 
   /**
@@ -713,7 +764,7 @@
     renderDetailHead(recipe);
     detailContent.innerHTML = recipeDetailHTML(recipe, true);
     syncDetailFavButton(recipe);
-    syncMoveButton();
+    syncTransferButtons();
     syncCookButton();
     if (!wasOpen) {
       if (!restoring) pushRoute(`#recipe=${recipe.id}`);
@@ -1227,14 +1278,16 @@
     }
   });
 
-  // Moving lives with books, so hand off to that layer. The button only
-  // appears once there is somewhere else to move to.
-  $("#detail-move-btn").addEventListener("click", () => {
+  // Copying and moving both live with books, so hand off to that layer.
+  // Neither button appears until there is somewhere else to put it.
+  const openTransfer = (verb) => () => {
     const cloud = window.RecipeCloud;
     if (!cloud || !cloud.books || !detailId) return;
     detailDialog.close();
-    cloud.books.openMove(detailId);
-  });
+    cloud.books.openMove(detailId, verb);
+  };
+  $("#detail-copy-btn").addEventListener("click", openTransfer("copy"));
+  $("#detail-move-btn").addEventListener("click", openTransfer("move"));
 
   $("#detail-close-btn").addEventListener("click", () => detailDialog.close());
 
@@ -1380,7 +1433,7 @@
 
   // Handle for the sync layer (account.js/sync.js): shared store plus a
   // way to redraw once remote changes land.
-  window.RecipeApp = { store, render, toast, showPendingShare, openFromHash };
+  window.RecipeApp = { store, render, toast, showPendingShare, openFromHash, setCanEdit };
 
   render();
   handleIncomingShare();

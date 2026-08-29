@@ -57,12 +57,17 @@ function makeDoc() {
  * The event a browser hands a delegated listener: a target whose closest()
  * answers for the data- attributes the rendered control carries.
  */
-function control(attrs) {
+function control(attrs, extra = {}) {
   const t = {
     dataset: { ...attrs },
+    ...extra,
     closest(sel) {
       const m = /^\[data-([\w-]+)\]$/.exec(sel);
-      return m && Object.prototype.hasOwnProperty.call(attrs, m[1]) ? t : null;
+      if (!m) return null;
+      // A test names the dataset key; a selector names the attribute.
+      const camel = m[1].replace(/-([a-z])/g, (_, c) => c.toUpperCase());
+      const has = (k) => Object.prototype.hasOwnProperty.call(attrs, k);
+      return has(m[1]) || has(camel) ? t : null;
     },
   };
   return t;
@@ -130,6 +135,20 @@ function fakeCloud() {
       return true;
     });
 
+  /*
+    The recipes_book_immutable trigger from migration 006. Without it here
+    the fake would happily do the thing the database now refuses, and the
+    tests would be describing a server that no longer exists.
+  */
+  function movesBook(table, row, payload) {
+    return table === "recipes" && payload.book_id && payload.book_id !== row.book_id;
+  }
+
+  const bookIsFixed = () => ({
+    data: null,
+    error: new Error("a recipe cannot change book: copy it and delete the original"),
+  });
+
   function run(q) {
     calls.push({ table: q.table, op: q.op, filters: q.filters.map((f) => f.join(":")), payload: q.payload });
     // A dropped book that keeps being re-checked, or a replacement that never
@@ -154,11 +173,15 @@ function fakeCloud() {
       rows.push(q.table === "book_members" ? embed(row) : row);
       data = [row];
     } else if (q.op === "update") {
-      for (const row of hit) Object.assign(row, q.payload);
+      for (const row of hit) {
+        if (movesBook(q.table, row, q.payload)) return bookIsFixed();
+        Object.assign(row, q.payload);
+      }
       data = hit.map((r) => ({ ...r }));
     } else if (q.op === "upsert") {
       for (const item of [].concat(q.payload)) {
         const found = rows.find((r) => r.id === item.id);
+        if (found && movesBook(q.table, found, item)) return bookIsFixed();
         if (found) Object.assign(found, item);
         else rows.push({ ...item });
       }
@@ -226,8 +249,37 @@ function fakeCloud() {
     },
   });
 
-  /** preview_invite and redeem_invite, as migration 005 defines them. */
+  /** The RPCs migrations 005 and 006 define. */
   const rpcs = {
+    /**
+     * move_recipe: the copy and the tombstone, or neither. Owner of the
+     * book it is leaving only — checked here because the real one runs as
+     * security definer and so has to check everything itself.
+     */
+    move_recipe({ recipe_id, target_book, new_id, new_data }) {
+      const src = db.recipes.find((r) => r.id === recipe_id && !r.deleted_at);
+      if (!src) throw new Error("that recipe is not here to move");
+      const from = db.books.find((b) => b.id === src.book_id);
+      if (!from || from.owner !== ME) {
+        throw new Error("only the owner of a book may move recipes out of it");
+      }
+      if (src.book_id === target_book) throw new Error("that recipe is already in that book");
+      if (!db.book_members.some((m) => m.book_id === target_book && m.user_id === ME)) {
+        throw new Error("you are not a member of that book");
+      }
+      if (db.recipes.some((r) => r.id === new_id)) throw new Error("duplicate key value");
+      const now = new Date().toISOString();
+      db.recipes.push({
+        id: new_id,
+        book_id: target_book,
+        data: new_data || src.data,
+        updated_at: now,
+        deleted_at: null,
+      });
+      src.deleted_at = now;
+      src.updated_at = now;
+      return new_id;
+    },
     preview_invite({ invite_code }) {
       const inv = db.invites.find(
         (i) => i.code === invite_code && new Date(i.expires_at) > new Date()
@@ -1037,11 +1089,16 @@ function withPhoto(h, name = "Photographed") {
   return recipe;
 }
 
-/** Drive the move dialog the way the recipe screen does. */
-async function moveThrough(h, recipeId, targetBookId) {
-  h.books.openMove(recipeId);
+/** Drive the transfer dialog the way the recipe screen does. */
+async function transferThrough(h, recipeId, targetBookId, verb) {
+  h.books.openMove(recipeId, verb);
   await h.el("move-list").fire("click", { target: control({ target: targetBookId }) });
 }
+
+const moveThrough = (h, recipeId, targetBookId) =>
+  transferThrough(h, recipeId, targetBookId, "move");
+const copyThrough = (h, recipeId, targetBookId) =>
+  transferThrough(h, recipeId, targetBookId, "copy");
 
 test("J7.10 · a recipe can be moved to another book you belong to", async () => {
   const h = harness();
@@ -1063,23 +1120,31 @@ test("J7.10 · with nowhere to move it to, the app says so rather than opening a
   await h.books.refresh();
   const recipe = h.typed({ name: "Nowhere to go" });
 
-  h.books.openMove(recipe.id);
-
+  h.books.openMove(recipe.id, "move");
   assert.equal(h.el("move-dialog").open, false);
   assert.equal(h.lastToast(), "Create another book first, then you can move recipes into it.");
+
+  h.books.openMove(recipe.id, "copy");
+  assert.equal(h.el("move-dialog").open, false);
+  assert.equal(h.lastToast(), "Create another book first, then you can copy recipes into it.");
 });
 
-test("J7.10 · a moved recipe keeps its identity", async () => {
+test("J7.10 · a moved recipe arrives under an id the new book can hold", async () => {
   const h = harness();
   const recipe = h.typed({ name: "Same recipe, new book" });
   h.onServer(recipe, MINE);
 
-  await h.sync.moveRecipe(recipe.id, SHARED);
+  const { newId } = await h.sync.moveRecipe(recipe.id, SHARED);
 
+  assert.notEqual(newId, recipe.id,
+    "an id belongs to the book its recipe was created in, for life (006)");
   assert.deepEqual(
-    h.db.recipes.map((r) => [r.id, r.book_id, r.data.name]),
-    [[recipe.id, SHARED, "Same recipe, new book"]],
-    "the same row, in the other book — not a copy with a new id"
+    h.db.recipes.map((r) => [r.book_id, r.data.name, Boolean(r.deleted_at)]),
+    [
+      [MINE, "Same recipe, new book", true],
+      [SHARED, "Same recipe, new book", false],
+    ],
+    "a copy in the new book, and a tombstone left behind in the old one"
   );
 });
 
@@ -1088,21 +1153,20 @@ test("J7.10 · its photo moves with it, so the new book's members can see it", a
   const recipe = withPhoto(h);
   h.onServer(recipe, MINE);
   const oldPath = `${MINE}/${recipe.id}.jpg`;
-  const newPath = `${SHARED}/${recipe.id}.jpg`;
 
-  const returned = await h.sync.moveRecipe(recipe.id, SHARED);
+  const { newId } = await h.sync.moveRecipe(recipe.id, SHARED);
+  const newPath = `${SHARED}/${newId}.jpg`;
 
-  assert.equal(returned, newPath);
   assert.equal(h.cloud.files.get(newPath), "jpeg-bytes", "the file is in the new book");
   assert.equal(h.cloud.files.has(oldPath), false, "and no longer in the old one");
   assert.equal(
-    h.db.recipes[0].data.imagePath,
+    h.db.recipes.find((r) => r.id === newId).data.imagePath,
     newPath,
     "and the recipe points at it without waiting for another push"
   );
 });
 
-test("J7.10 · a moved recipe is forgotten locally without a tombstone that would delete it in its new home", async () => {
+test("J7.10 · the book it left gets a tombstone, so nobody's cache pushes it back", async () => {
   const h = harness();
   await h.books.refresh();
   const recipe = h.typed({ name: "Off it goes" });
@@ -1111,9 +1175,29 @@ test("J7.10 · a moved recipe is forgotten locally without a tombstone that woul
   await moveThrough(h, recipe.id, SHARED);
 
   assert.equal(h.store.getById(recipe.id), null, "gone from the book it left");
-  assert.deepEqual(h.store.tombstones, [], "and not marked deleted");
+  assert.deepEqual(
+    h.store.tombstones.map((t) => t.id),
+    [recipe.id],
+    "and marked deleted there — the id is finished, because the copy carries its own"
+  );
   assert.equal(h.el("move-dialog").open, false);
   assert.equal(h.lastToast(), "Moved to “Household”.");
+});
+
+test("J7.10 · moving asks first, and names what goes where", async () => {
+  const h = harness();
+  await h.books.refresh();
+  const recipe = h.typed({ name: "Off it goes" });
+  h.onServer(recipe, MINE);
+  h.setConfirm(false);
+
+  await moveThrough(h, recipe.id, SHARED);
+
+  assert.match(h.confirms[0], /Off it goes/);
+  assert.match(h.confirms[0], /Household/);
+  assert.match(h.confirms[0], /leaves this book/);
+  assert.ok(h.store.getById(recipe.id), "answering no leaves it exactly where it was");
+  assert.deepEqual(h.db.recipes.filter((r) => r.book_id === SHARED), []);
 });
 
 test("J7.10 · an old photo that could not be tidied away does not undo the move", async () => {
@@ -1122,10 +1206,12 @@ test("J7.10 · an old photo that could not be tidied away does not undo the move
   h.onServer(recipe, MINE);
   h.cloud.fail("storage.remove");
 
-  const returned = await h.sync.moveRecipe(recipe.id, SHARED);
+  const { newId } = await h.sync.moveRecipe(recipe.id, SHARED);
 
-  assert.equal(returned, `${SHARED}/${recipe.id}.jpg`);
-  assert.equal(h.db.recipes[0].book_id, SHARED, "the move stands");
+  assert.ok(
+    h.db.recipes.some((r) => r.id === newId && r.book_id === SHARED && !r.deleted_at),
+    "the move stands"
+  );
 });
 
 test("J7.11 · a move that doesn't reach the server leaves the recipe exactly where it was and says so", async () => {
@@ -1153,8 +1239,8 @@ test("J7.11 · a recipe the server has not seen yet is pushed up before it is mo
   await moveThrough(h, recipe.id, SHARED);
 
   assert.deepEqual(
-    h.db.recipes.map((r) => [r.id, r.book_id]),
-    [[recipe.id, SHARED]],
+    h.db.recipes.map((r) => [r.book_id, Boolean(r.deleted_at)]),
+    [[MINE, true], [SHARED, false]],
     "it went up, then moved"
   );
   assert.equal(h.store.getById(recipe.id), null);
@@ -1211,11 +1297,12 @@ test("J7.11 · a move the server rejects outright keeps the recipe too", async (
   await h.books.refresh();
   const recipe = h.typed({ name: "Refused" });
   h.onServer(recipe, MINE);
-  h.cloud.fail("recipes.update", new Error("row level security"));
+  h.cloud.fail("rpc.move_recipe", new Error("only the owner of a book may move recipes out of it"));
 
   await moveThrough(h, recipe.id, SHARED);
 
   assert.ok(h.store.getById(recipe.id));
+  assert.deepEqual(h.store.tombstones, [], "and it is not tombstoned on the strength of a refusal");
   assert.equal(h.db.recipes[0].book_id, MINE);
   assert.equal(h.lastToast(), "Couldn't move that recipe.");
 });
@@ -1230,6 +1317,240 @@ test("J7.11 · a move the server cannot match is refused rather than assumed", a
     /hasn't reached the server yet/
   );
   assert.ok(h.store.getById(recipe.id));
+});
+
+test("J7.10 · a push cannot drag a recipe into another book", async () => {
+  const h = harness();
+  // The same id, held locally here and living on the server over there —
+  // which is what a share link saved under the sender's id used to make.
+  const recipe = h.typed({ name: "Stays put" });
+  h.onServer(recipe, SHARED);
+
+  await h.sync.syncNow();
+
+  assert.deepEqual(
+    h.db.recipes.map((r) => r.book_id),
+    [SHARED],
+    "the row stays in the book it was created in (006), rather than being rewritten"
+  );
+  assert.equal(h.statuses[h.statuses.length - 1], "error",
+    "and the push says so instead of appearing to work");
+});
+
+// ---------------------------------------------------------------------
+// J7.16 · copying a recipe into a book of your own
+//
+// Copy is the verb for everyone: it takes nothing from anybody, which is
+// what makes it the way out of a book you only read.
+// ---------------------------------------------------------------------
+
+test("J7.16 · a copy lands in the other book and leaves this one alone", async () => {
+  const h = harness();
+  await h.books.refresh();
+  const recipe = h.typed({ name: "Worth keeping" });
+  h.onServer(recipe, MINE);
+
+  await copyThrough(h, recipe.id, SHARED);
+
+  const copy = h.db.recipes.find((r) => r.book_id === SHARED);
+  assert.ok(copy, "a row in the other book");
+  assert.notEqual(copy.id, recipe.id, "under an id of its own");
+  assert.equal(copy.data.name, "Worth keeping");
+  assert.ok(h.store.getById(recipe.id), "and the original is untouched");
+  assert.deepEqual(h.store.tombstones, [], "nothing was taken from this book");
+  assert.equal(h.lastToast(), "Copied to “Household”.");
+});
+
+test("J7.16 · copying does not ask, because it takes nothing", async () => {
+  const h = harness();
+  await h.books.refresh();
+  const recipe = h.typed({ name: "Harmless" });
+  h.onServer(recipe, MINE);
+
+  await copyThrough(h, recipe.id, SHARED);
+
+  assert.deepEqual(h.confirms, [], "there is nothing to warn anybody about");
+});
+
+test("J7.16 · a copy carries the recipe, not your relationship to it", async () => {
+  const h = harness();
+  await h.books.refresh();
+  const recipe = h.typed({ name: "Starred here" });
+  h.store.toggleFavorite(recipe.id);
+  h.onServer(h.store.getById(recipe.id), MINE);
+
+  await copyThrough(h, recipe.id, SHARED);
+
+  const copy = h.db.recipes.find((r) => r.book_id === SHARED);
+  assert.equal(copy.data.favorite, false, "it arrives unstarred (J6.5)");
+  assert.equal(copy.data.sharedFrom, "", "and without a trail back to where it came from");
+  assert.equal(h.store.getById(recipe.id).favorite, true, "the original keeps its star");
+});
+
+test("J7.16 · the photo comes too, filed under the copy's own id", async () => {
+  const h = harness();
+  await h.books.refresh();
+  const recipe = withPhoto(h, "Photographed");
+  h.onServer(recipe, MINE);
+  const oldPath = `${MINE}/${recipe.id}.jpg`;
+
+  await copyThrough(h, recipe.id, SHARED);
+
+  const copy = h.db.recipes.find((r) => r.book_id === SHARED);
+  const newPath = `${SHARED}/${copy.id}.jpg`;
+  assert.equal(h.cloud.files.get(newPath), "jpeg-bytes");
+  assert.equal(copy.data.imagePath, newPath);
+  assert.equal(h.cloud.files.get(oldPath), "jpeg-bytes", "and the original's photo stays put");
+  assert.equal(h.cloud.storageCalls("remove").length, 0, "nothing is tidied away after a copy");
+});
+
+test("J7.16 · a photo that cannot come across does not cost you the copy", async () => {
+  const h = harness();
+  await h.books.refresh();
+  const recipe = withPhoto(h, "Photo won't copy");
+  h.onServer(recipe, MINE);
+  h.cloud.fail("storage.copy");
+
+  await copyThrough(h, recipe.id, SHARED);
+
+  const copy = h.db.recipes.find((r) => r.book_id === SHARED);
+  assert.ok(copy, "the recipe still arrives — a copy risks nothing by going without a picture");
+  assert.equal(copy.data.imagePath, "", "and does not point at a file that is not there");
+  assert.equal(h.lastToast(), "Copied to “Household”, without its photo.");
+});
+
+test("J7.16 · a recipe the server has not seen yet can still be copied", async () => {
+  const h = harness();
+  await h.books.refresh();
+  const recipe = h.typed({ name: "Typed seconds ago" });
+  assert.deepEqual(h.db.recipes, [], "nothing pushed yet");
+
+  await copyThrough(h, recipe.id, SHARED);
+
+  assert.equal(
+    h.db.recipes.filter((r) => r.book_id === SHARED).length,
+    1,
+    "a copy is built from what is in front of you, not from a row that may not be up yet"
+  );
+  assert.ok(h.store.getById(recipe.id));
+});
+
+test("J7.16 · a copy the server refuses leaves both books as they were", async () => {
+  const h = harness();
+  await h.books.refresh();
+  const recipe = h.typed({ name: "Refused" });
+  h.onServer(recipe, MINE);
+  h.cloud.fail("recipes.insert", new Error("row level security"));
+
+  await copyThrough(h, recipe.id, SHARED);
+
+  assert.deepEqual(h.db.recipes.filter((r) => r.book_id === SHARED), []);
+  assert.ok(h.store.getById(recipe.id));
+  assert.deepEqual(h.store.tombstones, []);
+  assert.equal(h.lastToast(), "Couldn't copy that recipe.");
+});
+
+// ---------------------------------------------------------------------
+// J7.17 · a book you can read and not change
+// ---------------------------------------------------------------------
+
+/** The current book, held as a viewer rather than an editor. */
+async function asViewer(h) {
+  h.db.books.find((b) => b.id === MINE).owner = THEM;
+  for (const m of h.db.book_members) {
+    if (m.book_id !== MINE) continue;
+    // The fake embeds a snapshot of the book on the membership row, the
+    // way PostgREST returns it, so the snapshot has to move too.
+    if (m.books) m.books.owner = THEM;
+    if (m.user_id === ME) m.role = "viewer";
+  }
+  await h.books.refresh();
+}
+
+test("J7.17 · a viewer's local edits are never pushed", async () => {
+  const h = harness();
+  await asViewer(h);
+  assert.equal(h.sync.readOnly, true, "the book is read-only");
+
+  // Something local, as an offline edit or a stale cache would leave it.
+  h.typed({ name: "Not mine to save" });
+  await h.sync.syncNow();
+
+  assert.deepEqual(h.db.recipes, [], "nothing went up");
+  assert.equal(
+    h.statuses[h.statuses.length - 1],
+    "synced",
+    "and sync says it is done, rather than parking on an error it can never clear"
+  );
+});
+
+test("J7.17 · a viewer's edit does not even schedule a push", async () => {
+  const h = harness();
+  await asViewer(h);
+  h.sync.schedulePush();
+  assert.equal(h.sync.pending, false, "there is nothing to send and nothing to retry");
+});
+
+test("J7.17 · a viewer still pulls what the book holds", async () => {
+  const h = harness();
+  const theirs = aRecipe({ name: "Theirs to share" });
+  h.onServer(theirs, MINE);
+  await asViewer(h);
+
+  await h.sync.syncNow();
+
+  assert.deepEqual(h.store.recipes.map((r) => r.name), ["Theirs to share"],
+    "reading is the whole point of being here");
+});
+
+test("J7.17 · a viewer can copy a recipe out, into a book of their own", async () => {
+  const h = harness();
+  // An explicit id: aRecipe leaves that to the store, and a copy is
+  // addressed by it.
+  const theirs = aRecipe({ name: "Worth taking", id: "33333333-3333-4333-8333-333333333333" });
+  h.onServer(theirs, MINE);
+  await asViewer(h);
+  await h.sync.syncNow();
+
+  await copyThrough(h, theirs.id, SHARED);
+
+  assert.equal(
+    h.db.recipes.filter((r) => r.book_id === SHARED).length,
+    1,
+    "copy takes nothing from anybody, which is what makes it everyone's"
+  );
+});
+
+test("J7.17 · a book only offers itself as somewhere to copy to if you can write there", async () => {
+  const h = harness();
+  await h.books.refresh();
+  assert.deepEqual(h.books.writableBooks().map((b) => b.id).sort(), [MINE, SHARED].sort());
+
+  // Household read-only: it stops being somewhere a recipe can go.
+  h.db.book_members = h.db.book_members.map((m) =>
+    m.book_id === SHARED && m.user_id === ME ? { ...m, role: "viewer" } : m
+  );
+  await h.books.refresh();
+
+  assert.deepEqual(h.books.writableBooks().map((b) => b.id), [MINE]);
+  const recipe = h.typed({ name: "Nowhere to go" });
+  h.books.openMove(recipe.id, "copy");
+  assert.equal(h.el("move-dialog").open, false);
+  assert.equal(h.lastToast(), "Create another book first, then you can copy recipes into it.");
+});
+
+test("J7.17 · an owner can change what somebody may do, and is told which", async () => {
+  const h = harness();
+  h.cloud.join(MINE, THEM, "editor");
+  await h.books.refresh();
+
+  await h.el("member-list").fire("change", {
+    target: control({ roleFor: THEM }, { value: "viewer" }),
+  });
+
+  const them = h.db.book_members.find((m) => m.book_id === MINE && m.user_id === THEM);
+  assert.equal(them.role, "viewer");
+  assert.match(h.lastToast(), /read this book, not change it/);
 });
 
 // ---------------------------------------------------------------------

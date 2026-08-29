@@ -28,6 +28,7 @@
       this.api = api;
       this.onStatus = onStatus || (() => {});
       this.bookId = null;
+      this.readOnly = false; // a book we may read and not write (J7.17)
       this.pending = false; // local edits waiting to go up
       this.running = false;
       this.timer = null;
@@ -99,59 +100,104 @@
     }
 
     /**
-     * Move a recipe into another book. The row keeps its id and simply
-     * changes book — RLS allows it because the check runs against both the
-     * old and the new book, and you must belong to both.
+     * The row a copy of this recipe would be, with its photo already
+     * filed under the copy's own id.
      *
-     * The photo has to travel with it. Storage policies authorise on the
-     * first segment of the path, so a file left under the old book is
-     * unreadable to anyone in the new one who isn't also in the old one —
-     * the recipe would arrive with no picture and no explanation. The copy
-     * goes first and the move is abandoned if it fails: a recipe that
-     * plainly stayed put is easier to live with than one that has quietly
-     * lost its photo, and the mover can try again.
+     * Copying and moving differ only in what happens to the original
+     * afterwards, so the whole of the interesting part is here. A recipe
+     * belongs to the book it was created in (006), so both make a new
+     * recipe rather than relocating this one — which is also why the copy
+     * needs an id of its own before anything else can happen.
      *
-     * A recipe written moments ago may still be waiting inside the push
-     * debounce with no row on the server yet, and the caller drops the
-     * local copy as soon as this returns. So anything pending goes up
-     * first, and every step afterwards insists the row is really there:
-     * an update that matched nothing is not an error to PostgREST, and
-     * taking that silence for success would delete the only copy.
+     * `forMove` is the difference in appetite between the two: a move is
+     * about to remove the original, so it insists the server has the row
+     * to tombstone and treats a photo that will not come across as a
+     * reason to stop. A copy risks nothing by going without one, and says
+     * so instead.
+     */
+    async prepareCopy(recipeId, targetBookId, { forMove = false } = {}) {
+      // A recipe typed seconds ago may still be inside the push debounce
+      // with no row on the server yet, and a move is about to ask the
+      // server to tombstone it. Read the local copy afterwards, since the
+      // sync may have changed it.
+      if (this.pending) await this.syncNow();
+      const local = this.store.getById(recipeId);
+      if (!local) throw new Error("that recipe is not here");
+
+      // A move needs the original to be there to tombstone, so it is
+      // checked before any file is touched: a move that cannot happen
+      // must not leave a stray photo in the other book. The server's own
+      // data becomes the base, so an edit made on another device travels.
+      let base = local;
+      if (forMove) {
+        const row = await this.api.readRecipeData(recipeId);
+        if (!row) throw new Error("that recipe hasn't reached the server yet");
+        base = { ...(row.data || local), id: recipeId };
+      }
+
+      const photoRequired = forMove;
+      const newId = global.RecipeStore.newId();
+      const oldPath = local.imagePath || "";
+      const newPath = oldPath ? `${targetBookId}/${newId}.jpg` : "";
+      let photoCopied = Boolean(oldPath);
+      if (oldPath) {
+        try {
+          await this.api.copyPhoto(oldPath, newPath);
+        } catch (err) {
+          if (photoRequired) throw err;
+          console.warn("Recipe Friend: the copy goes without its photo.", err);
+          photoCopied = false;
+        }
+      }
+
+      return {
+        newId,
+        oldPath,
+        photoCopied,
+        data: {
+          ...base,
+          id: newId,
+          imagePath: photoCopied ? newPath : "",
+          // A copy carries the recipe, not your relationship to it, and
+          // not where it came from either (J6.5).
+          favorite: false,
+          sharedFrom: "",
+          updatedAt: Date.now(),
+        },
+      };
+    }
+
+    /**
+     * Put a copy of this recipe in another book, leaving this one alone.
+     * The target book's local cache is not touched — it picks the copy up
+     * the next time it is opened.
+     */
+    async copyRecipe(recipeId, targetBookId) {
+      const { newId, data, photoCopied } = await this.prepareCopy(recipeId, targetBookId);
+      await this.api.insertRecipe(targetBookId, newId, data);
+      return { newId, photoCopied };
+    }
+
+    /**
+     * Move a recipe to another book. The server does both halves or
+     * neither, and refuses unless you own the book it is leaving (006).
      *
-     * Returns the recipe's photo path after the move ("" if it has none).
+     * The caller tombstones the original locally afterwards. That is the
+     * whole point of the rebuild: the id being tombstoned is genuinely
+     * finished, so the delete can travel to the other members of the book
+     * instead of their caches pushing the recipe back.
      */
     async moveRecipe(recipeId, targetBookId) {
       const fromBookId = this.bookId;
-      // One round trip is a far better answer than "couldn't move that
-      // recipe" to someone who has just typed it in and moved it. Read
-      // the local copy afterwards, since the sync may have changed it.
-      if (this.pending) await this.syncNow();
-      const local = this.store.getById(recipeId);
-      const oldPath = (local && local.imagePath) || "";
-      const newPath = oldPath ? `${targetBookId}/${recipeId}.jpg` : "";
+      const { newId, data, oldPath } = await this.prepareCopy(recipeId, targetBookId, {
+        forMove: true,
+      });
+      await this.api.moveRecipe(recipeId, targetBookId, newId, data);
 
-      const patch = { book_id: targetBookId, updated_at: new Date().toISOString() };
-      if (newPath) {
-        // imagePath lives inside the row's data, and the local copy is
-        // dropped the moment this returns, so the new path has to go up
-        // with the move rather than wait for the next push. Patch the
-        // server's own data, so an edit made on another device survives.
-        const row = await this.api.readRecipeData(recipeId);
-        // No row means the push above never landed — fail here, before
-        // any file is touched, so the caller keeps what it still has.
-        if (!row) throw new Error("that recipe hasn't reached the server yet");
-        patch.data = { ...(row.data || local), imagePath: newPath };
-      }
-      if (oldPath) await this.api.copyPhoto(oldPath, newPath);
-
-      const movedCount = await this.api.patchRecipe(recipeId, patch);
-      if (movedCount === 0) {
-        throw new Error("that recipe hasn't reached the server yet");
-      }
-
-      // Only now is the old file safe to drop: until the row moved, it was
-      // still the photo the recipe pointed at. A leftover file costs a
-      // little quota, so a failure here isn't worth failing the move over.
+      // Only now is the old file safe to drop: until the move went
+      // through, it was still the photo the recipe pointed at. A leftover
+      // file costs a little quota, so a failure here isn't worth failing
+      // a move that has already happened.
       if (oldPath) {
         try {
           await this.api.deletePhoto(fromBookId, recipeId);
@@ -159,7 +205,7 @@
           console.warn("Recipe Friend: the moved recipe's old photo is left behind.", err);
         }
       }
-      return newPath;
+      return { newId, photoCopied: true };
     }
 
 
@@ -168,10 +214,15 @@
 
 
 
-    /** Point sync at a different book; the caller swaps the local cache. */
-    setBook(bookId) {
+    /**
+     * Point sync at a different book; the caller swaps the local cache.
+     * Whether we may write to it travels with it, because the answer is
+     * per book, not per person.
+     */
+    setBook(bookId, { readOnly = false } = {}) {
       clearTimeout(this.timer);
       this.bookId = bookId;
+      this.readOnly = readOnly;
     }
 
 
@@ -193,10 +244,11 @@
         const { recipes, tombstones, toPush } = this.merge(rows);
         this.store.applyMerge(recipes, tombstones);
 
-        if (toPush.length > 0) await this.api.pushRecipes(toPush);
+        const pushed = this.readOnly ? 0 : toPush.length;
+        if (pushed > 0) await this.api.pushRecipes(toPush);
 
-        this.status("synced", { pushed: toPush.length, pulled: rows.length });
-        return { pushed: toPush.length, pulled: rows.length };
+        this.status("synced", { pushed, pulled: rows.length });
+        return { pushed, pulled: rows.length };
       } catch (err) {
         console.warn("Recipe Friend: sync failed.", err);
         this.pending = true; // retry on the next local change or sign-in
@@ -287,7 +339,11 @@
 
     /** Local edit happened: coalesce rapid changes into one round trip. */
     schedulePush() {
-      if (!this.bookId) return;
+      // Nothing local is going up from a book we can only read, and
+      // trying is worse than not trying: the push fails on row-level
+      // security, the status line parks on "Sync paused — will retry",
+      // and read-only looks broken rather than restricted (J7.17).
+      if (!this.bookId || this.readOnly) return;
       this.pending = true;
       this.status("pending");
       clearTimeout(this.timer);
