@@ -65,6 +65,17 @@ html {
   scrollbar-gutter: stable;
 }
 
+/*
+  A modal <dialog> makes the page inert but leaves it scrollable, so a
+  long method scrolled to its end carries on into the recipe list behind
+  it (J4.22). The gutter above is what keeps this from shifting the
+  layout sideways as the scrollbar goes.
+*/
+html.dialog-open,
+body.dialog-open {
+  overflow: hidden;
+}
+
 body {
   margin: 0;
   font-family: var(--sans);
@@ -280,6 +291,25 @@ body {
 }
 
 /* ---------- Buttons ---------- */
+/*
+  iOS Safari keeps double-tap-to-zoom whatever the viewport meta says, so
+  tapping "+" six times to take a recipe from six portions to twelve zooms
+  the page instead. `manipulation` drops the double-tap gesture on these
+  controls and leaves pinch-zoom alone — the accessible gesture stays, the
+  accidental one goes. (Chrome already suppresses it on a width=device-width
+  page; this is the browser that does not.)
+*/
+.btn,
+.chip,
+.icon-btn,
+.scale-btn,
+.scale-reset,
+.fav-btn,
+.more-item,
+.more-summary {
+  touch-action: manipulation;
+}
+
 .btn {
   font-family: var(--sans);
   font-size: 0.72rem;
@@ -293,6 +323,38 @@ body {
   cursor: pointer;
   color: var(--ink-soft);
   transition: color 0.15s ease, background-color 0.15s ease, border-color 0.15s ease;
+}
+
+/*
+  A square control carrying a glyph instead of a word. Sized to the 44px
+  touch floor from the outset rather than nudged up under `pointer: coarse`
+  — there is no text here to grow it back.
+*/
+.icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.75rem;
+  height: 2.75rem;
+  flex: none;
+  font-family: var(--sans);
+  font-size: 1.2rem;
+  line-height: 1;
+  background: none;
+  border: none;
+  border-radius: 0;
+  padding: 0;
+  cursor: pointer;
+  color: var(--ink-soft);
+  transition: color 0.15s ease;
+}
+
+.icon-btn:hover {
+  color: var(--ink);
+}
+
+.icon-btn.is-on {
+  color: var(--star);
 }
 
 .btn-ghost {
@@ -336,6 +398,8 @@ body {
 .btn:focus-visible,
 .chip:focus-visible,
 .fav-btn:focus-visible,
+.icon-btn:focus-visible,
+.scale-btn:focus-visible,
 .more-summary:focus-visible,
 .more-item:focus-visible,
 .recipe-card:focus-visible,
@@ -618,8 +682,10 @@ body {
   border-radius: 0;
   background: var(--paper-raised);
   color: var(--ink);
+  --dialog-pad-t: 2.25rem;
+  --dialog-pad-x: 2.25rem;
   --dialog-pad-b: 1.75rem;
-  padding: 2.25rem 2.25rem var(--dialog-pad-b);
+  padding: var(--dialog-pad-t) var(--dialog-pad-x) var(--dialog-pad-b);
   width: min(600px, calc(100vw - 2rem));
   max-height: min(88dvh, 960px);
   overflow-y: auto;
@@ -834,6 +900,28 @@ body {
   flex: 1;
 }
 
+/*
+  One line box for every control in the bar, whatever glyph it carries.
+  Without this the moon on the cook toggle makes its line taller than
+  its neighbours', and the two labels sit a pixel apart — centred boxes
+  do not fix a difference that is inside the box.
+*/
+.detail-actions .btn {
+  display: inline-flex;
+  align-items: center;
+  line-height: 1.2;
+}
+
+/*
+  A label in a bar is a name, not a paragraph: "Save changes" broken
+  across two lines makes the button taller than its neighbours and reads
+  as two words that lost each other. If a bar runs out of room the fix is
+  the bar's, not the label's.
+*/
+.dialog-actions .btn {
+  white-space: nowrap;
+}
+
 .confirm-dialog {
   width: min(28rem, calc(100vw - 2rem));
 }
@@ -848,6 +936,104 @@ body {
 }
 
 /* ---------- Detail dialog ---------- */
+/*
+  The title row. Favourite sits inline at the end of the title, where it
+  reads as being about this recipe; Close sits opposite, where a way out
+  belongs. Neither gets a row of its own — on a phone a row of chrome is
+  a row of ingredients you cannot see.
+*/
+.detail-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.5rem;
+}
+
+.detail-head-text {
+  flex: 1;
+  min-width: 0;
+}
+
+/*
+  Close stays reachable through a long method: full screen, there is no
+  backdrop left to tap, so the × is the way out and it must not scroll
+  away. Pulled up through the dialog's own padding so it sits at the top
+  of the screen rather than below it.
+*/
+#detail-close-btn {
+  flex: none;
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  margin-top: -0.35rem;
+  font-size: 1.75rem; /* "×" reads smaller than it sets */
+}
+
+/*
+  Favourite and Edit, inline after the last line of the title rather than
+  stacked under it. Both keep a 44px target, but the glyph sits at its
+  left edge rather than its centre: centred, the box's own padding put a
+  word-space of dead air between the title and its controls and they
+  stopped reading as one thing. The target grows rightward instead, into
+  space nothing else wants.
+*/
+/*
+  A fixed box rather than one the glyph sizes, and centred within it: ☆
+  and ✎ have different heights and sit differently on the baseline, so
+  left to their own metrics the two controls line up with each other only
+  by accident. Equal boxes, centred contents, one vertical-align — now
+  they sit level whatever glyphs they carry.
+*/
+.detail-title-btn {
+  position: relative;
+  width: auto;
+  min-width: 0;
+  height: 1.5em;
+  line-height: 1;
+  align-items: center;
+  justify-content: center;
+  vertical-align: middle;
+  margin-left: 0.45rem;
+  font-size: 1.35rem;
+  color: var(--ink-faint);
+}
+
+/*
+  The 44px target, added on top rather than built into the box. Two 44px
+  boxes in the run of text are wide enough that a title filling its line
+  pushes them both onto a line of their own — which they then sit alone
+  on, under a heading, looking like a mistake. An overlay takes no room
+  in the flow, so the glyphs stay a couple of characters wide and go on
+  following the last word, while the thing a finger has to hit stays the
+  size a finger needs.
+*/
+.detail-title-btn::after {
+  content: "";
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 2.75rem;
+  height: 2.75rem;
+  transform: translate(-50%, -50%);
+}
+
+
+/*
+  Ingredients and steps, side by side where there is width for them.
+  Below that breakpoint this is a plain block and the sections stack.
+*/
+.detail-body {
+  display: block;
+}
+
+/*
+  Stacked, the Ingredients heading follows the tags directly and needs
+  daylight above it — but a full heading margin here costs a whole
+  ingredient off the bottom of a 375px phone, so it gets less than one.
+*/
+.detail-col > h3:first-child {
+  margin-top: 0.85rem;
+}
+
 .detail-kicker {
   margin: 0 0 0.5rem;
   font-size: 0.68rem;
@@ -865,11 +1051,19 @@ body {
   line-height: 1.12;
 }
 
-.detail-fav {
-  color: var(--star);
-  font-size: 1.3rem;
-  vertical-align: 0.15em;
-  margin-left: 0.2rem;
+/*
+  Favourite and Edit run on from the last word of the title rather than
+  sitting in a row of their own.
+
+  A flex row was tried instead, and put them hard against the right edge
+  of a wrapped title — level with the last line but a long way from it,
+  which is not "after the title" in any sense a reader would recognise.
+  Inline flow keeps them next to the words. The cost is that a title
+  ending near the edge can push them to the next line, so they are
+  wrapped in one nowrap group: if they go, they go together.
+*/
+.detail-title-btns {
+  white-space: nowrap;
 }
 
 .detail-img {
@@ -953,7 +1147,10 @@ body {
   display: flex;
   align-items: center;
   gap: 0.75rem;
-  margin-top: 1.5rem;
+  /* Sits directly under the Ingredients heading now, with the quantities
+     it changes — it used to float above the heading, where it read as
+     being about the recipe rather than about the list. */
+  margin: 0 0 0.9rem;
   padding: 0.55rem 0.9rem;
   border: 1px solid var(--rule);
   background: var(--paper);
@@ -1098,13 +1295,40 @@ body {
   .recipe-dialog {
     width: calc(100vw - 1rem);
     max-height: calc(100dvh - 1rem);
+    --dialog-pad-t: 1.5rem;
+    --dialog-pad-x: 1.25rem;
     --dialog-pad-b: 1.25rem;
-    padding: 1.5rem 1.25rem var(--dialog-pad-b);
   }
 
   .dialog-actions {
     flex-wrap: wrap;
     gap: 0.75rem 1rem;
+  }
+
+  /*
+    Neither the recipe's bar nor the editor's wraps. A growing spacer and
+    flex-wrap cannot both be had: the spacer eats the rest of line one and
+    every control after it starts line two — which made the recipe's bar a
+    three-row staircase, and pushed the editor's Save onto a row of its
+    own, below the Cancel it is meant to outrank. Both bars are short
+    enough to hold one line at 320px, so the wrap is what goes.
+
+    The other dialogs keep wrapping: their bars carry longer labels and
+    no spacer to strand them.
+  */
+  .detail-actions,
+  #recipe-form .dialog-actions {
+    flex-wrap: nowrap;
+    gap: 0.4rem;
+  }
+
+  .detail-actions .btn,
+  #recipe-form .dialog-actions .btn {
+    padding-inline: 0.4rem;
+  }
+
+  #recipe-form .dialog-actions .btn-primary {
+    padding-inline: 0.6rem;
   }
 
   /*
@@ -1145,6 +1369,133 @@ body {
   .ing-row .ing-item {
     flex: 1 0 100%;
     order: 1;
+  }
+
+  /*
+    At 320px the one-row bar is about a dozen pixels too wide, and it may
+    not wrap — the spacer would put every control after it on a second
+    line. The tracking and the padding give up those pixels instead; the
+    44px targets and the words on the controls both stay.
+  */
+  .detail-actions,
+  #recipe-form .dialog-actions {
+    gap: 0.25rem;
+  }
+
+  .detail-actions .btn,
+  #recipe-form .dialog-actions .btn {
+    letter-spacing: 0.1em;
+    padding-inline: 0.15rem;
+  }
+
+  .detail-actions .btn-primary,
+  #recipe-form .dialog-actions .btn-primary {
+    padding: 0.7rem 0.6rem;
+  }
+
+  /*
+    The portions box is 335px wide at its roomiest, which is wider than
+    this screen. The slack comes out of the gaps and the value's reserved
+    width — never the two 44px buttons, which are the whole point of it,
+    and never below the width of the longest thing the value says, or the
+    buttons would shift under a finger tapping them repeatedly.
+  */
+  .scale-row {
+    gap: 0.4rem;
+    padding-inline: 0.5rem;
+  }
+
+  .scale-value {
+    min-width: 4.25rem;
+  }
+
+  /*
+    Below this, "Delete", "Cancel" and "Save changes" do not fit one line
+    at any tracking worth reading, so the editor's bar wraps after all —
+    and the spacer goes, or it would strand Save on a line by pushing
+    everything after it down. Save lands on the second row on its own,
+    which is where a primary action can sit without looking lost.
+  */
+  #recipe-form .dialog-actions {
+    flex-wrap: wrap;
+    row-gap: 0.5rem;
+  }
+
+  #recipe-form .dialog-actions .dialog-actions-spacer {
+    display: none;
+  }
+}
+
+/* ---------- The recipe view on small and short screens ----------
+   Measured before this existed: on a 375x667 phone the opened recipe
+   showed the Ingredients heading and no ingredients, because a centred
+   card spends its height on a backdrop gap it does not need and a
+   three-row action bar. Landscape was worse — the preamble plus the bar
+   came to more than the whole viewport.
+
+   Two independent conditions, because two different things go wrong:
+   a narrow screen has no room to give a backdrop, and a short one has no
+   height to give a margin. Either one earns the full screen. */
+@media (max-width: 819px), (max-height: 560px) {
+  .detail-dialog {
+    width: 100vw;
+    max-width: 100vw;
+    height: 100dvh;
+    max-height: 100dvh;
+    margin: 0;
+    border: none;
+    box-shadow: none;
+  }
+
+  /* Full width is not full measure: prose past ~70 characters is harder
+     to find your place in, which is the one thing a recipe must not be.
+     The bars keep the full width — their backgrounds have to reach the
+     edges, or content scrolls visibly past them. */
+  .detail-dialog > #detail-content {
+    max-width: 46rem;
+    margin-inline: auto;
+  }
+
+  .detail-dialog::backdrop {
+    backdrop-filter: none;
+  }
+}
+
+/* Wide enough for two columns — phone landscape (852) and up, but not a
+   tablet held portrait (744), where one column already reads well. The
+   method is the taller half, so it takes the slack. */
+/* The wider sheet is for screens with the height to keep a margin. A short
+   one is full-bleed above, and must not have its width put back here —
+   both queries match a phone held sideways. */
+@media (min-width: 820px) and (min-height: 561px) {
+  .detail-dialog {
+    width: min(1100px, calc(100vw - 2rem));
+  }
+}
+
+@media (min-width: 820px) {
+  .detail-dialog > #detail-content {
+    max-width: none;
+  }
+
+  .detail-body {
+    display: grid;
+    grid-template-columns: minmax(15rem, 24rem) 1fr;
+    gap: 0 3rem;
+    align-items: start;
+  }
+
+  /* Side by side, the two headings should sit on one line. Stacked, the
+     first one still wants its space above it. */
+  .detail-col > h3:first-child {
+    margin-top: 0;
+  }
+
+  /* The ingredients are what you look back at while your hands are busy,
+     so they stay put while the method scrolls past them. */
+  .detail-col-ingredients {
+    position: sticky;
+    top: 3.5rem;
   }
 }
 

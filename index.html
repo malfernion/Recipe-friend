@@ -196,25 +196,49 @@
         <input type="file" id="photo-file" accept="image/*" hidden>
       </div>
 
+      <!--
+        Delete lives here rather than on the recipe you are reading: the
+        editor is where you have already said you mean to change this
+        recipe, and a destructive control has no business on the screen
+        being read from with wet hands. Hidden until there is something
+        saved to delete.
+      -->
       <div class="dialog-actions">
+        <button type="button" class="btn btn-danger" id="edit-delete-btn" hidden>Delete</button>
+        <span class="dialog-actions-spacer"></span>
         <button type="button" class="btn btn-ghost" id="cancel-dialog-btn">Cancel</button>
         <button type="submit" class="btn btn-primary" id="save-recipe-btn">Save recipe</button>
       </div>
     </form>
   </dialog>
 
-  <!-- Recipe detail -->
+  <!--
+    Recipe detail. Favourite and Close sit in a bar above the recipe rather
+    than below it: they are about this screen, not about the recipe, and on
+    a phone every row of the bottom bar is a row of ingredients you cannot
+    see. What is left below is what you reach for mid-cook.
+  -->
   <dialog id="detail-dialog" class="recipe-dialog detail-dialog">
+    <div class="detail-head">
+      <div class="detail-head-text">
+        <p class="detail-kicker" id="detail-kicker"></p>
+        <h2 class="detail-title" id="detail-heading" tabindex="-1"><span
+          id="detail-title-text"></span><span
+          class="detail-title-btns"><button
+          type="button" class="icon-btn detail-title-btn" id="detail-fav-btn"
+          aria-pressed="false" aria-label="Favourite">☆</button><button
+          type="button" class="icon-btn detail-title-btn" id="detail-edit-btn"
+          aria-label="Edit recipe">&#x270E;&#xFE0E;</button></span></h2>
+      </div>
+      <button type="button" class="icon-btn" id="detail-close-btn"
+              aria-label="Close recipe">×</button>
+    </div>
     <div id="detail-content"></div>
-    <div class="dialog-actions">
-      <button type="button" class="btn btn-danger" id="detail-delete-btn">Delete</button>
+    <div class="dialog-actions detail-actions">
       <span class="dialog-actions-spacer"></span>
-      <button type="button" class="btn btn-ghost" id="detail-fav-btn" aria-pressed="false">☆ Favourite</button>
-      <button type="button" class="btn btn-ghost" id="detail-cook-btn" aria-pressed="false" hidden>☾ Keep screen on</button>
+      <button type="button" class="btn btn-ghost" id="detail-cook-btn" aria-pressed="false" hidden>☾ Screen on</button>
       <button type="button" class="btn btn-ghost" id="detail-share-btn">Share</button>
       <button type="button" class="btn btn-ghost" id="detail-move-btn" hidden>Move</button>
-      <button type="button" class="btn btn-ghost" id="detail-close-btn">Close</button>
-      <button type="button" class="btn btn-primary" id="detail-edit-btn">Edit</button>
     </div>
   </dialog>
 

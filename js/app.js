@@ -38,6 +38,25 @@
   // --- Helpers ---
   const escapeHTML = RecipeHTML.escapeHTML;
 
+  /**
+   * Hold the page still behind a full-screen recipe (J4.22).
+   *
+   * A modal <dialog> makes the page inert, not unscrollable: reaching the
+   * end of a long method and carrying on scrolls the recipe list behind
+   * it, so closing the recipe leaves you somewhere you never chose to be.
+   * `overscroll-behavior: contain` on the dialog stops the chaining where
+   * it is honoured; this stops the page moving at all.
+   */
+  function syncScrollLock() {
+    const open = detailDialog.open || recipeDialog.open;
+    document.body.classList.toggle("dialog-open", open);
+    // The scrolling element is <html>, not <body>, so a rule on the body
+    // alone leaves the page free to move — measured, after trying exactly
+    // that. The guard is for the stub DOM, which has a body and no root.
+    const root = document.documentElement;
+    if (root && root.classList) root.classList.toggle("dialog-open", open);
+  }
+
   let toastTimer = null;
   function toast(message) {
     toastEl.textContent = message;
@@ -252,7 +271,7 @@
    * saving adds rather than updates, keeping the incoming id so opening the
    * same link twice never duplicates.
    */
-  function openRecipeDialog(recipe, review) {
+  function openRecipeDialog(recipe, review, { restoring = false } = {}) {
     editingId = recipe && !review ? recipe.id : null;
     incomingId = review && recipe ? recipe.id : null;
     dialogTitle.textContent = review ? "Review recipe" : recipe ? "Edit recipe" : "New recipe";
@@ -272,6 +291,10 @@
           "Everything below is the version you were sent.";
       }
     }
+    // Only an existing recipe can be deleted: not a new one, and not a
+    // recipe arriving from a link, which is not yours until you save it.
+    const deleteBtn = $("#edit-delete-btn");
+    if (deleteBtn) deleteBtn.hidden = !editingId;
     $("#save-recipe-btn").textContent = review
       ? existing
         ? `Replace “${existing.name.length > 28 ? existing.name.slice(0, 27) + "…" : existing.name}”`
@@ -301,7 +324,10 @@
     recipeForm.elements.imageUrl.value = image.startsWith("http") ? image : "";
     updatePhotoPreview();
     formBaseline = formSnapshot();
+    const wasOpen = recipeDialog.open;
     recipeDialog.showModal();
+    if (!wasOpen && !restoring) pushRoute(editorHash());
+    syncScrollLock();
   }
 
   /**
@@ -333,15 +359,21 @@
    * lands. Both ways out still work. They just ask first, and only when
    * there is something to lose, so open-look-leave stays a single tap.
    */
-  async function tryCloseEditor() {
+  /**
+   * Returns whether the editor actually closed, so Back can put its
+   * history entry back when the answer is "keep editing".
+   */
+  async function tryCloseEditor({ quiet = false } = {}) {
     if (formSnapshot() !== formBaseline &&
         !(await RecipeAsk.ask("Discard this recipe? What you have typed will be lost.", {
           confirmLabel: "Discard",
           danger: true,
         }))) {
-      return;
+      return false;
     }
-    recipeDialog.close();
+    if (quiet) closeQuietly(recipeDialog);
+    else recipeDialog.close();
+    return true;
   }
 
   function currentFormImage() {
@@ -400,7 +432,7 @@
           render();
           if (detailDialog.open && detailId) {
             const recipe = store.getById(detailId);
-            if (recipe) detailContent.innerHTML = recipeDetailHTML(recipe, "From your recipe box", true);
+            if (recipe) detailContent.innerHTML = recipeDetailHTML(recipe, true);
           }
         }, 60);
       })
@@ -556,8 +588,20 @@
   });
 
   // --- Detail dialog ---
+  /**
+   * The kicker and title are markup rather than rendered string, because
+   * the Favourite control sits inline at the end of the title and Close
+   * sits opposite it — both are real elements, and neither survives having
+   * the content re-rendered under it when a photo resolves or the portions
+   * change.
+   */
+  function renderDetailHead(recipe) {
+    $("#detail-kicker").textContent = "From your recipe box";
+    $("#detail-title-text").textContent = recipe.name;
+  }
+
   /** scalable: render the portion-scaling controls and apply detailScale. */
-  function recipeDetailHTML(recipe, kicker, scalable) {
+  function recipeDetailHTML(recipe, scalable) {
     const factor = scalable ? detailScale : 1;
     const scaledServings = recipe.servings ? Math.round(recipe.servings * factor * 10) / 10 : null;
     const scaleValue = recipe.servings
@@ -583,10 +627,6 @@
     ].filter(Boolean);
 
     return `
-      <p class="detail-kicker">${escapeHTML(kicker)}</p>
-      <h2 class="detail-title">${escapeHTML(recipe.name)}
-        ${recipe.favorite ? '<span class="detail-fav" title="Favourite">★</span>' : ""}
-      </h2>
       ${(() => {
         const src = photoSrc(recipe);
         return src
@@ -603,17 +643,23 @@
               .join("")}</div>`
           : ""
       }
-      ${scaleControls}
-      <h3>Ingredients</h3>
-      <ul class="detail-ingredients">
-        ${recipe.ingredients
-          .map((i) => `<li>${escapeHTML(displayIngredient(i, factor))}</li>`)
-          .join("")}
-      </ul>
-      <h3>Steps</h3>
-      <ol class="detail-steps">
-        ${recipe.steps.map((s) => `<li>${escapeHTML(s)}</li>`).join("")}
-      </ol>`;
+      <div class="detail-body">
+        <section class="detail-col detail-col-ingredients">
+          <h3>Ingredients</h3>
+          ${scaleControls}
+          <ul class="detail-ingredients">
+            ${recipe.ingredients
+              .map((i) => `<li>${escapeHTML(displayIngredient(i, factor))}</li>`)
+              .join("")}
+          </ul>
+        </section>
+        <section class="detail-col detail-col-steps">
+          <h3>Steps</h3>
+          <ol class="detail-steps">
+            ${recipe.steps.map((s) => `<li>${escapeHTML(s)}</li>`).join("")}
+          </ol>
+        </section>
+      </div>`;
   }
 
   /** Only offer Move when the signed-in user has more than one book. */
@@ -643,22 +689,165 @@
     const on = cookMode.active;
     btn.setAttribute("aria-pressed", String(on));
     btn.classList.toggle("cook-on", on);
-    btn.textContent = on ? "☀ Screen staying on" : "☾ Keep screen on";
+    // Short enough to share one row with the rest of the bar on a phone,
+    // but still worded — a bare moon is the control nobody would find.
+    btn.textContent = on ? "☀ Staying on" : "☾ Screen on";
   }
 
-  function openDetailDialog(recipe) {
+  /**
+   * An open recipe is a place, not a state (J4.15-J4.17).
+   *
+   * Full-screen on a phone, it reads as a page, and people leave a page
+   * with the Back button — which, on a bare <dialog>, walks out of the app
+   * instead. So opening one pushes `#recipe=<id>`: Back closes the recipe,
+   * a refresh mid-cook comes back to it, and the address bar says where
+   * you are. `restoring` marks the opens that are replaying history rather
+   * than making it, so the two do not push each other in circles.
+   */
+  function openDetailDialog(recipe, { restoring = false } = {}) {
+    const wasOpen = detailDialog.open;
     // Keep the scale when re-rendering the same open recipe (e.g. after a
     // favourite toggle); reset it when a different recipe opens.
-    if (detailId !== recipe.id || !detailDialog.open) detailScale = 1;
+    if (detailId !== recipe.id || !wasOpen) detailScale = 1;
     detailId = recipe.id;
-    detailContent.innerHTML = recipeDetailHTML(recipe, "From your recipe box", true);
+    renderDetailHead(recipe);
+    detailContent.innerHTML = recipeDetailHTML(recipe, true);
     syncDetailFavButton(recipe);
     syncMoveButton();
     syncCookButton();
-    if (!detailDialog.open) {
+    if (!wasOpen) {
+      if (!restoring) pushRoute(`#recipe=${recipe.id}`);
       detailDialog.showModal();
+      // showModal() takes the first focusable thing it finds, which is
+      // whichever control happens to be first in the markup — the star,
+      // today; the portions stepper before that. Neither says what has
+      // just opened. The heading does (J4.22).
+      const heading = $("#detail-heading");
+      if (heading && heading.focus) heading.focus();
+      syncScrollLock();
       cookMode.enter();
     }
+  }
+
+  /**
+   * --- Where you are, in the address bar (J4.17, J2.11) ---------------
+   *
+   * Two screens have an address: the recipe you are reading, and the
+   * editor. Browsers do not put a <dialog> in history, so Back would walk
+   * out of the app from either — and out of the editor it would take
+   * whatever had been typed with it, without asking, which is the one
+   * thing J2.9 exists to prevent.
+   *
+   * Each open pushes an entry, each close takes one back, and popstate
+   * reconciles what is on screen with what the address now says. Editing
+   * a recipe stacks on top of reading it, so Back from the editor returns
+   * to the recipe rather than all the way out to the list.
+   *
+   * Everything else — books, units, paste, the AI prompt — stays a plain
+   * dialog. None of them holds anything you would mind losing to a stray
+   * Back, and an address each would be noise.
+   */
+  const ROUTES = [
+    { name: "recipe", re: /^#recipe=(.+)$/ },
+    { name: "edit", re: /^#edit=(.+)$/ },
+    { name: "new", re: /^#new$/ },
+    { name: "review", re: /^#review$/ },
+  ];
+
+  const isEditorRoute = (name) => name === "edit" || name === "new" || name === "review";
+
+  function currentRoute() {
+    for (const route of ROUTES) {
+      const match = location.hash.match(route.re);
+      if (match) return { name: route.name, id: match[1] ? decodeURIComponent(match[1]) : null };
+    }
+    return { name: "list", id: null };
+  }
+
+  /** The address for the editor as it is currently open. */
+  function editorHash() {
+    if (incomingId) return "#review";
+    if (editingId) return `#edit=${editingId}`;
+    return "#new";
+  }
+
+  function pushRoute(hash) {
+    try {
+      history.pushState({ hash }, "", hash);
+    } catch {
+      /* history is a convenience here; the screen still opens without it */
+    }
+  }
+
+  function toListAddress() {
+    try {
+      history.replaceState(null, "", location.pathname + location.search);
+    } catch {
+      /* nothing to rewrite */
+    }
+  }
+
+  /*
+    Closing a screen unwinds the entry that opened it — except when
+    history is already doing the closing (Back removed the entry before we
+    got here), or one screen is handing over to another and means to keep
+    its entry underneath.
+  */
+  let suppressUnwind = 0;
+
+  function closeQuietly(dialog) {
+    suppressUnwind += 1;
+    try {
+      dialog.close();
+    } finally {
+      suppressUnwind -= 1;
+    }
+  }
+
+  function unwind(mine) {
+    if (suppressUnwind) return;
+    if (!mine) return;
+    try {
+      history.back();
+    } catch {
+      /* nothing to unwind */
+    }
+  }
+
+  /**
+   * Open whatever the address names, if we can. A recipe we do not hold
+   * is a miss rather than an error: signed in, it may simply not have
+   * synced down yet, and account.js calls this again once it has.
+   */
+  function openFromHash() {
+    if (document.body.classList.contains("gated")) return false;
+    const route = currentRoute();
+    if (route.name === "recipe") {
+      if (detailDialog.open && detailId === route.id) return true;
+      const recipe = store.getById(route.id);
+      if (!recipe) return false;
+      if (recipeDialog.open) closeQuietly(recipeDialog);
+      openDetailDialog(recipe, { restoring: true });
+      return true;
+    }
+    if (route.name === "edit") {
+      if (recipeDialog.open && editingId === route.id) return true;
+      const recipe = store.getById(route.id);
+      if (!recipe) return false;
+      if (detailDialog.open) closeQuietly(detailDialog);
+      openRecipeDialog(recipe, false, { restoring: true });
+      return true;
+    }
+    if (route.name === "new") {
+      if (recipeDialog.open) return true;
+      if (detailDialog.open) closeQuietly(detailDialog);
+      openRecipeDialog(null, false, { restoring: true });
+      return true;
+    }
+    // A review holds a recipe that is not in the box yet, so there is
+    // nothing to rebuild it from once it has gone.
+    if (route.name === "review") return recipeDialog.open;
+    return false;
   }
 
   // Portion stepper: with known servings, step one serving at a time;
@@ -679,13 +868,17 @@
       const next = action === "up" ? detailScale + 0.5 : detailScale - 0.5;
       detailScale = Math.min(8, Math.max(0.5, next));
     }
-    detailContent.innerHTML = recipeDetailHTML(recipe, "From your recipe box", true);
+    detailContent.innerHTML = recipeDetailHTML(recipe, true);
   });
 
   function syncDetailFavButton(recipe) {
     const btn = $("#detail-fav-btn");
-    btn.textContent = recipe.favorite ? "★ Favourited" : "☆ Favourite";
+    // A filled star against an outline is the whole message here, so the
+    // word goes and the accessible name carries what the glyph cannot.
+    btn.textContent = recipe.favorite ? "★" : "☆";
     btn.setAttribute("aria-pressed", String(recipe.favorite));
+    btn.setAttribute("aria-label", recipe.favorite ? "Favourited" : "Favourite");
+    btn.classList.toggle("is-on", recipe.favorite);
   }
 
   // --- Import / export ---
@@ -864,7 +1057,7 @@
     // Nothing stored changed — only how amounts are shown.
     if (detailDialog.open && detailId) {
       const recipe = store.getById(detailId);
-      if (recipe) detailContent.innerHTML = recipeDetailHTML(recipe, "From your recipe box", true);
+      if (recipe) detailContent.innerHTML = recipeDetailHTML(recipe, true);
     }
     render();
   });
@@ -1047,9 +1240,52 @@
 
   // Escape and the backdrop close a <dialog> without going through any
   // button, so the lock is let go here rather than at each call site (J4.10).
+  //
+  // Every one of those exits also has to unwind the history entry the open
+  // pushed, or the entry outlives the recipe and Back re-opens something
+  // the person has already closed. `poppingBack` marks the close that Back
+  // itself caused — that entry is already gone.
   detailDialog.addEventListener("close", () => {
+    // Before the history guard: the lock goes whichever way the recipe
+    // closed, a handover to the editor included (J4.10).
     cookMode.leave();
     syncCookButton();
+    syncScrollLock();
+    unwind(currentRoute().name === "recipe");
+  });
+
+  recipeDialog.addEventListener("close", () => {
+    syncScrollLock();
+    unwind(isEditorRoute(currentRoute().name));
+  });
+
+  /**
+   * Back, Forward, or a hash the app did not set: make the screen match
+   * the address (J4.17, J2.11).
+   */
+  window.addEventListener("popstate", async () => {
+    const route = currentRoute();
+
+    // Leaving the editor by Back is still leaving the editor, so typed
+    // work gets the question it gets from Escape (J2.9). "Keep editing"
+    // puts the entry back, so Back still means Back next time.
+    if (recipeDialog.open && !isEditorRoute(route.name)) {
+      const hash = editorHash();
+      if (!(await tryCloseEditor({ quiet: true }))) {
+        pushRoute(hash);
+        return;
+      }
+    }
+
+    if (openFromHash()) return;
+
+    if (detailDialog.open) closeQuietly(detailDialog);
+    if (recipeDialog.open) closeQuietly(recipeDialog);
+    // Back into a recipe that has since been deleted or moved away: the
+    // address must not go on naming it. Only ever reached from a live
+    // navigation, so this cannot strip a link that is merely waiting on
+    // a sync — that path goes through openFromHash on load instead.
+    if (route.name !== "list") toListAddress();
   });
 
   $("#detail-cook-btn").addEventListener("click", async () => {
@@ -1072,12 +1308,20 @@
 
   $("#detail-edit-btn").addEventListener("click", () => {
     const recipe = store.getById(detailId);
-    detailDialog.close();
-    if (recipe) openRecipeDialog(recipe);
+    if (!recipe) {
+      detailDialog.close();
+      return;
+    }
+    // A handover, not an exit: the recipe's entry stays underneath so
+    // Back from the editor returns to the recipe you were reading.
+    closeQuietly(detailDialog);
+    openRecipeDialog(recipe);
   });
 
-  $("#detail-delete-btn").addEventListener("click", async () => {
-    const recipe = store.getById(detailId);
+  // Deleting happens from the editor (J4.20): by then you have said you
+  // mean to change this recipe, which the screen you cook from has not.
+  $("#edit-delete-btn").addEventListener("click", async () => {
+    const recipe = editingId && store.getById(editingId);
     if (!recipe) return;
     const ok = await RecipeAsk.ask(`Delete “${recipe.name}”? This can't be undone.`, {
       confirmLabel: "Delete",
@@ -1092,8 +1336,11 @@
         .deletePhoto(cloud.sync.bookId, recipe.id)
         .catch((err) => console.warn("Recipe Friend: could not remove the photo.", err));
     }
-    store.remove(detailId);
-    detailDialog.close();
+    store.remove(recipe.id);
+    // The editor closes without the unsaved-work guard: what it was
+    // holding was edits to a recipe that no longer exists.
+    editingId = null;
+    recipeDialog.close();
     toast("Recipe deleted.");
     render();
   });
@@ -1133,10 +1380,13 @@
 
   // Handle for the sync layer (account.js/sync.js): shared store plus a
   // way to redraw once remote changes land.
-  window.RecipeApp = { store, render, toast, showPendingShare };
+  window.RecipeApp = { store, render, toast, showPendingShare, openFromHash };
 
   render();
   handleIncomingShare();
+  // Signed out, or before the book has synced, there is nothing to open
+  // yet; account.js calls this again once there is.
+  openFromHash();
   // A share link opened in an already-loaded tab only changes the fragment.
   window.addEventListener("hashchange", handleIncomingShare);
 })();

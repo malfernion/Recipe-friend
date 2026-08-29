@@ -60,6 +60,18 @@ Someone types in a recipe from their head or a book.
    closes without asking.
 10. **Deleting a saved recipe asks first**, names the recipe, and says it
     cannot be undone. Answering no leaves it exactly where it was.
+11. **The editor has an address too, so Back closes it rather than the
+    app.** The recipe view got one first (J4.17), which taught people
+    that Back closes what is open — and made it worse that from the
+    editor it still walked out of the site, taking whatever had been
+    typed with it and asking nothing, since a navigation is not a
+    dismissal. Back is now a dismissal like any other and gets the same
+    question as Escape (J2.9); answering "keep editing" puts the entry
+    back, so Back still means Back next time. Editing a recipe stacks on
+    top of reading it, so Back from the editor returns to the recipe
+    rather than all the way out to the list. Deleting the recipe you were
+    editing leaves nothing to go back to, and the address stops naming
+    it rather than offering a way to reopen what is gone.
 
 ## J3 · Finding something to cook
 
@@ -110,9 +122,12 @@ Someone types in a recipe from their head or a book.
    propped against the bread bin does not lock halfway through. It is a
    toggle in the recipe view and it is **off until asked for** — a screen
    that never sleeps is a battery decision, not one to make for someone.
-10. It is let go when the recipe closes, however it closes — the Close
-    button, Escape, or the backdrop. A phone that goes back in a pocket
-    still awake is the failure this criterion exists to prevent.
+10. It is let go when the recipe closes, however it closes — the ×,
+    Escape, Back, handing over to the editor, or the backdrop where there
+    is one to click. (Full screen there is not: the recipe covers the
+    viewport on a phone in either orientation, so the backdrop is a way
+    out only on the sizes that keep a margin.) A phone that goes back in
+    a pocket still awake is the failure this criterion exists to prevent.
 11. It survives a glance away. Browsers drop a wake lock whenever the page
     is hidden, so looking at a text message would otherwise end it silently
     for the rest of the cook; it is taken again on returning.
@@ -125,6 +140,68 @@ Someone types in a recipe from their head or a book.
 14. Cook mode is never a reason a recipe fails to open. If the screen lock
     cannot be taken — an unsupported browser, a refusal, a low battery —
     the recipe still opens and the toggle simply reports that it is off.
+15. **The recipe takes the whole screen where the screen is small or
+    short.** A centred card spends height on a margin and a backdrop, and
+    a phone has none to spare: measured on a 375×667 phone, the card
+    showed the Ingredients heading and no ingredients. Either dimension
+    being tight — narrow, or short because the phone is on its side —
+    earns the full screen. Wide, tall screens keep the card.
+16. **Where there is width for two columns, ingredients and steps sit
+    side by side**, and the ingredients stay put while the method scrolls.
+    A phone on its side is short, not narrow, and the second column is
+    what makes that shape usable at all. A tablet held upright is neither,
+    and one column already reads well there.
+17. **An open recipe has an address.** Full-screen, it reads as a page,
+    and a page is left with the Back button — which on a bare dialog
+    walks out of the app, mid-cook. So opening one pushes
+    `#recipe=<id>`: Back closes the recipe, a reload comes back to it,
+    and closing it takes the entry with it. An address naming a recipe
+    that is not here opens nothing and keeps the fragment, because signed
+    in it may simply not have synced down yet.
+18. The Portions stepper sits with the ingredients it changes, under the
+    Ingredients heading rather than above it. Above, it read as being
+    about the recipe; the only things it changes are in the list below it.
+19. **The controls fit one row on a phone.** Favourite and Edit belong to
+    this recipe, so they run on inline from the last word of its title,
+    and Close — an ×, about the screen rather than the recipe — sits
+    opposite them. None of the three takes a row of its own: on a phone a
+    row of chrome is a row of ingredients nobody can see. What is left at
+    the foot of the view is reached for mid-cook and is **worded, not
+    drawn** — a glyph nobody recognises is a control nobody presses, so
+    Share says "Share". Favourite and Edit are the exception the title
+    line earns: a star and a pencil next to a recipe's name are read
+    without a caption, and each carries its accessible name anyway. Their
+    hit areas are 44px whatever size the glyph is drawn at.
+
+    Being inline, the pair can be pushed to the next line by a title that
+    happens to end near the edge — measured at 8% of widths between 320px
+    and 1200px across a range of title lengths. That is accepted: the
+    alternative tried was a flex row, which parks them against the right
+    margin of a wrapped title, level with the last line but nowhere near
+    it, and "after the title" stops meaning anything.
+20. **Deleting is done from the editor, not from the recipe you are
+    reading.** By the time the editor is open you have said you mean to
+    change this recipe, which the screen you cook from has not; and there
+    is nothing to delete until there is something saved, so a new recipe
+    and one still under review from a link do not offer it. Deleting
+    still asks first and names the recipe (J2.10).
+21. **Opening a recipe says which recipe opened.** Focus goes to the
+    heading, not to whichever control happens to be first in the markup —
+    which was the portions stepper, and then the favourite star, neither
+    of which names what has just filled the screen.
+22. **The page behind is held still.** A modal dialog makes the page
+    inert but leaves it scrollable: on a wide screen, turning the wheel
+    over the backdrop scrolled the list behind the open recipe by 500px,
+    so closing it left you somewhere you never chose to be. The lock goes
+    on the root element, because that is what scrolls — a rule on the
+    body alone does nothing.
+23. **Saving is the one filled button in the app.** With Edit reduced to
+    a glyph on the title line, the recipe view has no primary action to
+    compete with it, and the editor's Save keeps that weight at the foot
+    of the form. Its label stays on one line at every width: down to
+    360px the bar holds all three controls on one row, and below that
+    Save takes a row of its own rather than being shrunk or broken in
+    half.
 
 ## J5 · Bringing in a recipe from outside
 
@@ -294,6 +371,15 @@ accident:
 - Amounts below 0.05 display as 0 (J4.8).
 - Cook mode is remembered per device, not per person (J4.12).
 - Search results depend on the reader's unit preferences (J3.1).
+- A recipe's address (J4.17) carries an id and no recipe data. It opens
+  something only for someone who already has that recipe, so it is a
+  bookmark, not a second kind of share link (J6.6 still holds).
+- The recipe view keeps its full preamble — kicker, title, description,
+  meta and tags — above the ingredients on every screen. On the shortest
+  ones that is still most of the first screenful. Shrinking it was
+  considered and deliberately deferred: what it costs is measured in the
+  note below, so the next person to look does not have to measure it
+  again.
 
 ## What the tests cover, and what they do not
 
@@ -302,7 +388,8 @@ recipe is, what it says on screen, and what survives a round trip. Those
 are the failures that would be silent — a recipe quietly losing its tags is
 worse than a page that will not load.
 
-Four more things the tests do not reach, recorded so the gap is visible:
+Nine of the 99 criteria have no test naming them. Five more things the
+tests do not reach, recorded so the gap is visible:
 
 - **The 48-hour lifetime and single use of an invite** are the database's,
   not the app's (J7.4). The client asks only for links that have not
@@ -318,6 +405,32 @@ Four more things the tests do not reach, recorded so the gap is visible:
 - **Deployment and the keepalive ping** (J11) are a static host and two
   workflow files. There is no code to exercise, and J5.10 records a reason
   for a decision rather than a behaviour.
+- **What the recipe view looks like at a given size** (J4.15, J4.16,
+  J4.19, J4.23) is media queries and inline flow, and the stub DOM has no
+  layout: it has no viewport, so it cannot be asked what fits on one.
+  J4.17, J4.18, J4.20, J4.21, J4.22 and J2.11 are behaviour and markup and
+  are held by tests; the rest was measured in a real browser instead, and
+  the numbers are below so a regression has something to be a regression
+  from.
+
+  Opening this recipe — 11 ingredients, 8 steps, a three-line title —
+  and counting what is on screen before any scrolling:
+
+  | Viewport | Ingredients visible | Steps | Action bar |
+  |---|---|---|---|
+  | iPhone SE 375×667 | 0 → **3** | 0 | 197px, 3 rows → **85px, 1 row** |
+  | iPhone 14 393×852 | 0 → **7** | 0 | 197px → **85px** |
+  | Phone landscape 852×393 | 0 → 0 | 0 → 0 | 104px → **93px** |
+  | Narrow 320×568 | 0 → 0 | 0 | 197px → **85px** |
+  | iPad mini 744×1133 | 10 → **11** | 0 → **2** | 104px → **93px** |
+  | iPad mini 1133×744 | 3 → **5** | 0 → **5** | 104px → **93px** |
+  | Desktop 1440×900 | 7 → **10** | 0 → **7** | 104px → **93px** |
+
+  Two entries still read zero, and both are the deferred preamble rather
+  than the layout: at 320×568 and at 852×393 the kicker, title,
+  description, meta and tags come to more than the screen has, so the
+  first ingredient starts below the fold however much room the view
+  itself gives back.
 
 **The database is deliberately outside the net.** The row-level security
 policies, `redeem_invite`, `preview_invite` and the Storage rules are the

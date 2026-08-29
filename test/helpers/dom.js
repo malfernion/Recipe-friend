@@ -32,11 +32,26 @@ function makeElement(id) {
     setAttribute() {},
     getAttribute() { return null; },
     removeAttribute() {},
-    focus() {},
+    // Recorded rather than ignored: where focus lands when a screen opens
+    // is the first thing a screen reader says about it.
+    focus() { el.focused = true; },
     select() {},
     click() { el.fire("click", {}); },
     showModal() { el.open = true; },
-    close() { el.open = false; },
+    /*
+      A real <dialog> fires `close` whenever it closes, however it closes.
+      The stub used not to, so every side effect hung on that event —
+      letting go of the wake lock, unwinding a history entry — was invisible
+      to any test that closed a dialog through a button rather than firing
+      `close` by hand. Closing an already-closed dialog is a no-op, as in
+      the browser.
+    */
+    close(returnValue) {
+      if (!el.open) return;
+      if (returnValue !== undefined) el.returnValue = returnValue;
+      el.open = false;
+      el.fire("close");
+    },
     reset() {},
     reportValidity() { return true; },
     replaceWith() {},
@@ -138,7 +153,6 @@ function makeWindow() {
   const win = {
     document,
     location: { hash: "", origin: "https://test.local", pathname: "/", search: "" },
-    history: { replaceState() {} },
     navigator: { clipboard: { writeText: async () => {} } },
     sessionStorage: (() => {
       const m = new Map();
@@ -149,14 +163,64 @@ function makeWindow() {
       };
     })(),
     CSS: { escape: (s) => s },
+    // Window-level listeners, so a test can drive popstate the way the
+    // Back button does. addEventListener is replaced below, once the
+    // stack it writes into exists.
+    _events: new Map(),
     setTimeout: (fn) => { void fn; return 0; }, // toasts and coalesced redraws: don't run
     clearTimeout() {},
     confirm: () => true,
     alert() {},
     prompt: () => "",
-    addEventListener() {},
     requestAnimationFrame: (fn) => { void fn; return 0; },
   };
+
+  win.addEventListener = (type, fn) => {
+    if (!win._events.has(type)) win._events.set(type, []);
+    win._events.get(type).push(fn);
+  };
+  /** Drive a window-level listener, the way a test drives an element's. */
+  win.fire = (type, event = {}) => {
+    const out = (win._events.get(type) || []).map((fn) => fn(event));
+    return out.length === 1 ? out[0] : Promise.all(out);
+  };
+
+  /*
+    A history stack real enough to answer the question the app asks it:
+    does going back close the recipe, or leave the app? Entries hold the
+    hash they were pushed with; back() pops one, restores the hash of
+    whatever is underneath, and fires popstate — which is exactly the
+    sequence a phone's Back button produces.
+  */
+  const stack = [{ hash: "" }];
+  win.history = {
+    get length() { return stack.length; },
+    pushState(state, _title, url) {
+      stack.push({ hash: String(url || "").replace(/^[^#]*/, "") });
+      win.location.hash = stack[stack.length - 1].hash;
+    },
+    replaceState(state, _title, url) {
+      const hash = String(url || "").replace(/^[^#]*/, "");
+      stack[stack.length - 1] = { hash };
+      win.location.hash = hash;
+    },
+    /*
+      Returns whatever the popstate listeners return, so a test can await
+      the navigation. Deciding whether to close the editor means asking
+      about unsaved work, which is a promise; without this a test reads
+      the DOM a turn before the answer lands.
+    */
+    back() {
+      if (stack.length <= 1) {
+        win.leftTheApp = true; // what a bare <dialog> does without an address
+        return undefined;
+      }
+      stack.pop();
+      win.location.hash = stack[stack.length - 1].hash;
+      return win.fire("popstate", { state: null });
+    },
+  };
+
   win.window = win;
   return win;
 }
