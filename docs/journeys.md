@@ -146,11 +146,20 @@ Someone types in a recipe from their head or a book.
     showed the Ingredients heading and no ingredients. Either dimension
     being tight — narrow, or short because the phone is on its side —
     earns the full screen. Wide, tall screens keep the card.
-16. **Where there is width for two columns, ingredients and steps sit
-    side by side**, and the ingredients stay put while the method scrolls.
-    A phone on its side is short, not narrow, and the second column is
-    what makes that shape usable at all. A tablet held upright is neither,
-    and one column already reads well there.
+16. **Where there is width to spare, each list runs into two columns —
+    but the ingredients still sit above the steps.** A phone on its side
+    is short, not narrow, and a second column is what makes that shape
+    usable at all; a tablet held upright is neither, and one column
+    already reads well there.
+
+    The width goes inside each list rather than between the two.
+    Ingredients beside steps was tried first, with the ingredients held
+    sticky, and it fails the thing this view is for: you get the top half
+    of the shopping beside the top half of the method, the two halves
+    scroll independently of each other, and neither list is ever
+    finished. Stacked, there is one thread to follow and one scroll to
+    follow it with — all of the ingredients, then all of the method.
+    No item is ever split across a column break.
 17. **An open recipe has an address.** Full-screen, it reads as a page,
     and a page is left with the Back button — which on a bare dialog
     walks out of the app, mid-cook. So opening one pushes
@@ -423,8 +432,13 @@ tests do not reach, recorded so the gap is visible:
   | Phone landscape 852×393 | 0 → 0 | 0 → 0 | 104px → **93px** |
   | Narrow 320×568 | 0 → 0 | 0 | 197px → **85px** |
   | iPad mini 744×1133 | 10 → **11** | 0 → **2** | 104px → **93px** |
-  | iPad mini 1133×744 | 3 → **5** | 0 → **5** | 104px → **93px** |
-  | Desktop 1440×900 | 7 → **10** | 0 → **7** | 104px → **93px** |
+  | iPad mini 1133×744 | 3 → **10** | 0 | 104px → **93px** |
+  | Desktop 1440×900 | 7 → **11** | 0 → **2** | 104px → **93px** |
+
+  On the two wide entries the steps count is the intended trade, not a
+  loss: with the lists stacked (J4.16) the method sits below a complete
+  ingredient list rather than beside half of one. Reading the whole of
+  what you need to fetch, in one pass, is what those screens are for.
 
   Two entries still read zero, and both are the deferred preamble rather
   than the layout: at 320×568 and at 852×393 the kicker, title,

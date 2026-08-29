@@ -644,7 +644,7 @@
           : ""
       }
       <div class="detail-body">
-        <section class="detail-col detail-col-ingredients">
+        <section class="detail-col">
           <h3>Ingredients</h3>
           ${scaleControls}
           <ul class="detail-ingredients">
@@ -653,7 +653,7 @@
               .join("")}
           </ul>
         </section>
-        <section class="detail-col detail-col-steps">
+        <section class="detail-col">
           <h3>Steps</h3>
           <ol class="detail-steps">
             ${recipe.steps.map((s) => `<li>${escapeHTML(s)}</li>`).join("")}
