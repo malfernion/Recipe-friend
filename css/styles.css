@@ -346,15 +346,6 @@ body {
   color: var(--star);
 }
 
-.icon-btn-danger:hover {
-  color: var(--danger);
-}
-
-/* The close control: bigger glyph, since "×" reads smaller than it sets. */
-#detail-close-btn {
-  font-size: 1.75rem;
-}
-
 .btn-ghost {
   border-bottom: 1px solid transparent;
 }
@@ -898,6 +889,28 @@ body {
   flex: 1;
 }
 
+/*
+  One line box for every control in the bar, whatever glyph it carries.
+  Without this the moon on the cook toggle makes its line taller than
+  its neighbours', and the two labels sit a pixel apart — centred boxes
+  do not fix a difference that is inside the box.
+*/
+.detail-actions .btn {
+  display: inline-flex;
+  align-items: center;
+  line-height: 1.2;
+}
+
+/*
+  A label in a bar is a name, not a paragraph: "Save changes" broken
+  across two lines makes the button taller than its neighbours and reads
+  as two words that lost each other. If a bar runs out of room the fix is
+  the bar's, not the label's.
+*/
+.dialog-actions .btn {
+  white-space: nowrap;
+}
+
 .confirm-dialog {
   width: min(28rem, calc(100vw - 2rem));
 }
@@ -913,21 +926,85 @@ body {
 
 /* ---------- Detail dialog ---------- */
 /*
-  Favourite and Close, above the recipe. Sticky so Close stays reachable
-  through a long method — on a full-screen view there is no backdrop left
-  to tap, so the × is the way out and it cannot scroll away.
+  The title row. Favourite sits inline at the end of the title, where it
+  reads as being about this recipe; Close sits opposite, where a way out
+  belongs. Neither gets a row of its own — on a phone a row of chrome is
+  a row of ingredients you cannot see.
 */
-.detail-topbar {
+.detail-head {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   gap: 0.5rem;
-  position: sticky;
-  top: calc(-1 * var(--dialog-pad-t, 0px));
-  z-index: 2;
-  margin: calc(-1 * var(--dialog-pad-t, 0px)) 0 0.25rem;
-  padding: 0.35rem 0;
-  background: var(--paper-raised);
 }
+
+.detail-head-text {
+  flex: 1;
+  min-width: 0;
+}
+
+/*
+  Close stays reachable through a long method: full screen, there is no
+  backdrop left to tap, so the × is the way out and it must not scroll
+  away. Pulled up through the dialog's own padding so it sits at the top
+  of the screen rather than below it.
+*/
+#detail-close-btn {
+  flex: none;
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  margin-top: -0.35rem;
+  font-size: 1.75rem; /* "×" reads smaller than it sets */
+}
+
+/*
+  Favourite and Edit, inline after the last line of the title rather than
+  stacked under it. Both keep a 44px target, but the glyph sits at its
+  left edge rather than its centre: centred, the box's own padding put a
+  word-space of dead air between the title and its controls and they
+  stopped reading as one thing. The target grows rightward instead, into
+  space nothing else wants.
+*/
+/*
+  A fixed box rather than one the glyph sizes, and centred within it: ☆
+  and ✎ have different heights and sit differently on the baseline, so
+  left to their own metrics the two controls line up with each other only
+  by accident. Equal boxes, centred contents, one vertical-align — now
+  they sit level whatever glyphs they carry.
+*/
+.detail-title-btn {
+  position: relative;
+  width: auto;
+  min-width: 0;
+  height: 1.5em;
+  line-height: 1;
+  align-items: center;
+  justify-content: center;
+  vertical-align: middle;
+  margin-left: 0.45rem;
+  font-size: 1.35rem;
+  color: var(--ink-faint);
+}
+
+/*
+  The 44px target, added on top rather than built into the box. Two 44px
+  boxes in the run of text are wide enough that a title filling its line
+  pushes them both onto a line of their own — which they then sit alone
+  on, under a heading, looking like a mistake. An overlay takes no room
+  in the flow, so the glyphs stay a couple of characters wide and go on
+  following the last word, while the thing a finger has to hit stays the
+  size a finger needs.
+*/
+.detail-title-btn::after {
+  content: "";
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 2.75rem;
+  height: 2.75rem;
+  transform: translate(-50%, -50%);
+}
+
 
 /*
   Ingredients and steps, side by side where there is width for them.
@@ -961,6 +1038,21 @@ body {
   font-weight: 420;
   font-size: 2.1rem;
   line-height: 1.12;
+}
+
+/*
+  Favourite and Edit run on from the last word of the title rather than
+  sitting in a row of their own.
+
+  A flex row was tried instead, and put them hard against the right edge
+  of a wrapped title — level with the last line but a long way from it,
+  which is not "after the title" in any sense a reader would recognise.
+  Inline flow keeps them next to the words. The cost is that a title
+  ending near the edge can push them to the next line, so they are
+  wrapped in one nowrap group: if they go, they go together.
+*/
+.detail-title-btns {
+  white-space: nowrap;
 }
 
 .detail-img {
@@ -1203,15 +1295,29 @@ body {
   }
 
   /*
-    The recipe's bar does not wrap. A growing spacer and flex-wrap cannot
-    both be had: the spacer eats the rest of line one and every control
-    after it starts line two, which is what made this a three-row
-    staircase. Four short controls fit one line at 320px, so the wrap is
-    what goes.
+    Neither the recipe's bar nor the editor's wraps. A growing spacer and
+    flex-wrap cannot both be had: the spacer eats the rest of line one and
+    every control after it starts line two — which made the recipe's bar a
+    three-row staircase, and pushed the editor's Save onto a row of its
+    own, below the Cancel it is meant to outrank. Both bars are short
+    enough to hold one line at 320px, so the wrap is what goes.
+
+    The other dialogs keep wrapping: their bars carry longer labels and
+    no spacer to strand them.
   */
-  .detail-actions {
+  .detail-actions,
+  #recipe-form .dialog-actions {
     flex-wrap: nowrap;
     gap: 0.4rem;
+  }
+
+  .detail-actions .btn,
+  #recipe-form .dialog-actions .btn {
+    padding-inline: 0.4rem;
+  }
+
+  #recipe-form .dialog-actions .btn-primary {
+    padding-inline: 0.6rem;
   }
 
   /*
@@ -1260,17 +1366,20 @@ body {
     line. The tracking and the padding give up those pixels instead; the
     44px targets and the words on the controls both stay.
   */
-  .detail-actions {
+  .detail-actions,
+  #recipe-form .dialog-actions {
     gap: 0.25rem;
   }
 
-  .detail-actions .btn {
+  .detail-actions .btn,
+  #recipe-form .dialog-actions .btn {
     letter-spacing: 0.1em;
     padding-inline: 0.15rem;
   }
 
-  .detail-actions .btn-primary {
-    padding: 0.7rem 0.85rem;
+  .detail-actions .btn-primary,
+  #recipe-form .dialog-actions .btn-primary {
+    padding: 0.7rem 0.6rem;
   }
 
   /*
@@ -1287,6 +1396,22 @@ body {
 
   .scale-value {
     min-width: 4.25rem;
+  }
+
+  /*
+    Below this, "Delete", "Cancel" and "Save changes" do not fit one line
+    at any tracking worth reading, so the editor's bar wraps after all —
+    and the spacer goes, or it would strand Save on a line by pushing
+    everything after it down. Save lands on the second row on its own,
+    which is where a primary action can sit without looking lost.
+  */
+  #recipe-form .dialog-actions {
+    flex-wrap: wrap;
+    row-gap: 0.5rem;
+  }
+
+  #recipe-form .dialog-actions .dialog-actions-spacer {
+    display: none;
   }
 }
 

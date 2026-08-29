@@ -272,6 +272,10 @@
           "Everything below is the version you were sent.";
       }
     }
+    // Only an existing recipe can be deleted: not a new one, and not a
+    // recipe arriving from a link, which is not yours until you save it.
+    const deleteBtn = $("#edit-delete-btn");
+    if (deleteBtn) deleteBtn.hidden = !editingId;
     $("#save-recipe-btn").textContent = review
       ? existing
         ? `Replace “${existing.name.length > 28 ? existing.name.slice(0, 27) + "…" : existing.name}”`
@@ -400,7 +404,7 @@
           render();
           if (detailDialog.open && detailId) {
             const recipe = store.getById(detailId);
-            if (recipe) detailContent.innerHTML = recipeDetailHTML(recipe, "From your recipe box", true);
+            if (recipe) detailContent.innerHTML = recipeDetailHTML(recipe, true);
           }
         }, 60);
       })
@@ -556,8 +560,20 @@
   });
 
   // --- Detail dialog ---
+  /**
+   * The kicker and title are markup rather than rendered string, because
+   * the Favourite control sits inline at the end of the title and Close
+   * sits opposite it — both are real elements, and neither survives having
+   * the content re-rendered under it when a photo resolves or the portions
+   * change.
+   */
+  function renderDetailHead(recipe) {
+    $("#detail-kicker").textContent = "From your recipe box";
+    $("#detail-title-text").textContent = recipe.name;
+  }
+
   /** scalable: render the portion-scaling controls and apply detailScale. */
-  function recipeDetailHTML(recipe, kicker, scalable) {
+  function recipeDetailHTML(recipe, scalable) {
     const factor = scalable ? detailScale : 1;
     const scaledServings = recipe.servings ? Math.round(recipe.servings * factor * 10) / 10 : null;
     const scaleValue = recipe.servings
@@ -583,8 +599,6 @@
     ].filter(Boolean);
 
     return `
-      <p class="detail-kicker">${escapeHTML(kicker)}</p>
-      <h2 class="detail-title">${escapeHTML(recipe.name)}</h2>
       ${(() => {
         const src = photoSrc(recipe);
         return src
@@ -668,7 +682,8 @@
     // favourite toggle); reset it when a different recipe opens.
     if (detailId !== recipe.id || !wasOpen) detailScale = 1;
     detailId = recipe.id;
-    detailContent.innerHTML = recipeDetailHTML(recipe, "From your recipe box", true);
+    renderDetailHead(recipe);
+    detailContent.innerHTML = recipeDetailHTML(recipe, true);
     syncDetailFavButton(recipe);
     syncMoveButton();
     syncCookButton();
@@ -724,7 +739,7 @@
       const next = action === "up" ? detailScale + 0.5 : detailScale - 0.5;
       detailScale = Math.min(8, Math.max(0.5, next));
     }
-    detailContent.innerHTML = recipeDetailHTML(recipe, "From your recipe box", true);
+    detailContent.innerHTML = recipeDetailHTML(recipe, true);
   });
 
   function syncDetailFavButton(recipe) {
@@ -913,7 +928,7 @@
     // Nothing stored changed — only how amounts are shown.
     if (detailDialog.open && detailId) {
       const recipe = store.getById(detailId);
-      if (recipe) detailContent.innerHTML = recipeDetailHTML(recipe, "From your recipe box", true);
+      if (recipe) detailContent.innerHTML = recipeDetailHTML(recipe, true);
     }
     render();
   });
@@ -1153,8 +1168,10 @@
     if (recipe) openRecipeDialog(recipe);
   });
 
-  $("#detail-delete-btn").addEventListener("click", async () => {
-    const recipe = store.getById(detailId);
+  // Deleting happens from the editor (J4.20): by then you have said you
+  // mean to change this recipe, which the screen you cook from has not.
+  $("#edit-delete-btn").addEventListener("click", async () => {
+    const recipe = editingId && store.getById(editingId);
     if (!recipe) return;
     const ok = await RecipeAsk.ask(`Delete “${recipe.name}”? This can't be undone.`, {
       confirmLabel: "Delete",
@@ -1169,8 +1186,11 @@
         .deletePhoto(cloud.sync.bookId, recipe.id)
         .catch((err) => console.warn("Recipe Friend: could not remove the photo.", err));
     }
-    store.remove(detailId);
-    detailDialog.close();
+    store.remove(recipe.id);
+    // The editor closes without the unsaved-work guard: what it was
+    // holding was edits to a recipe that no longer exists.
+    editingId = null;
+    recipeDialog.close();
     toast("Recipe deleted.");
     render();
   });

@@ -146,12 +146,37 @@ Someone types in a recipe from their head or a book.
 18. The Portions stepper sits with the ingredients it changes, under the
     Ingredients heading rather than above it. Above, it read as being
     about the recipe; the only things it changes are in the list below it.
-19. **The controls fit one row on a phone.** Favourite and Close are
-    about the screen rather than the recipe, so they sit above it and
-    Close is an ×; what stays below is what is reached for mid-cook.
-    Delete and Share carry glyphs, and deleting still asks first and
-    names the recipe (J2.10) — a guarded destructive control may be an
-    icon, an unguarded one may not.
+19. **The controls fit one row on a phone.** Favourite and Edit belong to
+    this recipe, so they run on inline from the last word of its title,
+    and Close — an ×, about the screen rather than the recipe — sits
+    opposite them. None of the three takes a row of its own: on a phone a
+    row of chrome is a row of ingredients nobody can see. What is left at
+    the foot of the view is reached for mid-cook and is **worded, not
+    drawn** — a glyph nobody recognises is a control nobody presses, so
+    Share says "Share". Favourite and Edit are the exception the title
+    line earns: a star and a pencil next to a recipe's name are read
+    without a caption, and each carries its accessible name anyway. Their
+    hit areas are 44px whatever size the glyph is drawn at.
+
+    Being inline, the pair can be pushed to the next line by a title that
+    happens to end near the edge — measured at 8% of widths between 320px
+    and 1200px across a range of title lengths. That is accepted: the
+    alternative tried was a flex row, which parks them against the right
+    margin of a wrapped title, level with the last line but nowhere near
+    it, and "after the title" stops meaning anything.
+20. **Deleting is done from the editor, not from the recipe you are
+    reading.** By the time the editor is open you have said you mean to
+    change this recipe, which the screen you cook from has not; and there
+    is nothing to delete until there is something saved, so a new recipe
+    and one still under review from a link do not offer it. Deleting
+    still asks first and names the recipe (J2.10).
+21. **Saving is the one filled button in the app.** With Edit reduced to
+    a glyph on the title line, the recipe view has no primary action to
+    compete with it, and the editor's Save keeps that weight at the foot
+    of the form. Its label stays on one line at every width: down to
+    360px the bar holds all three controls on one row, and below that
+    Save takes a row of its own rather than being shrunk or broken in
+    half.
 
 ## J5 · Bringing in a recipe from outside
 
@@ -338,7 +363,7 @@ recipe is, what it says on screen, and what survives a round trip. Those
 are the failures that would be silent — a recipe quietly losing its tags is
 worse than a page that will not load.
 
-Eight of the 94 criteria have no test naming them. Five more things the
+Nine of the 96 criteria have no test naming them. Five more things the
 tests do not reach, recorded so the gap is visible:
 
 - **The 48-hour lifetime and single use of an invite** are the database's,
@@ -356,24 +381,24 @@ tests do not reach, recorded so the gap is visible:
   workflow files. There is no code to exercise, and J5.10 records a reason
   for a decision rather than a behaviour.
 - **What the recipe view looks like at a given size** (J4.15, J4.16,
-  J4.19) is media queries, and the stub DOM has no layout: it has no
-  viewport, so it cannot be asked what fits on one. J4.17 and J4.18 are
-  behaviour and markup and are held by tests; the rest was measured in a
-  real browser instead, and the numbers are below so a regression has
-  something to be a regression from.
+  J4.19, J4.21) is media queries and inline flow, and the stub DOM has no
+  layout: it has no viewport, so it cannot be asked what fits on one.
+  J4.17, J4.18 and J4.20 are behaviour and markup and are held by tests;
+  the rest was measured in a real browser instead, and the numbers are
+  below so a regression has something to be a regression from.
 
   Opening this recipe — 11 ingredients, 8 steps, a three-line title —
   and counting what is on screen before any scrolling:
 
   | Viewport | Ingredients visible | Steps | Action bar |
   |---|---|---|---|
-  | iPhone SE 375×667 | 0 → **2** | 0 | 197px, 3 rows → **85px, 1 row** |
+  | iPhone SE 375×667 | 0 → **3** | 0 | 197px, 3 rows → **85px, 1 row** |
   | iPhone 14 393×852 | 0 → **7** | 0 | 197px → **85px** |
   | Phone landscape 852×393 | 0 → 0 | 0 → 0 | 104px → **93px** |
   | Narrow 320×568 | 0 → 0 | 0 | 197px → **85px** |
   | iPad mini 744×1133 | 10 → **11** | 0 → **2** | 104px → **93px** |
-  | iPad mini 1133×744 | 3 → **5** | 0 → **4** | 104px → **93px** |
-  | Desktop 1440×900 | 7 → **9** | 0 → **7** | 104px → **93px** |
+  | iPad mini 1133×744 | 3 → **5** | 0 → **5** | 104px → **93px** |
+  | Desktop 1440×900 | 7 → **10** | 0 → **7** | 104px → **93px** |
 
   Two entries still read zero, and both are the deferred preamble rather
   than the layout: at 320×568 and at 852×393 the kicker, title,

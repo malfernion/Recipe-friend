@@ -604,6 +604,7 @@ test("J2.9 · Cancel is an explicit choice, so it does not ask", () => {
 
 test("J2.10 · deleting a recipe asks first, and no means no", async () => {
   const ui = openedDinner();
+  ui.el("detail-edit-btn").fire("click"); // deleting lives in the editor (J4.20)
   const dialog = ui.el("confirm-dialog");
   const asked = [];
   const show = dialog.showModal;
@@ -613,16 +614,43 @@ test("J2.10 · deleting a recipe asks first, and no means no", async () => {
   };
 
   dialog.answer = "";
-  await ui.el("detail-delete-btn").fire("click");
+  await ui.el("edit-delete-btn").fire("click");
   assert.equal(ui.store.recipes.length, 1, "answering no leaves the recipe where it was");
-  assert.equal(ui.el("detail-dialog").open, true, "and does not close the recipe either");
+  assert.equal(ui.el("recipe-dialog").open, true, "and does not close the editor either");
   assert.match(asked[0], /Dinner/, "the recipe is named rather than described as 'this recipe'");
   assert.match(asked[0], /can't be undone/);
 
   dialog.answer = "yes";
-  await ui.el("detail-delete-btn").fire("click");
+  await ui.el("edit-delete-btn").fire("click");
   assert.deepEqual(ui.store.recipes, [], "and yes still deletes it");
-  assert.equal(ui.el("detail-dialog").open, false);
+  assert.equal(ui.el("recipe-dialog").open, false);
+});
+
+test("J4.20 · there is nothing to delete until there is something saved", () => {
+  const ui = loadUI();
+
+  ui.el("add-recipe-btn").fire("click");
+  assert.equal(ui.el("edit-delete-btn").hidden, true, "a recipe not yet written has nothing to delete");
+
+  const saved = ui.store.add(DINNER);
+  ui.app.render();
+  openDetail(ui, saved.id);
+  ui.el("detail-edit-btn").fire("click");
+  assert.equal(ui.el("edit-delete-btn").hidden, false, "editing one that exists does");
+});
+
+test("J4.20 · a recipe arriving from a link cannot be deleted before it is yours", async () => {
+  const ui = loadUI();
+  ui.el("paste-input").value = JSON.stringify({
+    name: "Someone Else's Stew",
+    ingredients: [{ amount: 1, unit: "kg", item: "beef" }],
+    steps: ["Braise it."],
+  });
+  await ui.el("paste-save-btn").fire("click");
+
+  assert.equal(ui.el("dialog-title").textContent, "Review recipe", "the review form is open");
+  assert.equal(ui.el("edit-delete-btn").hidden, true,
+    "there is nothing of yours to delete — it is not in the box until you save it");
 });
 
 // ---------------------------------------------------------------------
@@ -709,7 +737,7 @@ test("J4.14 · cook mode is never a reason a recipe fails to open", async () => 
   await new Promise((r) => setImmediate(r));
 
   assert.equal(ui.el("detail-dialog").open, true, "the recipe is still on screen");
-  assert.match(ui.el("detail-content").innerHTML, /Slow Braise/);
+  assert.equal(ui.el("detail-title-text").textContent, "Slow Braise");
 });
 
 // ---------------------------------------------------------------------
@@ -760,7 +788,7 @@ test("J4.17 · a recipe reopened from its address is the one named", () => {
   assert.equal(ui.app.openFromHash(), true);
 
   assert.equal(ui.el("detail-dialog").open, true, "the recipe came back");
-  assert.match(ui.el("detail-content").innerHTML, /<h2 class="detail-title">Dinner</);
+  assert.equal(ui.el("detail-title-text").textContent, "Dinner");
   assert.doesNotMatch(ui.el("detail-content").innerHTML, /Something Else/,
     `and it is the recipe the address named, not merely ${other.name}`);
 });
