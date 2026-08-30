@@ -514,6 +514,16 @@ so the app can tell them what to buy.
    recipe, where the recipe as written is one tap away at full portions; a
    shopping list that says "0 g butter" is telling you to buy nothing.
    Below that size the line shows the item without an amount.
+
+   **And a remainder that small is finished.** Settle a kilo of the
+   1000.4 g a plan happens to ask for and four tenths of a gram are
+   left: the line stayed under "to buy" saying "1000 g sorted" with
+   nothing after it, and Copy sent you out for caster sugar you already
+   had. Nobody buys a thousandth of an egg, so what cannot be said has
+   been dealt with. It takes something having been settled against the
+   line first — otherwise a genuine pinch of saffron would mark itself
+   bought the moment it appeared, which is the same mistake pointing the
+   other way.
 4. Lines combine on the item as written, tolerating simple plurals the way
    search does (J3.4). The app already believes "tomatoes" and "tomato"
    are the same word when looking for a recipe; believing it here too is
@@ -523,8 +533,13 @@ so the app can tell them what to buy.
    typed in first. The app has never pluralised anything and this does
    not start: every spelling it can print is one somebody typed, and a
    candidate has to be another contributor's word plus an "s" or an "es".
-   One of a thing keeps its own word, and what each recipe wrote is still
-   under the line (J13.7), so the choice is visible rather than silent.
+   **Exactly one of a thing asks the same question backwards** and gets
+   a singular one of them wrote, so a shortfall of one onion is "1 onion"
+   rather than "1 onions" — on screen and in the copy, which are named
+   together. Where nobody typed the other spelling the line keeps its
+   own, so "1 gooses" stands as written rather than being guessed at, and
+   what each recipe wrote is still under the line (J13.7), so the choice
+   is visible rather than silent.
 5. **Amounts combine only within a unit family.** 400 g tomatoes and 1 tin
    tomatoes are two lines under one heading, because nothing in the app
    knows how big a tin is — the same honesty as J4.6 letting "clove" and
@@ -613,7 +628,11 @@ so the app can tell them what to buy.
    sorts where it matters (J14.9).
 8. A recipe in the live plan says "In the plan" instead, which is more use
    than a date while you are deciding, and stops it being added twice by
-   accident.
+   accident. **It is marked as the live thing it is**, in the accent the
+   Plan count wears in the header, because they are the same fact said in
+   two places. A date is history and stays in the colour of the meta it
+   sits under — set alike, the two read as one more line of particulars
+   and the live one stops announcing itself.
 9. **Not planned lately** sits beside Favourites and combines with search
    and tags as the other chips do (J3.2): least recently planned first,
    and never-planned before them. **It orders the list rather than

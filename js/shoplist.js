@@ -204,12 +204,25 @@
     // are worked out here precisely so the two cannot disagree about
     // which number is which.
     const total = displayAmount(line, prefs, line.required);
-    // All three read the same item, and it is the one J13.4 has earned the
-    // right to choose between (see `plurally`).
-    const named = { ...line, item: plurally(line, total.amount) };
-    const whole = render(named, total);
-    const short = render(named, displayAmount(line, prefs, outstanding));
-    const done = render(named, displayAmount(line, prefs, sorted));
+    // Each of the three names its own item, because each is a different
+    // number of the thing: a line of six reads "6 onions" and the one
+    // still to get reads "1 onion", both in words somebody typed (J13.4,
+    // see `naming`).
+    const named = (shown) => render({ ...line, item: naming(line, shown.amount) }, shown);
+    const whole = named(total);
+    const short = named(displayAmount(line, prefs, outstanding));
+    const done = named(displayAmount(line, prefs, sorted));
+
+    // A remainder too small to name is a remainder that is finished
+    // (J13.3). Settle a kilo of the 1000.4 g a plan asks for and four
+    // tenths of a gram are left: the line stayed under "to buy" reading
+    // "1000 g sorted" with nothing after it, and Copy — which takes the
+    // shortfall (J13.10) — sent you for caster sugar you already had.
+    // Nobody can buy a thousandth of an egg, so what cannot be said is
+    // done. Guarded on something having been settled, or a genuine pinch
+    // of saffron would mark itself bought the moment it appeared.
+    const unbuyable = sorted > 0 && outstanding > 0 && short.measure === "";
+    const remaining = unbuyable ? 0 : outstanding;
 
     const ratio = whole.amount !== null && line.required > 0 ? whole.amount / line.required : 0;
 
@@ -224,7 +237,7 @@
       required: line.required,
       have: settledAmounts.have,
       got: settledAmounts.got,
-      outstanding,
+      outstanding: remaining,
       // What is actually missing, ready to go to a shop (J13.10). On a
       // line nothing has been said about this is the total, word for
       // word — which is what keeps an unsettled line reading exactly as
@@ -235,11 +248,11 @@
       // settled and some of it is not. The total stays on screen beside
       // what it is made of (J13.7), because that is what the plan asks
       // for; this is the half of the line a shop cares about.
-      partText: sorted > 0 && outstanding > 0 ? partly(done.measure, short.measure) : "",
+      partText: sorted > 0 && remaining > 0 ? partly(done.measure, short.measure) : "",
       // Still wanted, in the basket, or already at home. A line settled
       // both ways reads as in the basket: it is the half that is still
       // worth seeing on the list.
-      settled: outstanding > 0 ? "" : settledAmounts.got > 0 ? "got" : "have",
+      settled: remaining > 0 ? "" : settledAmounts.got > 0 ? "got" : "have",
       toTaste: line.toTaste,
       // What the line is made of (J13.7), in the same unit the line is
       // shown in — "6 onions · Bolognese 4, Curry 2".
@@ -262,19 +275,28 @@
    * wrote is not inventing anything. So where the recipes disagree and the
    * line asks for more than one, it prints a plural somebody already
    * typed: a spelling that is another contributor's plus an "s" or an
-   * "es", and nothing else qualifies. One thing keeps its own word,
-   * because "1 onions" would be a worse lie than the one this fixes.
+   * "es", and nothing else qualifies. Exactly one of a thing asks the
+   * same question backwards and gets the singular somebody typed, which
+   * is what keeps a shortfall of one out of "1 onions" — on screen and
+   * in the copy, since both are named here.
    *
    * What each of them wrote still sits under the line (J13.7), so the
    * choice is visible rather than silent.
    */
-  function plurally(line, amount) {
-    if (!(amount > 1)) return line.item;
+  function naming(line, amount) {
     const written = [...line.from.values()].map((c) => c.item);
-    const plural = written.find((a) =>
-      written.some((b) => a !== b && (a === `${b}s` || a === `${b}es`))
-    );
-    return plural || line.item;
+    const isPluralOf = (a, b) => a === `${b}s` || a === `${b}es`;
+    // More than one wants a plural somebody wrote; exactly one wants the
+    // singular somebody wrote. Neither invents a word: if nobody typed
+    // the other spelling the line keeps its own, so "1 gooses" stays as
+    // it was written rather than being guessed at.
+    if (amount > 1) {
+      return written.find((a) => written.some((b) => a !== b && isPluralOf(a, b))) || line.item;
+    }
+    if (amount === 1) {
+      return written.find((a) => written.some((b) => a !== b && isPluralOf(b, a))) || line.item;
+    }
+    return line.item;
   }
 
   /**

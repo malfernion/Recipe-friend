@@ -638,6 +638,13 @@ body {
   color: var(--ink-faint);
 }
 
+/* "In the plan" is the live half of that line, and takes the accent the
+   Plan count wears in the header — the same fact, said in two places. A
+   date is history and stays with the meta it sits under. */
+.card-planned-live {
+  color: var(--accent);
+}
+
 .card-tags {
   display: flex;
   gap: 0.3rem 0.7rem;

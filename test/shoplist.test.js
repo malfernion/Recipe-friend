@@ -469,18 +469,35 @@ test("J13.10 · the screen and the copy do not disagree about which number is wh
   assert.match(copyText(build(plan, BOOK, METRIC)), /^500 g tomatoes$/m);
 });
 
-test("J13.10 · a shortfall too small to say is not copied as a nothing", () => {
-  // A twelfth of a teaspoon left over: J13.3 says a shopping quantity is
-  // never rendered as 0, and the shortfall goes through the same rule the
-  // total does rather than a second one of its own.
+test("J13.3 · a remainder too small to name is a remainder that is finished", () => {
+  // A fiftieth of a teaspoon left of a half: too small for J13.3 to say
+  // anything about, and nobody can buy it. The line leaves the shop
+  // rather than sitting there saying "½ tsp sorted" with a hole where
+  // the rest of the sentence should be — and Copy stops sending anyone
+  // out for it.
   let plan = addMeal(emptyPlan(1000), CAKE, 1001); // half a teaspoon
   const key = build(plan, BOOK, METRIC).lines[0].key;
   plan = win.RecipePlan.settle(plan, key, "have", 0.48, 2000);
 
-  const line = build(plan, BOOK, METRIC).lines[0];
-  assert.equal(line.shortfall, null, "an amount this size says nothing about itself");
-  assert.equal(line.shortfallText, "bicarbonate of soda");
-  assert.equal(line.partText, "½ tsp sorted", "half a sentence beats one with a hole in it");
+  const list = build(plan, BOOK, METRIC);
+  const line = list.lines[0];
+  assert.equal(line.outstanding, 0, "what cannot be said is done");
+  assert.equal(line.settled, "have");
+  assert.equal(line.partText, "", "a finished line has no half-sentence to say");
+  assert.deepEqual(list.toBuy, []);
+  assert.equal(copyText(list), "", "and it is not sent to a shop");
+  assert.equal(list.allSettled, true, "so the shop can finish (J14.2)");
+});
+
+test("J13.3 · a pinch nobody has settled is still something to buy", () => {
+  // The guard on the rule above: an amount too small to name has not
+  // been dealt with just because it is small. Only a line something has
+  // been settled against can finish this way.
+  const plan = addMeal(emptyPlan(1000), CAKE, 1001);
+  const list = build(plan, BOOK, METRIC);
+  assert.equal(list.lines[0].settled, "", "nothing has been said about it yet");
+  assert.equal(list.toBuy.length, 1);
+  assert.equal(list.allSettled, false);
 });
 
 test("J13.11 · a settled amount is never reduced when the requirement falls", () => {

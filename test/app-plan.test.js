@@ -378,9 +378,9 @@ test("J12.10 · a viewer sees what is in the book's plan, having none of their o
 
   // "In the plan" is read off the live plan, not off whether this reader
   // may add to it: the plan is the book's (J12.2, J14.8).
-  assert.match(app.el("recipe-list").innerHTML, /class="card-planned">In the plan</);
+  assert.match(app.el("recipe-list").innerHTML, /class="card-planned card-planned-live">In the plan</);
   app.openRecipe(app.named("Bolognese").id);
-  assert.match(app.el("detail-content").innerHTML, /class="card-planned">In the plan</);
+  assert.match(app.el("detail-content").innerHTML, /class="card-planned card-planned-live">In the plan</);
 });
 
 test("J12.10 · a viewer's tap on the planner is refused, not merely hidden", () => {
@@ -536,10 +536,10 @@ test("J13.10 · what Copy gives is the shortfall, not the total", async () => {
   await app.el("plan-copy-btn").fire("click");
   await flush();
 
-  // The item is spelled as the line is spelled — the app has never
-  // singularised anything (J13.4) — but the number is the one onion that
-  // is missing rather than the three the plan asks for.
-  assert.match(copied, /^1 onions$/m);
+  // The number is the one onion missing rather than the three the plan
+  // asks for, and it is named as one of them: the singular is a word one
+  // of these recipes typed, not grammar the app invented (J13.4).
+  assert.match(copied, /^1 onion$/m);
   assert.doesNotMatch(copied, /3 onions/,
     "copying the total would buy three onions to get one");
 });
@@ -737,7 +737,7 @@ function planned(app, recipe, daysAgo) {
 
 /** What a card says about planning, if anything. */
 const noteOnCard = (app) => {
-  const m = /<p class="card-planned">([^<]*)<\/p>/.exec(app.el("recipe-list").innerHTML);
+  const m = /<p class="card-planned[^"]*">([^<]*)<\/p>/.exec(app.el("recipe-list").innerHTML);
   return m ? m[1] : "";
 };
 

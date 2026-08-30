@@ -174,13 +174,26 @@
     // rather than failing to draw a card at all: `planStore` is absent
     // exactly there, and a card is not the place to discover it. The
     // same guard search.js keeps over the chip (J14.9).
-    if (!planStore || !window.RecipePlan) return "";
+    if (!planStore || !window.RecipePlan) return null;
     // Read off the live plan itself, not off whether this reader may add
     // to it: a viewer has no planner (J12.10) but the plan is the book's
     // and they can see what is in it.
-    if (RecipePlan.isPlanned(thePlan(), recipe.id)) return "In the plan";
+    // Two different kinds of fact wearing one line. "In the plan" is
+    // live — it is about the thing being built right now, and it is what
+    // stops a recipe going in twice (J14.8) — where a date is history and
+    // belongs with the meta it sits under. So the live one takes the
+    // accent the Plan count already wears, because they are the same
+    // fact said in two places.
+    if (RecipePlan.isPlanned(thePlan(), recipe.id)) return { text: "In the plan", live: true };
     const entry = planningIndex()[recipe.id];
-    return RecipePlan.plannedLabel(entry && entry.lastPlannedAt);
+    const label = RecipePlan.plannedLabel(entry && entry.lastPlannedAt);
+    return label ? { text: label, live: false } : null;
+  }
+
+  function plannedNoteHTML(note) {
+    return `<p class="card-planned${note.live ? " card-planned-live" : ""}">${escapeHTML(
+      note.text
+    )}</p>`;
   }
 
   /**
@@ -257,7 +270,7 @@
         <p class="card-meta">${escapeHTML(meta)}</p>
         ${(() => {
           const note = plannedNote(recipe);
-          return note ? `<p class="card-planned">${escapeHTML(note)}</p>` : "";
+          return note ? plannedNoteHTML(note) : "";
         })()}
         ${
           matched.length
@@ -771,7 +784,7 @@
       ${metaBits.length ? `<p class="card-meta">${escapeHTML(metaBits.join(" · "))}</p>` : ""}
       ${(() => {
         const note = plannedNote(recipe);
-        return note ? `<p class="card-planned">${escapeHTML(note)}</p>` : "";
+        return note ? plannedNoteHTML(note) : "";
       })()}
       ${
         recipe.tags.length
