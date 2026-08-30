@@ -303,6 +303,38 @@ test("J13.4 · two recipes spelling one item differently make one line", () => {
   assert.equal(list.lines[0].required, 3);
 });
 
+test("J13.4 · where the recipes spelled it differently the line prints a plural one of them wrote", () => {
+  const stew = sanitize({ name: "Stew", servings: 1, ingredients: [{ amount: 4, unit: "", item: "onion" }], steps: ["x"] });
+  const soup = sanitize({ name: "Soup", servings: 1, ingredients: [{ amount: 2, unit: "", item: "onions" }], steps: ["x"] });
+  const book = [stew, soup];
+  let plan = addMeal(emptyPlan(1000), stew, 1001);
+  plan = addMeal(plan, soup, 1002);
+  const line = build(plan, book, METRIC).lines[0];
+  assert.equal(line.text, "6 onions", "the stew was first, and asked for an onion six times over");
+  assert.equal(line.shortfallText, "6 onions", "and what goes to the shop says the same");
+  assert.deepEqual(
+    line.from.map((c) => c.item),
+    ["onion", "onions"],
+    "what each of them wrote is still under it, so the choice is visible"
+  );
+
+  // One of a thing keeps its own word: "1 onions" would be a worse lie
+  // than the one this rule is for.
+  const alone = build(addMeal(emptyPlan(1000), soup, 1001), book, METRIC).lines[0];
+  assert.equal(alone.text, "2 onions", "nobody disagreed, so nothing is chosen");
+  const toast = sanitize({ name: "Toast", servings: 1, ingredients: [{ amount: 1, unit: "", item: "onion" }], steps: ["x"] });
+  const single = addMeal(emptyPlan(1000), toast, 1001);
+  assert.equal(build(single, [toast], METRIC).lines[0].text, "1 onion");
+
+  // Nothing is invented: a plural nobody typed is not one of the choices.
+  const odd = sanitize({ name: "Odd", servings: 1, ingredients: [{ amount: 3, unit: "", item: "goose" }], steps: ["x"] });
+  const odder = sanitize({ name: "Odder", servings: 1, ingredients: [{ amount: 2, unit: "", item: "gooses" }], steps: ["x"] });
+  let geese = addMeal(emptyPlan(1000), odd, 1001);
+  geese = addMeal(geese, odder, 1002);
+
+  assert.equal(build(geese, [odd, odder], METRIC).lines[0].text, "5 gooses", "the word somebody wrote, not the word English has");
+});
+
 test("J13.5 · millilitres, litres and cups are one line, since those convert", () => {
   const soup = sanitize({
     name: "Soup", servings: 1,

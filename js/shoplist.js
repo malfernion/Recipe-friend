@@ -203,9 +203,13 @@
     // The screen shows all three and Copy takes the last of them; they
     // are worked out here precisely so the two cannot disagree about
     // which number is which.
-    const whole = render(line, displayAmount(line, prefs, line.required));
-    const short = render(line, displayAmount(line, prefs, outstanding));
-    const done = render(line, displayAmount(line, prefs, sorted));
+    const total = displayAmount(line, prefs, line.required);
+    // All three read the same item, and it is the one J13.4 has earned the
+    // right to choose between (see `plurally`).
+    const named = { ...line, item: plurally(line, total.amount) };
+    const whole = render(named, total);
+    const short = render(named, displayAmount(line, prefs, outstanding));
+    const done = render(named, displayAmount(line, prefs, sorted));
 
     const ratio = whole.amount !== null && line.required > 0 ? whole.amount / line.required : 0;
 
@@ -245,6 +249,32 @@
         return { ...c, amount, text: text === "0" ? "" : text };
       }),
     };
+  }
+
+  /**
+   * Which spelling of the item the line prints (J13.4).
+   *
+   * A line is filed under the first spelling asked for, which on a
+   * combination reads "6 onion" — the Bolognese said "onion" and the curry
+   * said "onions" and the line took the earlier one. Pluralising it would
+   * be inventing grammar the app has never had, and it has stayed out of
+   * this deliberately; but choosing between spellings people actually
+   * wrote is not inventing anything. So where the recipes disagree and the
+   * line asks for more than one, it prints a plural somebody already
+   * typed: a spelling that is another contributor's plus an "s" or an
+   * "es", and nothing else qualifies. One thing keeps its own word,
+   * because "1 onions" would be a worse lie than the one this fixes.
+   *
+   * What each of them wrote still sits under the line (J13.7), so the
+   * choice is visible rather than silent.
+   */
+  function plurally(line, amount) {
+    if (!(amount > 1)) return line.item;
+    const written = [...line.from.values()].map((c) => c.item);
+    const plural = written.find((a) =>
+      written.some((b) => a !== b && (a === `${b}s` || a === `${b}es`))
+    );
+    return plural || line.item;
   }
 
   /**

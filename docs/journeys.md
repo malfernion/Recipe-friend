@@ -517,7 +517,14 @@ so the app can tell them what to buy.
 4. Lines combine on the item as written, tolerating simple plurals the way
    search does (J3.4). The app already believes "tomatoes" and "tomato"
    are the same word when looking for a recipe; believing it here too is
-   one rule rather than two.
+   one rule rather than two. **Where the recipes spelled it differently
+   and the line asks for more than one, the line prints a plural one of
+   them wrote** — "6 onions", not "6 onion" because the Bolognese was
+   typed in first. The app has never pluralised anything and this does
+   not start: every spelling it can print is one somebody typed, and a
+   candidate has to be another contributor's word plus an "s" or an "es".
+   One of a thing keeps its own word, and what each recipe wrote is still
+   under the line (J13.7), so the choice is visible rather than silent.
 5. **Amounts combine only within a unit family.** 400 g tomatoes and 1 tin
    tomatoes are two lines under one heading, because nothing in the app
    knows how big a tin is — the same honesty as J4.6 letting "clove" and
@@ -760,6 +767,54 @@ tests do not reach, recorded so the gap is visible:
   description, meta and tags come to more than the screen has, so the
   first ingredient starts below the fold however much room the view
   itself gives back.
+
+  **What planning cost that table.** The preamble gained a line: a
+  recipe in the plan, or one planned before, now says so above the
+  ingredients (J14.6, J14.8). Measured the same way — the same eleven
+  ingredients, eight steps and three-line title, in Chromium at each
+  size with a coarse pointer, which is what makes the bar 93px rather
+  than 80px — the line costs 19.8px of preamble and moves two of the
+  seven entries:
+
+  | Viewport | Ingredients visible | Steps |
+  |---|---|---|
+  | Narrow 320×568 | 1 → **0** | 0 |
+  | Desktop 1440×900 | 11 | 2 → **0** |
+
+  The other five are unchanged, and no action bar moved: the plan's own
+  control in the recipe view (J12.7) is shown only in plan mode and the
+  bar still holds one row at 320px. Both entries that moved were already
+  the tightest of the seven, and both lose their last line rather than
+  their first — which is the shape of the deferred preamble again, not a
+  new problem. The line is not paid for anywhere: shrinking the preamble
+  stays deferred, and this records what deferring it now costs.
+
+  **What the plan's own screens measure**, so those have something to
+  regress from too. Eleven recipes carrying nine tags between them, five
+  of them planned, twenty-four shopping lines, one part-settled and three
+  collapsed into "you already have":
+
+  | Viewport | Filter row | Plan action bar | Meal row |
+  |---|---|---|---|
+  | Narrow 320×568 | 6 rows, 300px → **4 rows, 198px** | 85px, 1 row | broken mid-word → **2 rows** |
+  | 360×640 | 4 rows, 198px | 85px, 1 row | name at 104px → **2 rows** |
+  | iPhone SE 375×667 | 4 rows, 198px | 85px, 1 row | name at 104px → **2 rows** |
+  | iPhone 14 393×852 | 4 rows, 198px | 85px, 1 row | name at 104px → **2 rows** |
+  | Phone landscape 852×393 | 2 rows, 65px | 86px, 1 row | 1 row |
+  | iPad mini 744×1133 | 2 rows, 95px | 93px, 1 row | 1 row |
+  | Desktop 1440×900 | 2 rows, 65px | 86px, 1 row | 1 row |
+
+  The plan's bar carries four controls where the recipe's carries three,
+  and it holds one row at every width including 320px, where Clear,
+  Copy, Share and Done come to 198px of a 280px row. Nothing in either
+  screen is below the 44px floor (J4.19): ✗, ✓, the steppers, ×, "Put
+  back" and the summary of the removed group all measure 44px or more at
+  every size. Nothing scrolls sideways at any width, including a recipe
+  named in sixty characters and an ingredient hyphenated across
+  seventy-five. In the dark the quietest text on the shop — the
+  struck-through line in the basket, the "sorted / to get" tail, what a
+  line is made of, and the removed group's summary — all sit at 5.26:1
+  on the dialog's ground, and at 5.4:1 in the light.
 
 **The database is deliberately outside the net.** The row-level security
 policies — including the ones on `live_plans` and `plans`, which are what
