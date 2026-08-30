@@ -141,6 +141,16 @@ function planning(recipes, options = {}) {
       ui.el("recipe-list").fire("click", {
         target: { closest: (sel) => (sel === ".recipe-card" ? { dataset: { id } } : null) },
       }),
+    /** Pick a tag out of the Filter menu (J15.1). */
+    tapTag: (tag) =>
+      ui.el("tag-menu").fire("click", {
+        target: { closest: (sel) => (sel === "[data-tag]" ? { dataset: { tag } } : null) },
+      }),
+    /** Pick an order out of the Sort menu (J15.6). */
+    chooseSort: (sort) =>
+      ui.el("sort-options").fire("click", {
+        target: { closest: (sel) => (sel === "[data-sort]" ? { dataset: { sort } } : null) },
+      }),
   };
   return api;
 }
@@ -156,7 +166,7 @@ function planMode(recipes, options) {
 // J12 · Planning a week
 // ---------------------------------------------------------------------
 
-test("J12.4 · planning is a mode over the list: search, chips and Favourites go on working", () => {
+test("J12.4 · planning is a mode over the list: search, filters and Favourites go on working", () => {
   const app = planMode([BOLOGNESE, CURRY, PANCAKES]);
 
   app.el("search-input").value = "curry";
@@ -165,10 +175,8 @@ test("J12.4 · planning is a mode over the list: search, chips and Favourites go
 
   app.el("search-input").value = "";
   app.el("search-input").fire("input");
-  app.el("tag-filters").fire("click", {
-    target: { closest: () => ({ dataset: { tag: "quick" } }) },
-  });
-  assert.deepEqual(app.titles().sort(), ["Curry", "Pancakes"], "and so does a tag chip");
+  app.tapTag("quick");
+  assert.deepEqual(app.titles().sort(), ["Curry", "Pancakes"], "and so does a tag");
 
   const curry = app.named("Curry");
   app.store.toggleFavorite(curry.id);
@@ -801,7 +809,7 @@ test("J14.8 · a recipe in the live plan says so instead", () => {
   assert.doesNotMatch(app.el("detail-content").innerHTML, /Last planned 3 weeks ago/);
 });
 
-test("J14.9 · Not planned lately sorts least recently planned first, never-planned before them", () => {
+test("J14.9, J15.6 · least recently planned sorts them first, never-planned before them", () => {
   const app = planning([BOLOGNESE, CURRY, PANCAKES]);
   planned(app, app.named("Curry"), 2);
   planned(app, app.named("Bolognese"), 30);
@@ -809,36 +817,56 @@ test("J14.9 · Not planned lately sorts least recently planned first, never-plan
   assert.deepEqual(app.titles(), ["Pancakes", "Curry", "Bolognese"],
     "the box as it stands, newest first");
 
-  app.el("not-planned-filter").fire("click");
+  app.chooseSort("least-planned");
   assert.deepEqual(app.titles(), ["Pancakes", "Bolognese", "Curry"],
     "the one nobody has ever planned, then the oldest, then the newest");
+  assert.equal(app.el("sort-summary").textContent, "Sort · Not lately",
+    "and the menu says which order the list is in");
 
-  app.el("not-planned-filter").fire("click");
-  assert.deepEqual(app.titles(), ["Pancakes", "Curry", "Bolognese"], "and off again");
+  app.chooseSort("added");
+  assert.deepEqual(app.titles(), ["Pancakes", "Curry", "Bolognese"], "and back again");
 });
 
-test("J14.9, J3.2 · the chip combines with search and tags as the others do", () => {
+test("J14.10, J15.6 · most often planned counts every appearance", () => {
+  const app = planning([BOLOGNESE, CURRY, PANCAKES]);
+  planned(app, app.named("Curry"), 2);
+  planned(app, app.named("Curry"), 9);
+  planned(app, app.named("Bolognese"), 30);
+
+  app.chooseSort("most-planned");
+  assert.deepEqual(app.titles(), ["Curry", "Bolognese", "Pancakes"],
+    "twice, once, and never — and the never-planned one is last rather than first");
+});
+
+test("J15.6 · quickest first, from what the recipe says it takes", () => {
+  const app = planning([
+    { ...BOLOGNESE, prepMinutes: 15, cookMinutes: 90 },
+    { ...CURRY, prepMinutes: 10, cookMinutes: 20 },
+    PANCAKES,
+  ]);
+  app.chooseSort("quickest");
+  assert.deepEqual(app.titles(), ["Curry", "Bolognese", "Pancakes"],
+    "and the one that does not say goes last, not first");
+});
+
+test("J15.6, J3.2 · a sort orders what the filters have left, and narrows nothing itself", () => {
   const app = planning([BOLOGNESE, CURRY, PANCAKES]);
   planned(app, app.named("Curry"), 2);
   planned(app, app.named("Pancakes"), 30);
-  app.el("not-planned-filter").fire("click");
+  app.chooseSort("least-planned");
 
-  app.el("tag-filters").fire("click", {
-    target: { closest: () => ({ dataset: { tag: "quick" } }) },
-  });
+  app.tapTag("quick");
   assert.deepEqual(app.titles(), ["Pancakes", "Curry"],
-    "the tag still narrows, and the chip still orders what is left");
+    "the tag narrows, the sort orders what is left");
 
-  app.el("tag-filters").fire("click", {
-    target: { closest: () => ({ dataset: { tag: "quick" } }) },
-  });
+  app.tapTag("quick");
   app.el("search-input").value = "onion";
   app.el("search-input").fire("input");
   assert.deepEqual(app.titles(), ["Bolognese", "Curry"],
     "and so does a search: never planned first, then the least recent of the rest");
 });
 
-test("J14.9 · Favourites and the chip narrow and order together", () => {
+test("J15.6 · Favourites narrows and the sort orders, together", () => {
   const app = planning([BOLOGNESE, CURRY, PANCAKES]);
   planned(app, app.named("Curry"), 2);
   app.store.toggleFavorite(app.named("Curry").id);
@@ -846,8 +874,19 @@ test("J14.9 · Favourites and the chip narrow and order together", () => {
   app.app.render();
 
   app.el("favorites-filter").fire("click");
-  app.el("not-planned-filter").fire("click");
+  app.chooseSort("least-planned");
   assert.deepEqual(app.titles(), ["Pancakes", "Curry"]);
+});
+
+test("J15.6 · a page without the planner is offered neither of the sorts that read it", () => {
+  const app = planning([BOLOGNESE, CURRY], { planner: false });
+  const menu = app.el("sort-options").innerHTML;
+  assert.match(menu, /data-sort="added"/);
+  assert.match(menu, /data-sort="quickest"/);
+  assert.doesNotMatch(menu, /data-sort="least-planned"/,
+    "an order it cannot make is not offered rather than offered and doing nothing");
+  assert.doesNotMatch(menu, /data-sort="most-planned"/);
+  assert.deepEqual(app.titles(), ["Curry", "Bolognese"], "and the list still draws");
 });
 
 test("J13.1 · the readout is the meals, and under them everything they ask for", () => {

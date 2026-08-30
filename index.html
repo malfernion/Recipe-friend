@@ -104,20 +104,46 @@
   </section>
 
   <main class="container">
-    <section class="toolbar" aria-label="Search and filter">
+    <section class="toolbar" aria-label="Search, filter and sort">
       <input type="search" id="search-input" class="search-input"
              placeholder="Search recipes, or list: chicken, rice"
              aria-label="Search recipes, or list ingredients separated by commas">
       <div class="filter-row">
+        <!--
+          Favourites stays pinned rather than folding in with the tags
+          (J15.9): it is used more than any tag, it is one tap where they
+          are two, and a shortlist you keep on purpose is not the same
+          kind of thing as a word you happened to type on a recipe.
+        -->
         <button id="favorites-filter" class="chip" aria-pressed="false">★ Favourites</button>
         <!--
-          Least recently planned first, never-planned before them (J14.9).
-          Beside Favourites because it is the same kind of thing: a way of
-          looking at the list you already have, not a screen of its own.
+          Filtering and sorting are two different things, so they are two
+          menus (J15.1) — the same <details> the header uses, because a
+          menu is a menu. Each says what it is doing in its own label.
         -->
-        <button id="not-planned-filter" class="chip" aria-pressed="false">Not planned lately</button>
-        <div id="tag-filters" class="tag-filter-list"></div>
+        <details class="more-menu toolbar-menu" id="filter-menu">
+          <summary class="chip more-summary toolbar-summary" id="filter-summary"
+                   aria-label="Filter by tag">Filter</summary>
+          <div class="more-panel toolbar-panel">
+            <p class="menu-head">Tags <span class="menu-note">a recipe needs every one you pick</span></p>
+            <div id="tag-menu" class="tag-menu"></div>
+          </div>
+        </details>
+        <details class="more-menu toolbar-menu" id="sort-menu">
+          <summary class="chip more-summary toolbar-summary" id="sort-summary"
+                   aria-label="Sort the list">Sort</summary>
+          <div class="more-panel toolbar-panel">
+            <p class="menu-head">Sort by</p>
+            <div id="sort-options" class="sort-options"></div>
+          </div>
+        </details>
       </div>
+      <!--
+        What is on, and only that (J15.2). The menus are where choosing
+        happens; this row is the answer, and it is not here at all when
+        nothing is on.
+      -->
+      <div id="active-filters" class="active-filters" hidden></div>
     </section>
 
     <!--

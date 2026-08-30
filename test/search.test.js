@@ -10,12 +10,13 @@ const { test } = require("node:test");
 const assert = require("node:assert/strict");
 const { loadApp, aRecipe } = require("./helpers/load.js");
 
-// plan.js goes in because "not planned lately" is an ordering over
-// recipes (J14.9), and orderings over recipes live here — the archive it
-// reads is handed in, so this file still knows nothing about where a book
+// plan.js goes in because two of the sorts are orderings over recipes
+// (J15.6), and orderings over recipes live here — the archive they read
+// is handed in, so this file still knows nothing about where a book
 // keeps its plans.
 const win = loadApp("units.js", "scale.js", "storage.js", "plan.js", "search.js");
-const { parseTerms, matchedTerms, matchesFilters, visibleRecipes, readable } = win.RecipeSearch;
+const { parseTerms, matchedTerms, matchesFilters, visibleRecipes, tagCounts, SORTS, readable } =
+  win.RecipeSearch;
 const sanitize = win.RecipeStore.sanitizeRecipe;
 
 const recipe = (over) => sanitize(aRecipe(over));
@@ -111,10 +112,34 @@ test("no criteria at all matches everything", () => {
 
 test("J3.2 · filters combine — all must pass", () => {
   const favSoup = { ...SOUP, favorite: true };
-  assert.equal(matchesFilters(favSoup, { favoritesOnly: true, tag: "quick" }), true);
-  assert.equal(matchesFilters(favSoup, { favoritesOnly: true, tag: "vegan" }), false);
-  assert.equal(matchesFilters(SOUP, { favoritesOnly: true, tag: "quick" }), false);
-  assert.equal(matchesFilters(favSoup, { favoritesOnly: true, tag: "quick", terms: ["curry"] }), false);
+  assert.equal(matchesFilters(favSoup, { favoritesOnly: true, tags: ["quick"] }), true);
+  assert.equal(matchesFilters(favSoup, { favoritesOnly: true, tags: ["vegan"] }), false);
+  assert.equal(matchesFilters(SOUP, { favoritesOnly: true, tags: ["quick"] }), false);
+  assert.equal(
+    matchesFilters(favSoup, { favoritesOnly: true, tags: ["quick"], terms: ["curry"] }),
+    false
+  );
+});
+
+test("J15.3 · two tags mean both, never either", () => {
+  // The curry carries both, the soup only one. "Either" would show both
+  // recipes, which is a different question and not the one being asked.
+  assert.equal(matchesFilters(CURRY, { tags: ["quick", "vegan"] }), true);
+  assert.equal(matchesFilters(SOUP, { tags: ["quick", "vegan"] }), false);
+  assert.deepEqual(
+    visibleRecipes([SOUP, CURRY], { tags: ["quick", "vegan"] }).map((r) => r.name),
+    ["Chickpea Curry"],
+    "combining them narrows: a shorter list than either alone"
+  );
+  assert.deepEqual(
+    visibleRecipes([SOUP, CURRY], { tags: ["quick"] }).map((r) => r.name),
+    ["Tomato Soup", "Chickpea Curry"]
+  );
+});
+
+test("J15.3 · no tags at all is no opinion about tags", () => {
+  assert.equal(matchesFilters(SOUP, { tags: [] }), true);
+  assert.equal(matchesFilters(SOUP, {}), true);
 });
 
 test("J3.1 · the search term is matched against text already lowercased", () => {
@@ -173,44 +198,101 @@ test("J3.1 · what search reads is exactly what the screen shows", () => {
   assert.equal(matchesFilters(SOUP, { terms: ["400 g"], prefs }), true);
 });
 
-test("J14.9 · not planned lately orders the list without narrowing it", () => {
-  const NEVER = recipe({ name: "Pancakes", steps: ["Whisk."], tags: ["quick"] });
-  const index = { [SOUP.id]: { lastPlannedAt: 2000, count: 1 }, [CURRY.id]: { lastPlannedAt: 1000, count: 2 } };
-  const criteria = { notPlannedLately: true, plannedIndex: index };
+// --- the sorts (J15.6) and what they do to a ranked search (J15.7) ----
 
+const PANCAKES = recipe({
+  name: "Pancakes",
+  ingredients: [{ amount: 300, unit: "g", item: "flour" }],
+  steps: ["Whisk."],
+  tags: ["quick"],
+  prepMinutes: 5,
+  cookMinutes: 5,
+});
+const STEW = recipe({
+  name: "Beef Stew",
+  ingredients: [{ amount: 1, unit: "kg", item: "beef" }],
+  steps: ["Wait."],
+  prepMinutes: 20,
+  cookMinutes: 160,
+});
+const UNTIMED = recipe({
+  name: "Zabaglione",
+  ingredients: [{ amount: 3, unit: "", item: "eggs" }],
+  steps: ["Whisk."],
+});
+
+const ARCHIVE = {
+  [SOUP.id]: { lastPlannedAt: 2000, count: 1 },
+  [CURRY.id]: { lastPlannedAt: 1000, count: 5 },
+  [PANCAKES.id]: { lastPlannedAt: 3000, count: 2 },
+};
+
+test("J15.6 · the sorts are a small closed set, and recently added is the default", () => {
   assert.deepEqual(
-    visibleRecipes([SOUP, CURRY, NEVER], criteria).map((r) => r.name),
-    ["Pancakes", "Chickpea Curry", "Tomato Soup"],
-    "never planned first, then least recently planned — and nothing is hidden"
+    SORTS.map((s) => s.id),
+    ["added", "name", "least-planned", "most-planned", "quickest"]
+  );
+  const box = [CURRY, SOUP, PANCAKES];
+  assert.deepEqual(
+    visibleRecipes(box, {}).map((r) => r.name),
+    visibleRecipes(box, { sort: "added" }).map((r) => r.name),
+    "no sort chosen and 'recently added' are the same list — the collection's own order"
+  );
+  assert.deepEqual(visibleRecipes(box, { sort: "added" }).map((r) => r.name),
+    ["Chickpea Curry", "Tomato Soup", "Pancakes"]);
+});
+
+test("J15.6 · name A to Z puts the list in the order a person would read it out", () => {
+  assert.deepEqual(
+    visibleRecipes([SOUP, CURRY, PANCAKES], { sort: "name" }).map((r) => r.name),
+    ["Chickpea Curry", "Pancakes", "Tomato Soup"]
   );
 });
 
-test("J14.9, J3.2 · not planned lately combines with the filters rather than replacing them", () => {
-  const NEVER = recipe({ name: "Pancakes", steps: ["Whisk."], tags: ["vegan"] });
-  const index = { [SOUP.id]: { lastPlannedAt: 2000, count: 1 }, [CURRY.id]: { lastPlannedAt: 1000, count: 2 } };
-
+test("J15.6 · least recently planned first, never-planned before them", () => {
+  // The same ordering J14.9 names, taken from plan.js rather than
+  // defined a second time here.
   assert.deepEqual(
-    visibleRecipes([SOUP, CURRY, NEVER], {
-      notPlannedLately: true,
-      plannedIndex: index,
-      tag: "quick",
+    visibleRecipes([SOUP, CURRY, PANCAKES, STEW], {
+      sort: "least-planned",
+      plannedIndex: ARCHIVE,
     }).map((r) => r.name),
-    ["Chickpea Curry", "Tomato Soup"],
-    "the tag narrows, the chip orders what is left"
+    ["Beef Stew", "Chickpea Curry", "Tomato Soup", "Pancakes"],
+    "the one nobody has ever planned, then the oldest, and nothing is hidden"
   );
 });
 
-test("J14.9 · a ranked search still decides between two recipes planned the same day", () => {
-  const index = { [SOUP.id]: { lastPlannedAt: 1000, count: 1 }, [CURRY.id]: { lastPlannedAt: 1000, count: 1 } };
-
+test("J15.6 · most often planned counts every appearance, never-planned last", () => {
   assert.deepEqual(
-    visibleRecipes([SOUP, CURRY], {
-      terms: ["onion", "chickpeas"],
-      notPlannedLately: true,
-      plannedIndex: index,
+    visibleRecipes([SOUP, CURRY, PANCAKES, STEW], {
+      sort: "most-planned",
+      plannedIndex: ARCHIVE,
     }).map((r) => r.name),
-    ["Chickpea Curry", "Tomato Soup"],
-    "the better match wins a tie the archive cannot break"
+    ["Chickpea Curry", "Pancakes", "Tomato Soup", "Beef Stew"]
+  );
+});
+
+test("J15.6 · quickest first, and a recipe that does not say goes last", () => {
+  // No timings is not the same claim as ten minutes: a list of quick
+  // suppers headed by everything nobody has filled in is not the list
+  // that was asked for.
+  assert.deepEqual(
+    visibleRecipes([STEW, UNTIMED, PANCAKES], { sort: "quickest" }).map((r) => r.name),
+    ["Pancakes", "Beef Stew", "Zabaglione"]
+  );
+});
+
+test("J15.6 · a page without the planner still draws a list", () => {
+  // plan.js is what the two planned sorts read. Where it never loaded,
+  // the menu does not offer them — and asking anyway gets the order the
+  // list already had rather than nothing at all.
+  const bare = loadApp("units.js", "scale.js", "storage.js", "search.js");
+  assert.deepEqual(
+    bare.RecipeSearch.visibleRecipes([SOUP, CURRY], {
+      sort: "least-planned",
+      plannedIndex: ARCHIVE,
+    }).map((r) => r.name),
+    ["Tomato Soup", "Chickpea Curry"]
   );
 });
 
@@ -220,31 +302,79 @@ const BOTH = recipe({ name: "chicken rice bowl" });
 const BOTH_OLD = recipe({ name: "chicken and rice soup" });
 const ONE_TERM = recipe({ name: "rice pudding" });
 
-test("J14.9 · a listed search outranks the chip, which orders within each group of matches", () => {
+test("J15.7 · a chosen sort outranks the search's ranking, which breaks its ties", () => {
   const plannedIndex = {
     [BOTH.id]: { lastPlannedAt: 10, count: 1 },
     [BOTH_OLD.id]: { lastPlannedAt: 2, count: 1 },
-    // The least recently planned of the three, and still last: it
-    // answers one term where the others answer two.
-    [ONE_TERM.id]: { lastPlannedAt: 1, count: 1 },
+    [ONE_TERM.id]: { lastPlannedAt: 2, count: 1 },
   };
-  const order = visibleRecipes([BOTH, ONE_TERM, BOTH_OLD], {
-    terms: ["chicken", "rice"],
-    notPlannedLately: true,
-    plannedIndex,
-  }).map((r) => r.id);
-  assert.deepEqual(order, [BOTH_OLD.id, BOTH.id, ONE_TERM.id]);
+  // ONE_TERM and BOTH_OLD were last planned on the same day, so the sort
+  // has nothing to say about the pair: the ranking decides, and the
+  // recipe answering both terms goes above the one answering one.
+  assert.deepEqual(
+    visibleRecipes([BOTH, ONE_TERM, BOTH_OLD], {
+      terms: ["chicken", "rice"],
+      sort: "least-planned",
+      plannedIndex,
+    }).map((r) => r.name),
+    ["chicken and rice soup", "rice pudding", "chicken rice bowl"],
+    "the sort has the last word; the ranking decides only between recipes it tied"
+  );
 });
 
-test("J14.9 · with one term there is no ranking to lose to, so the chip orders everything", () => {
-  const plannedIndex = {
-    [BOTH.id]: { lastPlannedAt: 90, count: 1 },
-    [ONE_TERM.id]: { lastPlannedAt: 5, count: 1 },
-  };
-  const order = visibleRecipes([BOTH, ONE_TERM], {
-    terms: ["rice"],
-    notPlannedLately: true,
-    plannedIndex,
-  }).map((r) => r.id);
-  assert.deepEqual(order, [ONE_TERM.id, BOTH.id]);
+test("J3.3, J15.7 · where no sort is chosen, a listed search ranks as it always has", () => {
+  assert.deepEqual(
+    visibleRecipes([BOTH, ONE_TERM, BOTH_OLD], { terms: ["chicken", "rice"] }).map((r) => r.name),
+    ["chicken rice bowl", "chicken and rice soup", "rice pudding"],
+    "best match first, and the two-term pair keep the order they came in"
+  );
+});
+
+// --- what a tag would leave (J15.4, J15.5) ----------------------------
+
+test("J15.4 · each tag says how many recipes it would leave", () => {
+  const box = [SOUP, CURRY, PANCAKES];
+  assert.deepEqual(tagCounts(box, {}), [
+    { tag: "quick", count: 3, active: false },
+    { tag: "vegan", count: 1, active: false },
+  ]);
+});
+
+test("J15.4 · the count is what the other filters and the search have left", () => {
+  const box = [SOUP, CURRY, PANCAKES];
+  // A search for chickpeas leaves the curry, so "quick" would leave one
+  // recipe rather than three — the size of the list the tap would give
+  // you, not a promise the rest of the toolbar has already broken.
+  assert.deepEqual(tagCounts(box, { terms: ["chickpeas"] }), [
+    { tag: "quick", count: 1, active: false },
+    { tag: "vegan", count: 1, active: false },
+  ]);
+
+  const favCurry = { ...CURRY, favorite: true };
+  assert.deepEqual(tagCounts([SOUP, favCurry, PANCAKES], { favoritesOnly: true }), [
+    { tag: "quick", count: 1, active: false },
+    { tag: "vegan", count: 1, active: false },
+  ]);
+});
+
+test("J15.4 · the count is taken with the tag filter itself set aside", () => {
+  const box = [SOUP, CURRY, PANCAKES];
+  // "vegan" is on. Its own count is the list as it stands rather than
+  // nothing, and "quick" reads as what adding it would leave — the curry,
+  // which carries both — rather than as the three recipes the book has.
+  assert.deepEqual(tagCounts(box, { tags: ["vegan"] }), [
+    { tag: "quick", count: 1, active: false },
+    { tag: "vegan", count: 1, active: true },
+  ]);
+});
+
+test("J15.5 · a tag that would leave nothing is still listed, with its nought", () => {
+  const box = [SOUP, CURRY, PANCAKES];
+  // Nothing is both vegan and a Sunday roast. "sunday" stays in the
+  // menu saying 0 — a tag vanishing as you filter reads as a book losing
+  // things, where a nought reads as an answer.
+  const ROAST = recipe({ name: "Sunday Roast", steps: ["Roast."], tags: ["sunday"] });
+  const counts = tagCounts([...box, ROAST], { tags: ["vegan"] });
+  assert.deepEqual(counts.map((c) => c.tag), ["quick", "sunday", "vegan"]);
+  assert.equal(counts.find((c) => c.tag === "sunday").count, 0);
 });

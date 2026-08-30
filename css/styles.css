@@ -469,8 +469,178 @@ body {
   flex-wrap: wrap;
 }
 
-.tag-filter-list {
-  display: contents;
+/*
+  Two menus (J15.1) drawn the way the header's is, because a menu is a
+  menu: a <details> with the panel taken out of the flow. Out of the flow
+  is the point on a phone — an open menu covers the top of the list
+  rather than shoving it down the page (J15.11).
+*/
+.toolbar-menu {
+  position: relative;
+}
+
+.toolbar-summary {
+  display: inline-flex;
+  align-items: center;
+  /* A chip that opens something, so it is a chip and not the header's ···. */
+  border: 1px solid var(--rule);
+  gap: 0.35rem;
+}
+
+.toolbar-summary::after {
+  content: "▾";
+  font-size: 0.85em;
+  line-height: 1;
+  opacity: 0.7;
+}
+
+.toolbar-menu[open] .toolbar-summary {
+  color: var(--paper);
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
+/*
+  A panel hangs from the edge of its control that leaves it room: the
+  left, except for the last control in the row, which on a 320px screen
+  starts far enough across that a panel opening rightwards would finish
+  off the side of the phone (J15.11). A long book of tags scrolls inside
+  the panel rather than running off the bottom of it.
+*/
+.toolbar-panel {
+  left: 0;
+  right: auto;
+  min-width: 13rem;
+  max-width: calc(100vw - 2.5rem);
+  max-height: min(60vh, 22rem);
+  overflow-y: auto;
+}
+
+.filter-row > .toolbar-menu:last-child .toolbar-panel {
+  left: auto;
+  right: 0;
+}
+
+.menu-head {
+  font-family: var(--sans);
+  font-size: 0.62rem;
+  font-weight: 600;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+  padding: 0.5rem 0.75rem 0.35rem;
+  margin: 0;
+}
+
+/* What the tags do to each other, said once, where they are chosen. */
+.menu-note {
+  display: block;
+  font-size: 0.6rem;
+  letter-spacing: 0.06em;
+  text-transform: none;
+  font-style: italic;
+}
+
+.menu-empty {
+  font-family: var(--sans);
+  font-size: 0.72rem;
+  color: var(--ink-faint);
+  padding: 0.4rem 0.75rem 0.7rem;
+  margin: 0;
+}
+
+/*
+  A tag and the number of recipes it would leave (J15.4), pushed apart so
+  the counts line up down the right edge and can be read as a column.
+*/
+.tag-option {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1.5rem;
+  width: 100%;
+  text-transform: none;
+  letter-spacing: 0.04em;
+  font-size: 0.85rem;
+}
+
+.tag-option-name::before {
+  /* The state, drawn rather than only coloured: a tick is legible where a
+     tint is not, and it holds its place so the names do not shift. */
+  content: "✓";
+  display: inline-block;
+  width: 1.1em;
+  color: transparent;
+}
+
+.tag-option-on .tag-option-name::before {
+  color: var(--accent);
+}
+
+.tag-option-on {
+  color: var(--ink);
+}
+
+.tag-option-count {
+  font-variant-numeric: tabular-nums;
+  font-size: 0.75rem;
+  color: var(--ink-faint);
+}
+
+/* Nothing left to choose. Greyed and still there, saying nought (J15.5). */
+.tag-option[disabled] {
+  cursor: default;
+  opacity: 0.45;
+}
+
+.tag-option[disabled]:hover {
+  background: none;
+  color: var(--ink-soft);
+}
+
+.sort-option {
+  text-transform: none;
+  letter-spacing: 0.04em;
+  font-size: 0.85rem;
+}
+
+.sort-option::before {
+  content: "✓";
+  display: inline-block;
+  width: 1.1em;
+  color: transparent;
+}
+
+.sort-option-on::before {
+  color: var(--accent);
+}
+
+/*
+  What is on, under the controls that turned it on (J15.2). It is absent
+  entirely when nothing is, so it never costs a row for nothing.
+*/
+.active-filters {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  flex-wrap: wrap;
+}
+
+/* The whole chip takes its filter off; the × is what says so. */
+.active-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.active-chip-x {
+  font-size: 1.1em;
+  line-height: 1;
+  opacity: 0.8;
+}
+
+.clear-filters {
+  padding-inline: 0.5rem;
 }
 
 /*
@@ -684,11 +854,19 @@ body {
 .no-results {
   grid-column: 1 / -1;
   text-align: center;
-  padding: 3rem 0;
+  padding: 3rem 0 0;
   font-family: var(--serif);
   font-style: italic;
   font-size: 1.1rem;
   color: var(--ink-faint);
+}
+
+/* The way out of an empty list, where the list would be (J15.10). */
+.no-results-out {
+  grid-column: 1 / -1;
+  text-align: center;
+  padding: 1rem 0 3rem;
+  margin: 0;
 }
 
 /* ---------- Empty state ---------- */
@@ -1782,17 +1960,15 @@ body {
   }
 
   /*
-    "Not planned lately" is the longest label in the app and it sits
-    beside Favourites (J14.9). Measured at 320px the two came to 313px of
-    a 280px row, so Favourites took a line on its own, "Not planned
-    lately" started the next one with a tag beside it, and the filter row
-    went from four rows to six — 300px of chips above the first recipe.
-
-    The pixels come out of the tracking and the padding, the same place
-    the bars below take theirs, rather than out of either label: the
-    chips are already the smallest type on the screen, and a name people
-    read as a name is worth more than a sixth of an em. At 320px the pair
-    now measure 271px and share their row again.
+    The filter row is three controls now — Favourites, Filter, Sort
+    (J15.1) — where it used to be two chips and every tag in the book,
+    and the tracking is still what buys them their row. Measured at 320px
+    the old pair alone came to 313px of a 280px row and the row ran to
+    six lines; the three fit one line here with the tracking and the
+    padding given up, which is the same place the bars below take theirs.
+    The chips are already the smallest type on the screen and a name
+    people read as a name is worth more than a sixth of an em, so it
+    comes out of neither label.
   */
   .chip {
     letter-spacing: 0.08em;
@@ -1961,7 +2137,10 @@ body {
     margin: -0.5rem -0.55rem 0 0;
   }
 
-  /* A floor rather than a nudge: padding alone still left these at 31px. */
+  /* A floor rather than a nudge: padding alone still left these at 31px.
+     The toolbar's menus are made of these three (J15.11), so a tag, a
+     sort and a chip that takes a filter off are all 44px by being what
+     they already are. */
   .btn,
   .chip,
   .more-item,

@@ -228,6 +228,11 @@
       }
       this.key = nextKey;
       this.state = load(this.key);
+      // A different book is a different list, and what the toolbar was
+      // doing belonged to the one you left (J15.8). Announced rather than
+      // reached for, the way a forgotten book is: this file goes on
+      // knowing about recipes and nothing about a screen.
+      if (this.onUseBook) this.onUseBook(bookId);
     }
 
     /** Drop a book's local cache — used when the book itself is deleted. */

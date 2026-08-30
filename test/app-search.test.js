@@ -30,7 +30,28 @@ function appWith(recipes) {
     ui.el("search-input").value = text;
     ui.el("search-input").fire("input");
   };
-  return { ...ui, titles, search };
+  // The toolbar's three delegated handlers, driven the way a thumb does:
+  // pick a tag out of the Filter menu, an order out of Sort, and take one
+  // thing off in the row underneath (J15.1, J15.2).
+  const tapTag = (tag) =>
+    ui.el("tag-menu").fire("click", {
+      target: { closest: (sel) => (sel === "[data-tag]" ? { dataset: { tag } } : null) },
+    });
+  const chooseSort = (sort) =>
+    ui.el("sort-options").fire("click", {
+      target: { closest: (sel) => (sel === "[data-sort]" ? { dataset: { sort } } : null) },
+    });
+  const tapRow = (remove, tag) =>
+    ui.el("active-filters").fire("click", {
+      target: { closest: (sel) => (sel === "[data-remove]" ? { dataset: { remove, tag } } : null) },
+    });
+  const tapEmpty = (remove) =>
+    ui.el("recipe-list").fire("click", {
+      target: { closest: (sel) => (sel === "[data-remove]" ? { dataset: { remove } } : null) },
+    });
+  const row = () => ui.el("active-filters").innerHTML;
+  const menu = () => ui.el("tag-menu").innerHTML;
+  return { ...ui, titles, search, tapTag, chooseSort, tapRow, tapEmpty, row, menu };
 }
 
 const ROAST = aRecipe({
@@ -101,12 +122,12 @@ test("J3.1 · an ingredient matches as you see it, not only as written", () => {
   assert.deepEqual(app.titles(), ["Tomato Soup"]);
 });
 
-test("J3.2 · a tag chip narrows the list, and clicking it again clears it", () => {
+test("J3.2 · a tag from the menu narrows the list, and picking it again clears it", () => {
   const app = appWith([ROAST, SOUP, CURRY]);
-  app.el("tag-filters").fire("click", {
-    target: { closest: () => ({ dataset: { tag: "quick" } }) },
-  });
+  app.tapTag("quick");
   assert.deepEqual(app.titles().sort(), ["Chickpea Curry", "Tomato Soup"]);
+  app.tapTag("quick");
+  assert.deepEqual(app.titles().length, 3);
 });
 
 test("J3.2 · the favourites filter narrows the list, and combines with search", () => {
@@ -208,6 +229,181 @@ test("J3.6 · a favourite belongs to the recipe, so a book shares it", () => {
   assert.equal(app.store.getById(soup.id).favorite, true);
   assert.match(app.store.exportJSON(), /"favorite": true/,
     "and it travels with the recipe rather than with the device");
+});
+
+// --- J15 · choosing what to look at -------------------------------------
+
+/** One tag's entry in the Filter menu, as markup. */
+function option(app, tag) {
+  const m = new RegExp(`<button[^>]*data-tag="${tag}"[\\s\\S]*?</button>`).exec(app.menu());
+  return m ? m[0] : "";
+}
+/** The number beside it — what it says it would leave. */
+const leaves = (app, tag) => Number((/tag-option-count">(\d+)</.exec(option(app, tag)) || [])[1]);
+
+test("J15.1 · the two menus each say what they are doing in their own label", () => {
+  const app = appWith([ROAST, SOUP, CURRY]);
+  assert.equal(app.el("filter-summary").textContent, "Filter");
+  assert.equal(app.el("sort-summary").textContent, "Sort · Newest",
+    "the default is an answer like any other, so it is said rather than left blank");
+
+  app.tapTag("quick");
+  assert.equal(app.el("filter-summary").textContent, "Filter · 1");
+  app.tapTag("vegan");
+  assert.equal(app.el("filter-summary").textContent, "Filter · 2");
+  app.chooseSort("name");
+  assert.equal(app.el("sort-summary").textContent, "Sort · A–Z");
+});
+
+test("J15.3 · two tags mean both, and combining them narrows", () => {
+  const app = appWith([ROAST, SOUP, CURRY]);
+  app.tapTag("quick");
+  assert.deepEqual(app.titles().sort(), ["Chickpea Curry", "Tomato Soup"]);
+  app.tapTag("vegan");
+  assert.deepEqual(app.titles(), ["Chickpea Curry"],
+    "a shorter list than either alone, not the two put together");
+});
+
+test("J15.2 · the row shows only what is on, and nothing at all when nothing is", () => {
+  const app = appWith([ROAST, SOUP, CURRY]);
+  assert.equal(app.el("active-filters").hidden, true, "nothing on, nothing there");
+  assert.equal(app.row(), "");
+
+  app.tapTag("quick");
+  assert.equal(app.el("active-filters").hidden, false);
+  assert.match(app.row(), /data-tag="quick"/);
+  assert.doesNotMatch(app.row(), /data-tag="vegan"/,
+    "the row is what is on, not what could be — the tags it does not name are in the menu");
+});
+
+test("J15.2 · each filter comes off on its own, and one control clears the lot", () => {
+  const app = appWith([ROAST, SOUP, CURRY]);
+  const soup = app.store.recipes.find((r) => r.name === "Tomato Soup");
+  app.store.toggleFavorite(soup.id);
+
+  app.el("favorites-filter").fire("click");
+  app.tapTag("quick");
+  assert.match(app.row(), /Favourites/);
+  assert.match(app.row(), /data-tag="quick"/);
+
+  app.tapRow("tag", "quick");
+  assert.doesNotMatch(app.row(), /data-tag="quick"/, "that one off");
+  assert.match(app.row(), /Favourites/, "and the other still on");
+
+  app.tapTag("quick");
+  app.tapRow("filters");
+  assert.equal(app.el("active-filters").hidden, true);
+  assert.deepEqual(app.titles().length, 3, "and the whole book is back");
+});
+
+test("J15.4 · each tag says how many recipes it would leave", () => {
+  const app = appWith([ROAST, SOUP, CURRY]);
+  assert.equal(leaves(app, "quick"), 2);
+  assert.equal(leaves(app, "vegan"), 1);
+  assert.equal(leaves(app, "beef"), 1);
+});
+
+test("J15.4 · the count is what the rest of the toolbar has left, not what the book holds", () => {
+  const app = appWith([ROAST, SOUP, CURRY]);
+  app.search("chickpeas");
+  assert.equal(leaves(app, "quick"), 1,
+    "the size of the list the tap would give you, not the two the book has");
+
+  app.search("");
+  app.tapTag("vegan");
+  assert.equal(leaves(app, "quick"), 1, "and the tags already on count too");
+  assert.equal(leaves(app, "vegan"), 1,
+    "with the tag filter itself set aside, so the one that is on reads as the list it left");
+});
+
+test("J15.5 · a tag that would leave nothing is shown and cannot be chosen", () => {
+  const app = appWith([ROAST, SOUP, CURRY]);
+  app.tapTag("vegan");
+  // Nothing is both vegan and a Sunday roast.
+  assert.match(option(app, "beef"), /disabled/, "greyed with a nought beside it");
+  assert.equal(leaves(app, "beef"), 0);
+  assert.match(app.menu(), /data-tag="beef"/,
+    "still listed — a tag vanishing as you filter reads as a book losing things");
+});
+
+test("J15.6 · the list can be put in name order, and back", () => {
+  const app = appWith([ROAST, SOUP, CURRY]);
+  assert.deepEqual(app.titles(), ["Chickpea Curry", "Tomato Soup", "Sunday Roast"],
+    "the collection's own order, newest first");
+  app.chooseSort("name");
+  assert.deepEqual(app.titles(), ["Chickpea Curry", "Sunday Roast", "Tomato Soup"]);
+  app.chooseSort("added");
+  assert.deepEqual(app.titles(), ["Chickpea Curry", "Tomato Soup", "Sunday Roast"]);
+});
+
+test("J15.7 · a sort chosen by name outranks the search's ranking", () => {
+  const app = appWith([ROAST, SOUP, CURRY]);
+  app.search("onion, chickpeas");
+  assert.deepEqual(app.titles(), ["Chickpea Curry", "Tomato Soup"], "ranked, best first");
+
+  app.chooseSort("name");
+  assert.deepEqual(app.titles(), ["Chickpea Curry", "Tomato Soup"],
+    "and now in name order, which happens to agree here");
+
+  app.search("tomatoes, garlic");
+  assert.deepEqual(app.titles(), ["Chickpea Curry", "Tomato Soup"],
+    "each answers one term, so the sort is the whole of the order");
+});
+
+test("J15.8 · switching books forgets the search, the filters and the sort", () => {
+  const app = appWith([]);
+  app.store.useBook("11111111-1111-4111-8111-111111111111");
+  app.store.add(ROAST);
+  app.store.add(SOUP);
+  app.app.render();
+
+  app.search("roast");
+  app.tapTag("sunday");
+  app.el("favorites-filter").fire("click");
+  app.chooseSort("name");
+
+  // Every way into another book goes through this — switching, deleting
+  // one, leaving one, being removed from one.
+  app.store.useBook("22222222-2222-4222-8222-222222222222");
+  app.store.add(CURRY);
+  app.app.render();
+
+  assert.equal(app.el("search-input").value, "", "the box is empty");
+  assert.equal(app.el("active-filters").hidden, true, "and so is the row");
+  assert.equal(app.el("sort-summary").textContent, "Sort · Newest");
+  assert.equal(app.el("filter-summary").textContent, "Filter");
+  assert.deepEqual(app.titles(), ["Chickpea Curry"],
+    "the list you open is your whole book, not a third of it for reasons set last week");
+});
+
+test("J15.10 · where the filters leave nothing, the list offers to clear them", () => {
+  const app = appWith([ROAST, SOUP, CURRY]);
+  app.tapTag("vegan");
+  app.el("favorites-filter").fire("click");
+  assert.deepEqual(app.titles(), []);
+  assert.match(app.el("recipe-list").innerHTML, /No recipes match these filters/);
+  assert.match(app.el("recipe-list").innerHTML, /Clear the filters/);
+
+  app.tapEmpty("all");
+  assert.deepEqual(app.titles().length, 3, "the way out of an empty list is in the empty list");
+});
+
+test("J15.10 · the way out is named after what it would clear", () => {
+  const app = appWith([ROAST, SOUP, CURRY]);
+  app.search("zzzz");
+  assert.match(app.el("recipe-list").innerHTML, /Clear the search</,
+    "a search is what emptied this one, and the button says so");
+
+  // Picked while it still had a recipe behind it, then searched into
+  // nothing — the order a person would actually arrive this way.
+  app.search("");
+  app.tapTag("vegan");
+  app.search("zzzz");
+  assert.match(app.el("recipe-list").innerHTML, /Clear the search and filters</);
+
+  app.tapEmpty("all");
+  assert.equal(app.el("search-input").value, "");
+  assert.deepEqual(app.titles().length, 3);
 });
 
 // --- the search result count, for anyone who cannot see the list --------
