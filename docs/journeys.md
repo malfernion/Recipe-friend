@@ -607,9 +607,15 @@ so the app can tell them what to buy.
 8. A recipe in the live plan says "In the plan" instead, which is more use
    than a date while you are deciding, and stops it being added twice by
    accident.
-9. **Not planned lately** is a filter chip beside Favourites and combines
-   with search and tags as the others do (J3.2): least recently planned
-   first, and never-planned before them.
+9. **Not planned lately** sits beside Favourites and combines with search
+   and tags as the other chips do (J3.2): least recently planned first,
+   and never-planned before them. **It orders the list rather than
+   narrowing it.** There is no honest threshold for "lately" — a
+   fortnight is a lot for a weeknight supper and nothing at all for a
+   Sunday roast — and while you are deciding what to cook, hiding the
+   recipes you have had recently takes away the comparison you are trying
+   to make. It puts the neglected ones under your thumb and leaves
+   everything else where it was.
 10. How often a recipe has been planned is counted from the same archive,
     so "most often planned" needs nothing else stored. **Every appearance
     counts**: a recipe planned twice in one plan (J12.6) was planned
