@@ -170,6 +170,11 @@
    * five minutes ago, and it still sorts where it matters (J14.9).
    */
   function plannedNote(recipe) {
+    // A page that never loaded the planner says nothing about planning
+    // rather than failing to draw a card at all: `planStore` is absent
+    // exactly there, and a card is not the place to discover it. The
+    // same guard search.js keeps over the chip (J14.9).
+    if (!planStore || !window.RecipePlan) return "";
     // Read off the live plan itself, not off whether this reader may add
     // to it: a viewer has no planner (J12.10) but the plan is the book's
     // and they can see what is in it.
@@ -1004,6 +1009,19 @@
   }
 
   /**
+   * The plan is an address like the others, so what the address names is
+   * the one thing on screen (J12.9). Restoring a recipe or the editor
+   * while the readout was up used to leave both open: the recipe took the
+   * top layer and the plan sat under it, holding the page still, and
+   * closing the recipe put you back in a readout the address no longer
+   * named. Quietly, because history has already moved past the entry that
+   * opened it.
+   */
+  function leavePlanReadout() {
+    if (planDialog.open) closeQuietly(planDialog);
+  }
+
+  /**
    * Open whatever the address names, if we can. A recipe we do not hold
    * is a miss rather than an error: signed in, it may simply not have
    * synced down yet, and account.js calls this again once it has.
@@ -1016,6 +1034,7 @@
       const recipe = store.getById(route.id);
       if (!recipe) return false;
       if (recipeDialog.open) closeQuietly(recipeDialog);
+      leavePlanReadout();
       openDetailDialog(recipe, { restoring: true });
       return true;
     }
@@ -1024,12 +1043,14 @@
       const recipe = store.getById(route.id);
       if (!recipe) return false;
       if (detailDialog.open) closeQuietly(detailDialog);
+      leavePlanReadout();
       openRecipeDialog(recipe, false, { restoring: true });
       return true;
     }
     if (route.name === "new") {
       if (recipeDialog.open) return true;
       if (detailDialog.open) closeQuietly(detailDialog);
+      leavePlanReadout();
       openRecipeDialog(null, false, { restoring: true });
       return true;
     }

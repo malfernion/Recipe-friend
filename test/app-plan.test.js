@@ -328,6 +328,27 @@ test("J12.9, J4.21 · the plan reopens from its address, with focus on the headi
     "focus names what has filled the screen, not the first control in the markup");
 });
 
+test("J12.9 · a recipe restored from its address does not open over the readout", () => {
+  const app = planMode([BOLOGNESE]);
+  app.card("add", app.named("Bolognese").id);
+  const id = app.named("Bolognese").id;
+  app.openRecipe(id);
+  assert.equal(app.el("detail-dialog").open, true);
+
+  // An address arriving over an open recipe — a bookmark, or a step
+  // through history — puts the plan up and takes the recipe down.
+  app.win.history.pushState({}, "", "#plan");
+  app.win.fire("popstate", {});
+  assert.equal(app.el("plan-dialog").open, true);
+  assert.equal(app.el("detail-dialog").open, false);
+
+  app.win.history.back();
+
+  assert.equal(app.el("detail-dialog").open, true, "Back brings the recipe back");
+  assert.equal(app.el("plan-dialog").open, false,
+    "and does not leave the readout open underneath it, holding the page still");
+});
+
 test("J4.22 · the page behind the plan is held still", () => {
   const app = planMode([BOLOGNESE]);
   app.open();
@@ -347,6 +368,19 @@ test("J12.10 · a viewer gets the recipes and no planner", () => {
   assert.doesNotMatch(app.el("recipe-list").innerHTML, /data-plan/,
     "and no way in on the cards");
   assert.deepEqual(app.titles(), ["Bolognese"], "the recipes are still theirs to read");
+});
+
+test("J12.10 · a viewer sees what is in the book's plan, having none of their own", () => {
+  const app = planMode([BOLOGNESE, CURRY]);
+  app.card("add", app.named("Bolognese").id);
+  app.app.setCanEdit(false);
+  app.app.render();
+
+  // "In the plan" is read off the live plan, not off whether this reader
+  // may add to it: the plan is the book's (J12.2, J14.8).
+  assert.match(app.el("recipe-list").innerHTML, /class="card-planned">In the plan</);
+  app.openRecipe(app.named("Bolognese").id);
+  assert.match(app.el("detail-content").innerHTML, /class="card-planned">In the plan</);
 });
 
 test("J12.10 · a viewer's tap on the planner is refused, not merely hidden", () => {
@@ -816,7 +850,7 @@ test("J14.9 · Favourites and the chip narrow and order together", () => {
   assert.deepEqual(app.titles(), ["Pancakes", "Curry"]);
 });
 
-test("the plan readout keeps the meals above the shopping list", () => {
+test("J13.1 · the readout is the meals, and under them everything they ask for", () => {
   const app = planMode([BOLOGNESE]);
   app.card("add", app.named("Bolognese").id);
   app.open();
@@ -825,7 +859,7 @@ test("the plan readout keeps the meals above the shopping list", () => {
     "one thread to follow, and one scroll to follow it with");
 });
 
-test("a meal can be taken out of the plan from the readout", async () => {
+test("J12.1 · a plan is a bag of meals, and one can be taken back out of it", async () => {
   const app = planMode([BOLOGNESE, CURRY]);
   app.card("add", app.named("Bolognese").id);
   app.card("add", app.named("Curry").id);
@@ -837,7 +871,7 @@ test("a meal can be taken out of the plan from the readout", async () => {
   assert.doesNotMatch(app.words(), /Bolognese/);
 });
 
-test("portions can be stepped from the readout too", async () => {
+test("J12.5 · portions step from the readout the way the recipe view steps them", async () => {
   const app = planMode([BOLOGNESE]);
   app.card("add", app.named("Bolognese").id);
   app.open();
@@ -848,4 +882,44 @@ test("portions can be stepped from the readout too", async () => {
   assert.match(app.words(), /Serves 5/);
   assert.equal(app.list().lines.find((l) => l.item.includes("onion")).required, 2.5,
     "and the shopping list follows the portions");
+});
+
+test("J14.6 · a page that never loaded the planner still draws its cards", () => {
+  // index.html asks for plan.js, planstore.js and shoplist.js, but a
+  // script that does not arrive leaves a page that has the rest of the
+  // app and no planner. Saying nothing about planning is the whole of
+  // what that should cost — a card that cannot be drawn costs the list.
+  const app = planning([BOLOGNESE, CURRY], { planner: false });
+
+  assert.deepEqual(app.titles(), ["Curry", "Bolognese"], "the list is still a list");
+  assert.doesNotMatch(app.el("recipe-list").innerHTML, /card-planned/,
+    "with nothing to say about planning");
+  assert.equal(app.el("plan-btn").hidden, true, "and no planner offered");
+  app.openRecipe(app.named("Curry").id);
+  assert.equal(app.el("detail-dialog").open, true, "and a recipe still opens");
+});
+
+test("J13.7 · a recipe name off a share link reaches the readout as text", () => {
+  const hostile = '"><img src=x onerror=alert(1)>';
+  const app = planMode([
+    aRecipe({
+      name: hostile,
+      servings: 2,
+      ingredients: [{ amount: 2, unit: hostile, item: hostile }],
+      steps: ["Cook it."],
+    }),
+  ]);
+  app.card("add", app.saved[0].id);
+  app.open();
+  // Part-settle it so the second number, the one J13.10 added, is on
+  // screen carrying the same untrusted words.
+  const line = app.list().lines[0];
+  app.planStore.setPlan(app.win.RecipePlan.settle(app.plan(), line.key, "have", 1, Date.now()));
+  app.app.render();
+
+  for (const html of [app.readout(), app.el("recipe-list").innerHTML]) {
+    assert.doesNotMatch(html, /<img/, "a name is text wherever it is printed");
+    assert.match(html, /&lt;img src=x onerror=alert\(1\)&gt;/);
+    assert.doesNotMatch(html, /aria-label="[^"]*"><img/, "including inside a quoted attribute");
+  }
 });

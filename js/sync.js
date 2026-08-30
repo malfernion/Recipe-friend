@@ -487,6 +487,15 @@
       }
 
       this.planStore.applyMerge(plan, [...here.values()]);
+      // What goes up is what the device holds, which is the coerced plan
+      // (planstore.js's `applyMerge`). A merge takes the union of two
+      // plans' settled items, so its result can be larger than either
+      // side and larger than the caps the client keeps — and those caps
+      // are the arithmetic that keeps a plan inside the size migration
+      // 007 will accept. Pushing the pre-coercion merge would put a plan
+      // on the server this device would refuse to hold, and one the
+      // server may refuse outright, which parks sync for ever.
+      plan = this.planStore.plan;
 
       // Nothing local goes up from a book we may only read (J12.10,
       // J7.17). It would be refused, and a refused push parks the status

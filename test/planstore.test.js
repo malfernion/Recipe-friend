@@ -336,6 +336,74 @@ test("J12.11 · merging two full plans does not make one the server would refuse
   assert.ok(jsonbBytes(held) <= limits.SERVER_MAX_BYTES);
 });
 
+/**
+ * A maximal plan with clocks a date can be made of. The sizes are what
+ * these tests are about, and jsonb charges the same 24 bytes for any
+ * number, so the stamps can be ordinary ones — which `pushLivePlan` needs
+ * them to be, since it dates the row from the plan.
+ */
+function datable(plan, at) {
+  const settled = {};
+  for (const [key, entry] of Object.entries(plan.settled)) {
+    settled[key] = { have: { amount: entry.have.amount, at }, got: { amount: entry.got.amount, at } };
+  }
+  return { ...plan, createdAt: at, updatedAt: at, completedAt: null, settled };
+}
+
+test("J12.11 · what a merge sends up is no bigger than what this device would hold", async () => {
+  const cloud = fakeCloud();
+  const d = device(cloud);
+  const limits = d.win.RecipePlanStore.limits;
+
+  // Two devices at the cap on the same plan, having settled entirely
+  // different items. The merge takes the union (J12.11), which is twice
+  // what either side was allowed — and the row on the server has the
+  // same size check as the one here (007), so a push of the union is a
+  // push that fails for ever.
+  const mine = datable(maximalPlan(d.win), 1000);
+  d.planStore.applyMerge(mine, []);
+  cloud.db.live_plans.push({
+    book_id: BOOK,
+    data: { ...datable(maximalPlan(d.win, 500000), 1000), id: mine.id },
+    updated_at: new Date(1000).toISOString(),
+  });
+
+  await d.sync.syncNow();
+
+  const sent = cloud.db.live_plans[0].data;
+  assert.equal(Object.keys(sent.settled).length, limits.MAX_SETTLED,
+    "what goes up is the plan this device holds, not the union it started from");
+  assert.equal(sent.meals.length, limits.MAX_MEALS);
+  assert.ok(jsonbBytes(sent) <= limits.SERVER_MAX_BYTES,
+    `a pushed plan is ${jsonbBytes(sent)} bytes, and 007 takes ${limits.SERVER_MAX_BYTES}`);
+});
+
+test("J14.1 · a plan finished after a merge is recorded at a size the record will take", async () => {
+  const cloud = fakeCloud();
+  const d = device(cloud);
+  const limits = d.win.RecipePlanStore.limits;
+
+  // A live plan carrying `completedAt` is a Done that got half way, and
+  // finishing the job archives the plan as it stands (J14.1). After a
+  // merge "as it stands" is the union, and an archived plan goes into a
+  // row with the same check as the live one.
+  const mine = datable(maximalPlan(d.win), 1000);
+  d.planStore.applyMerge(mine, []);
+  cloud.db.live_plans.push({
+    book_id: BOOK,
+    data: { ...datable(maximalPlan(d.win, 500000), 1000), id: mine.id, updatedAt: 2000, completedAt: 2000 },
+    updated_at: new Date(2000).toISOString(),
+  });
+
+  await d.sync.syncNow();
+
+  assert.equal(cloud.db.plans.length, 1, "the half-finished Done was finished");
+  const recorded = cloud.db.plans[0].data;
+  assert.equal(Object.keys(recorded.settled).length, limits.MAX_SETTLED);
+  assert.ok(jsonbBytes(recorded) <= limits.SERVER_MAX_BYTES,
+    `a recorded plan is ${jsonbBytes(recorded)} bytes, and 007 takes ${limits.SERVER_MAX_BYTES}`);
+});
+
 test("J13.9 · a settlement off the server cannot make the list ask for more than it needs", () => {
   const cloud = fakeCloud();
   const d = device(cloud);

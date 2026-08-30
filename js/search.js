@@ -89,7 +89,7 @@
    * skip saves recomputing the matches, and changes nothing observable.
    *
    * "Not planned lately" (J14.9) is the last word on the order, and it
-   * orders rather than hides: J14.7 calls it a sort, and any line drawn
+   * orders rather than hides: J14.9 calls it a sort, and any line drawn
    * between "lately" and "not lately" would be a number nobody chose. It
    * is applied after the ranking rather than instead of it, so a search
    * still decides between two recipes planned the same day — the chip

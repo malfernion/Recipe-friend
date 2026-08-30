@@ -86,13 +86,21 @@ function loadUI(options = {}) {
   // The planner goes in with the rest: app.js makes a plan store as it
   // loads, and reaches for plan.js and shoplist.js as bare globals, the
   // same way a browser hands them over from index.html.
+  //
+  // `planner: false` leaves all three out, which is the page a browser
+  // gets when one of those scripts does not arrive. index.html always
+  // asks for them, so this is not a supported configuration — it is the
+  // one a failed fetch produces, and the list still has to draw in it.
+  const planner = options.planner === false ? [] : ["plan.js", "planstore.js", "shoplist.js"];
   const base = loadApp(
-    "api.js", "units.js", "scale.js", "storage.js", "plan.js", "planstore.js",
-    "shoplist.js", "share.js", "cookmode.js"
+    "api.js", "units.js", "scale.js", "storage.js", ...planner,
+    "share.js", "cookmode.js"
   );
 
   for (const key of ["RecipeHTML", "RecipeApi", "RecipeUnits", "RecipeScale", "RecipeStore",
                      "RecipePlan", "RecipePlanStore", "RecipeShopList", "RecipeShare", "RecipeCookMode"]) {
+    // A module that was left out leaves its global unset here too, rather
+    // than carrying the last test's copy over on globalThis.
     win[key] = base[key];
     globalThis[key] = base[key];
   }

@@ -417,8 +417,14 @@
       // here is what keeps it arithmetic.
       if (plan) this.state.plan = sanitizePlan(plan) || this.state.plan;
       if (archive) {
+        // The record gets the same treatment for the same reason. A plan
+        // that was finished after a merge carries that merge's union of
+        // settled items, and it goes into a row with the same size check
+        // as the live one (007) — so an archive taken on trust is the
+        // hole the paragraph above closes, moved one table across.
         this.state.archive = archive
-          .slice()
+          .map(sanitizeArchived)
+          .filter(Boolean)
           .sort((a, b) => b.completedAt - a.completedAt)
           .slice(0, MAX_ARCHIVE);
         // A debt on a plan this device no longer holds can never be paid:

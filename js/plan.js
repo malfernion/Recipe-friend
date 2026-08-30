@@ -388,9 +388,10 @@
   }
 
   /**
-   * Least recently planned first, never-planned before them (J14.9). The
-   * incoming order is kept between equals, so the chip narrows the list
-   * rather than shuffling it.
+   * Least recently planned first, never-planned before them (J14.9). It
+   * orders the list and never narrows it — nothing is dropped here — and
+   * the incoming order is kept between equals, so what the chip does to
+   * two recipes planned the same day is nothing.
    */
   function byLeastRecentlyPlanned(recipes, index) {
     const at = (r) => {
