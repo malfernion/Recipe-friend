@@ -111,7 +111,23 @@
     // about where a book keeps its plans. A page without plan.js simply
     // does not offer the chip.
     if (!c.notPlannedLately || !global.RecipePlan) return ranked;
-    return global.RecipePlan.byLeastRecentlyPlanned(ranked, c.plannedIndex);
+    const byPlanned = (list) => global.RecipePlan.byLeastRecentlyPlanned(list, c.plannedIndex);
+    // Two chips, one order, and one of them has to lose (J14.9). The
+    // search wins: a card says which terms it matched (J3.3), so a
+    // recipe answering one of two terms sitting above one answering
+    // both makes the caption look like a lie. The chip orders within
+    // each group of equally good matches instead — which is the whole
+    // list whenever there are fewer than two terms, and that is the
+    // case somebody planning a week is actually in.
+    if (!c.terms || c.terms.length < 2) return byPlanned(ranked);
+    const groups = new Map();
+    for (const r of ranked) {
+      const n = matchedTerms(r, c.terms, c.prefs).length;
+      if (!groups.has(n)) groups.set(n, []);
+      groups.get(n).push(r);
+    }
+    // `ranked` is already best-first, so the groups come out in order.
+    return [...groups.values()].flatMap(byPlanned);
   }
 
   global.RecipeSearch = { readable, parseTerms, matchedTerms, matchesFilters, visibleRecipes };

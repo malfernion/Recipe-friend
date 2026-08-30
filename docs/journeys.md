@@ -616,6 +616,14 @@ so the app can tell them what to buy.
    recipes you have had recently takes away the comparison you are trying
    to make. It puts the neglected ones under your thumb and leaves
    everything else where it was.
+
+   **Where a listed search is also on, the search wins and this orders
+   within it** (J3.3). Two chips asking for two orders is one order, and
+   a card that names the terms it matched cannot sit above a card that
+   matched more of them without making its own caption look like a lie.
+   With fewer than two terms there is no ranking to lose to, so the chip
+   orders the whole list — which is the case somebody planning a week is
+   actually in.
 10. How often a recipe has been planned is counted from the same archive,
     so "most often planned" needs nothing else stored. **Every appearance
     counts**: a recipe planned twice in one plan (J12.6) was planned

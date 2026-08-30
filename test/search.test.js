@@ -213,3 +213,38 @@ test("J14.9 · a ranked search still decides between two recipes planned the sam
     "the better match wins a tie the archive cannot break"
   );
 });
+
+// Ids are uuids once sanitized, so the archive is keyed off the stored
+// recipes rather than off names invented here.
+const BOTH = recipe({ name: "chicken rice bowl" });
+const BOTH_OLD = recipe({ name: "chicken and rice soup" });
+const ONE_TERM = recipe({ name: "rice pudding" });
+
+test("J14.9 · a listed search outranks the chip, which orders within each group of matches", () => {
+  const plannedIndex = {
+    [BOTH.id]: { lastPlannedAt: 10, count: 1 },
+    [BOTH_OLD.id]: { lastPlannedAt: 2, count: 1 },
+    // The least recently planned of the three, and still last: it
+    // answers one term where the others answer two.
+    [ONE_TERM.id]: { lastPlannedAt: 1, count: 1 },
+  };
+  const order = visibleRecipes([BOTH, ONE_TERM, BOTH_OLD], {
+    terms: ["chicken", "rice"],
+    notPlannedLately: true,
+    plannedIndex,
+  }).map((r) => r.id);
+  assert.deepEqual(order, [BOTH_OLD.id, BOTH.id, ONE_TERM.id]);
+});
+
+test("J14.9 · with one term there is no ranking to lose to, so the chip orders everything", () => {
+  const plannedIndex = {
+    [BOTH.id]: { lastPlannedAt: 90, count: 1 },
+    [ONE_TERM.id]: { lastPlannedAt: 5, count: 1 },
+  };
+  const order = visibleRecipes([BOTH, ONE_TERM], {
+    terms: ["rice"],
+    notPlannedLately: true,
+    plannedIndex,
+  }).map((r) => r.id);
+  assert.deepEqual(order, [ONE_TERM.id, BOTH.id]);
+});
