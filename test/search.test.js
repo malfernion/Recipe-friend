@@ -389,3 +389,12 @@ test("J15.5 · a tag that would leave nothing is still listed, with its nought",
   assert.deepEqual(counts.map((c) => c.tag), ["quick", "sunday", "vegan"]);
   assert.equal(counts.find((c) => c.tag === "sunday").count, 0);
 });
+
+test("J15.6 · the tag menu files words the way the A to Z sort does", () => {
+  const accented = recipe({ name: "Épicé", tags: ["épicé"] });
+  const zest = recipe({ name: "Zest", tags: ["zeste"] });
+  const apple = recipe({ name: "Apple", tags: ["apple"] });
+  const order = tagCounts([apple, zest, accented], {}).map((t) => t.tag);
+  assert.deepEqual(order, ["apple", "épicé", "zeste"],
+    "codepoint order files an accented word after z, which is not where a reader looks for it");
+});

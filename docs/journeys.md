@@ -46,7 +46,14 @@ Someone types in a recipe from their head or a book.
    quantity and is treated as empty.
 5. Servings, prep and cook minutes are optional, and empty stays empty
    rather than becoming 0.
-6. Tags are free text, lowercased, and become filter chips.
+6. Tags are free text, lowercased, kept once however many times they are
+   typed, and are what the Filter menu is made of (J15.1). They were
+   filter chips, one per tag, until there were enough of them to be a
+   wall (J15.2). Keeping each only once is what lets a tag be counted:
+   lowercasing is what manufactures the duplicate — "Vegan" and "vegan"
+   typed on one recipe are one word by the time they are stored — and a
+   tag counted twice makes the menu promise a longer list than the tap
+   gives (J15.4).
 7. A photo can be taken from the device or given as a public URL. Device
    photos are downscaled in the browser (max 1200px, JPEG quality 0.78)
    before they go anywhere.

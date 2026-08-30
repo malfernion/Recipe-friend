@@ -226,7 +226,10 @@
     for (const r of recipes) for (const tag of r.tags) if (!counts.has(tag)) counts.set(tag, 0);
     for (const r of chosen) for (const tag of r.tags) counts.set(tag, counts.get(tag) + 1);
     return [...counts.keys()]
-      .sort()
+      // The same comparison the A to Z sort uses (J15.6), so "épicé"
+      // files where a reader expects it in both places rather than
+      // after "zeste" in one of them.
+      .sort((a, b) => a.localeCompare(b, undefined, { sensitivity: "base" }))
       .map((tag) => ({ tag, count: counts.get(tag), active: active.includes(tag) }));
   }
 
