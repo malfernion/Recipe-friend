@@ -152,7 +152,10 @@ test("a hostile row from the server is sanitised, not trusted", () => {
   const { recipes } = h.sync.merge([{
     id,
     data: { name: "Bad", ingredients: [{ amount: 1, unit: "g", item: "x" }], steps: ["s"],
-            image: "javascript:alert(1)", tags: Array(5000).fill("t") },
+            image: "javascript:alert(1)",
+            // Distinct: identical ones are one tag (J2.6), which would
+            // bound this row without the cap being asked anything.
+            tags: Array.from({ length: 5000 }, (_, i) => `t${i}`) },
     updated_at: iso(Date.now()),
     deleted_at: null,
   }]);

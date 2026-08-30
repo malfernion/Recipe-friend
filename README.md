@@ -12,9 +12,13 @@ accounts and sync.
   ingredients (amount · unit · item), steps, tags, and a photo. Device
   photos are downscaled in the browser and kept in private storage; nothing
   in the bucket is publicly readable.
-- **Search and filter** — across names, ingredients and tags, plus tag chips
-  and favourites. A search is a comma-separated list, so typing what you
-  have — `chicken, rice` — shows what you can cook, best matches first.
+- **Search, filter and sort** — search across names, ingredients and tags;
+  filter by any number of tags, which combine as "both", each saying how
+  long the list is with it on; sort by name, by how long a recipe takes,
+  or by what you have not had in ages. A search is a comma-separated
+  list, so typing what you have — `chicken, rice` — shows what you can
+  cook, best matches first. What is on shows in a row under the toolbar
+  and comes off there; none of it is remembered between visits.
 - **Portion scaling and measurement preferences** — amounts rescale on the
   fly and appear in your own units, without ever editing the stored recipe.
 - **Meal planner and shopping list** — put recipes in a plan at the
@@ -22,7 +26,7 @@ accounts and sync.
   need, combined and in your own units. Cross off what you already have,
   tick off what goes in the basket, and copy what is left into whatever
   shopping app you use. Finishing a plan records that those recipes were
-  planned, so a card can say "Planned 3 weeks ago" and a chip can put
+  planned, so a card can say "Planned 3 weeks ago" and a sort can put
   what you have not had lately under your thumb. A plan belongs to the
   book, so whoever does the shop sees what whoever planned it chose.
 - **A recipe view built for a worktop** — it takes the whole screen on a
@@ -193,7 +197,7 @@ js/units.js                    Measurement preferences and unit conversion
 js/html.js                     Escaping, in one place
 js/api.js                      Everything the app asks the server for
 js/cookmode.js                 Keeping the screen awake while cooking
-js/search.js                   Search, filters, and "what can I cook?" ranking
+js/search.js                   Search, filters, sorts, and "what can I cook?" ranking
 js/plan.js                     The plan: meals, settled amounts, and merging
 js/shoplist.js                 Combining planned recipes into one shopping list
 js/planstore.js                The plan's local cache, per book

@@ -11,11 +11,11 @@
   // --- UI state (not persisted) ---
   let searchTerms = []; // the query, split on commas (J3.3)
   let favoritesOnly = false;
-  // Least recently planned first, never-planned before them (J14.9). A
-  // chip beside Favourites, and like Favourites it is not persisted: it
-  // is a way of looking at the list, not a property of the book.
-  let notPlannedLately = false;
-  let activeTag = null;
+  // The tags that are on, all of which a recipe must carry (J15.3).
+  let activeTags = [];
+  // The order the list is in, by name (J15.6). "added" is the collection's
+  // own order, which is what the list has always done.
+  let sortBy = "added";
   let editingId = null; // recipe id being edited, or null when adding
   let incomingId = null; // id of a shared/pasted recipe being reviewed before saving
   let detailId = null; // recipe id shown in the detail dialog
@@ -35,8 +35,13 @@
   const resultCountEl = $("#result-count");
   const searchInput = $("#search-input");
   const favoritesBtn = $("#favorites-filter");
-  const notPlannedBtn = $("#not-planned-filter");
-  const tagFiltersEl = $("#tag-filters");
+  const filterMenu = $("#filter-menu");
+  const filterSummaryEl = $("#filter-summary");
+  const tagMenuEl = $("#tag-menu");
+  const sortMenu = $("#sort-menu");
+  const sortSummaryEl = $("#sort-summary");
+  const sortOptionsEl = $("#sort-options");
+  const activeFiltersEl = $("#active-filters");
   const recipeDialog = $("#recipe-dialog");
   const recipeForm = $("#recipe-form");
   const dialogTitle = $("#dialog-title");
@@ -131,16 +136,24 @@
   function criteria() {
     return {
       terms: searchTerms,
-      tag: activeTag,
+      tags: activeTags,
       favoritesOnly,
-      // The chip and what it needs to answer: which recipes were planned
-      // when (J14.9). The index goes with it rather than being fetched
-      // inside search.js, which knows about recipes and not about where
-      // a book keeps its plans.
-      notPlannedLately,
-      plannedIndex: notPlannedLately ? planningIndex() : null,
+      sort: sortBy,
+      // What the two planned sorts need to answer: which recipes were
+      // planned when, and how often (J15.6). The index goes with them
+      // rather than being fetched inside search.js, which knows about
+      // recipes and not about where a book keeps its plans. Built only
+      // for the sorts that read it — the whole archive is walked to make
+      // it, and four of the six ways of looking at the list do not care.
+      plannedIndex: sortNeedsPlan(sortBy) ? planningIndex() : null,
       prefs: store.prefs,
     };
+  }
+
+  /** Does this sort read the archive? (J15.6) */
+  function sortNeedsPlan(id) {
+    const sort = RecipeSearch.sortById(id);
+    return Boolean(sort && sort.needsPlan);
   }
 
   // Built at most once a redraw and answered from (see `render`).
@@ -241,17 +254,104 @@
   }
 
   // --- Rendering ---
-  function renderTagFilters() {
-    const tags = store.allTags();
-    if (activeTag && !tags.includes(activeTag)) activeTag = null;
-    tagFiltersEl.innerHTML = tags
+  /**
+   * The tag menu (J15.1). Every tag in the book is listed, each with the
+   * size of the list with that tag on (J15.4) — and a tag that would leave
+   * none is greyed rather than dropped (J15.5), because a tag vanishing
+   * as you filter reads as a book losing things. A tag already on is never
+   * greyed, whatever its count: that tap is the way off, and a search
+   * matching nothing takes every count to nought.
+   *
+   * The menu draws every tag, which is what the filter row used to do and
+   * what made it a wall (J15.2). In a menu that is the right shape: it is
+   * shut until it is asked for, and it scrolls.
+   */
+  function renderFilterMenu() {
+    const counts = RecipeSearch.tagCounts(store.recipes, criteria());
+    tagMenuEl.innerHTML = counts.length
+      ? counts
+          .map(({ tag, count, active }) => {
+            // Nothing left to choose, and nothing to undo: a nought is an
+            // answer, and pressing it would be a way of getting no list.
+            const dead = count === 0 && !active;
+            return `
+        <button class="more-item tag-option ${active ? "tag-option-on" : ""}"
+                data-tag="${escapeHTML(tag)}" aria-pressed="${active}"
+                ${dead ? "disabled" : ""}>
+          <span class="tag-option-name">${escapeHTML(tag)}</span>
+          <span class="tag-option-count">${count}</span>
+        </button>`;
+          })
+          .join("")
+      : `<p class="menu-empty">No tags in this book yet.</p>`;
+    // The label carries the state, so the row below is not the only place
+    // it is said (J15.1) — and it is said in words to anyone who cannot
+    // see it, where a middle dot and a numeral are not a sentence.
+    filterSummaryEl.textContent = activeTags.length ? `Filter · ${activeTags.length}` : "Filter";
+    filterSummaryEl.setAttribute(
+      "aria-label",
+      activeTags.length === 0
+        ? "Filter by tag"
+        : `Filter by tag — ${activeTags.length} ${activeTags.length === 1 ? "tag" : "tags"} on`
+    );
+  }
+
+  /**
+   * The sorts, drawn from the one list of them (J15.6). The two that read
+   * the archive are offered only where there is an archive to read: a
+   * page without the planner is short of a fact, not short of a menu.
+   */
+  function renderSortMenu() {
+    const sorts = RecipeSearch.SORTS.filter((s) => !s.needsPlan || planStore);
+    if (!sorts.some((s) => s.id === sortBy)) sortBy = "added";
+    sortOptionsEl.innerHTML = sorts
       .map(
-        (tag) => `
-        <button class="chip ${tag === activeTag ? "chip-active" : ""}"
-                data-tag="${escapeHTML(tag)}"
-                aria-pressed="${tag === activeTag}">${escapeHTML(tag)}</button>`
+        (sort) => `
+        <button class="more-item sort-option ${sort.id === sortBy ? "sort-option-on" : ""}"
+                data-sort="${escapeHTML(sort.id)}"
+                aria-pressed="${sort.id === sortBy}">${escapeHTML(sort.label)}</button>`
       )
       .join("");
+    // The chip has room for the short of it; the menu and the screen
+    // reader get the whole name.
+    const chosen = RecipeSearch.sortById(sortBy) || RecipeSearch.SORTS[0];
+    sortSummaryEl.textContent = `Sort · ${chosen.short}`;
+    sortSummaryEl.setAttribute("aria-label", `Sort the list — ${chosen.label}`);
+  }
+
+  /**
+   * What is on, and only what is on (J15.2) — each with a way to take
+   * that one off, and one way to clear the lot. Nothing on, nothing here:
+   * an empty row is a row of chrome above the recipes.
+   */
+  function renderActiveRow() {
+    const chips = [];
+    // Favourites is chosen in the toolbar and taken off in either place:
+    // the row is what is on, and leaving it out would make "Clear
+    // filters" clear something the row never mentioned.
+    if (favoritesOnly) {
+      chips.push(activeChip({ remove: "favorites", label: "★ Favourites", spoken: "Favourites" }));
+    }
+    for (const tag of activeTags) chips.push(activeChip({ remove: "tag", tag, label: tag, spoken: tag }));
+    activeFiltersEl.hidden = chips.length === 0;
+    activeFiltersEl.innerHTML = chips.length
+      ? `${chips.join("")}
+         <button class="btn btn-ghost clear-filters" data-remove="filters">Clear filters</button>`
+      : "";
+  }
+
+  /*
+    One thing that is on. The whole chip takes it off — a × drawn small
+    enough to be only a hint is not a target — and it is spoken as what it
+    does, since "★ Favourites" read out as a black star is not a control
+    anybody can find.
+  */
+  function activeChip({ remove, label, spoken, tag }) {
+    return `
+      <button class="chip chip-active active-chip" data-remove="${remove}"
+              ${tag ? `data-tag="${escapeHTML(tag)}"` : ""}
+              aria-label="Remove filter ${escapeHTML(spoken)}">${escapeHTML(label)}<span
+              class="active-chip-x" aria-hidden="true">×</span></button>`;
   }
 
   function recipeCard(recipe, index) {
@@ -303,6 +403,28 @@
       </article>`;
   }
 
+  /**
+   * A tag the book no longer has anywhere cannot go on filtering by it —
+   * the last recipe carrying it was edited or deleted, and the filter
+   * would leave an empty list nobody asked for.
+   */
+  function pruneTags() {
+    const tags = store.allTags();
+    activeTags = activeTags.filter((tag) => tags.includes(tag));
+  }
+
+  /** Why the list is empty, said as it happened. */
+  function noMatchText() {
+    return searchTerms.length ? "No recipes match your search." : "No recipes match these filters.";
+  }
+
+  /** The way out, named after what it clears (J15.10). */
+  function clearLabel() {
+    const filters = activeTags.length > 0 || favoritesOnly;
+    if (filters && searchTerms.length) return "Clear the search and filters";
+    return filters ? "Clear the filters" : "Clear the search";
+  }
+
   function render() {
     // A recipe that has left the book leaves the plan (J12.8), and this is
     // where the book's recipes are read. `prune` hands the plan straight
@@ -313,6 +435,7 @@
     // here, or one that arrived from another device — so the index is
     // dropped and rebuilt at most once for the cards that ask (J14.6).
     plannedIndexCache = null;
+    pruneTags();
     const visible = RecipeSearch.visibleRecipes(store.recipes, criteria());
     listEl.innerHTML = visible.map((r, i) => recipeCard(r, i)).join("");
 
@@ -322,21 +445,22 @@
 
     if (hasAny && visible.length === 0) {
       listEl.hidden = false;
-      listEl.innerHTML = `<p class="no-results">No recipes match your search.</p>`;
+      // The way out of an empty list is the thing you cannot see when the
+      // list is empty (J15.10), so it is offered here rather than left to
+      // be found in the toolbar above. Nothing on cannot empty the list,
+      // so there is always something for this to clear.
+      listEl.innerHTML = `<p class="no-results">${escapeHTML(noMatchText())}</p>
+        <p class="no-results-out">
+          <button class="btn btn-ghost" data-remove="all">${escapeHTML(clearLabel())}</button>
+        </p>`;
     }
 
     announceCount(hasAny ? visible.length : null);
     favoritesBtn.classList.toggle("chip-active", favoritesOnly);
     favoritesBtn.setAttribute("aria-pressed", String(favoritesOnly));
-    if (notPlannedBtn) {
-      // Offered wherever there is a plan to have a history: a book you
-      // may only read has one too, it is only adding to it that is a
-      // write (J12.10).
-      notPlannedBtn.hidden = !planStore;
-      notPlannedBtn.classList.toggle("chip-active", notPlannedLately);
-      notPlannedBtn.setAttribute("aria-pressed", String(notPlannedLately));
-    }
-    renderTagFilters();
+    renderFilterMenu();
+    renderSortMenu();
+    renderActiveRow();
     syncPlanUI();
     // The plan is read from the same store, so a redraw it did not cause
     // — a sync landing somebody else's meal — still reaches it.
@@ -357,7 +481,7 @@
       count === null
         ? ""
         : count === 0
-          ? "No recipes match your search."
+          ? noMatchText()
           : `${count} ${count === 1 ? "recipe" : "recipes"}`;
     if (resultCountEl.textContent !== text) resultCountEl.textContent = text;
   }
@@ -1974,21 +2098,127 @@
     render();
   });
 
-  if (notPlannedBtn) {
-    notPlannedBtn.addEventListener("click", () => {
-      notPlannedLately = !notPlannedLately;
-      render();
-    });
+  /**
+   * A choice redraws the thing it was made in, and rewriting innerHTML
+   * throws away the button the keyboard was on — which left you on the
+   * body after choosing a tag, in the one menu built for choosing several
+   * things in a row (J15.3). So the caller says where focus belongs
+   * afterwards, and the first candidate that is there and choosable gets
+   * it: the same control where it survives, and the one that governs it
+   * where the choice was to take that control away.
+   */
+  function renderKeepingFocus(...candidates) {
+    render();
+    for (const find of candidates) {
+      const el = find();
+      if (el && !el.disabled) {
+        el.focus();
+        return;
+      }
+    }
   }
 
-  tagFiltersEl.addEventListener("click", (event) => {
+  /** The tag's own row in the redrawn menu, found by its name rather than
+      by a selector: a tag is free text and need not be one. */
+  const tagOption = (tag) => () =>
+    Array.from(tagMenuEl.querySelectorAll("[data-tag]")).find((b) => b.dataset.tag === tag);
+
+  // A tag goes on or off and the menu stays open: two tags mean both
+  // (J15.3), so choosing one is rarely the end of the sentence.
+  tagMenuEl.addEventListener("click", (event) => {
     const btn = event.target.closest("[data-tag]");
-    if (!btn) return;
-    activeTag = activeTag === btn.dataset.tag ? null : btn.dataset.tag;
-    render();
+    if (!btn || !btn.dataset.tag) return;
+    const tag = btn.dataset.tag;
+    activeTags = activeTags.includes(tag)
+      ? activeTags.filter((t) => t !== tag)
+      : [...activeTags, tag];
+    // Taking a tag off can take its count to nought against what is still
+    // on, and a nought is not choosable (J15.5) — so the summary catches
+    // focus in the one case the row cannot.
+    renderKeepingFocus(tagOption(tag), () => filterSummaryEl);
   });
 
+  sortOptionsEl.addEventListener("click", (event) => {
+    const btn = event.target.closest("[data-sort]");
+    if (!btn || !btn.dataset.sort) return;
+    sortBy = btn.dataset.sort;
+    if (sortMenu) sortMenu.open = false; // one choice, so the menu is done
+    // The menu it was chosen in has gone, and the chip is now what says
+    // what was chosen, so that is where the keyboard lands.
+    renderKeepingFocus(() => sortSummaryEl);
+  });
+
+  activeFiltersEl.addEventListener("click", (event) => {
+    const btn = event.target.closest("[data-remove]");
+    if (!btn || !btn.dataset.remove) return;
+    // The chip you press is the thing you are taking away, so there is no
+    // equivalent to come back to: focus goes to whatever now stands where
+    // it stood, and to the control that turned it on once the row is
+    // empty and gone.
+    const row = Array.from(activeFiltersEl.querySelectorAll("[data-remove]"));
+    const at = row.indexOf(btn);
+    const wasFavorites = btn.dataset.remove === "favorites";
+    removeFilter(btn.dataset.remove, btn.dataset.tag, [
+      () => {
+        const left = activeFiltersEl.querySelectorAll("[data-remove]");
+        return left[Math.min(at, left.length - 1)];
+      },
+      () => (wasFavorites ? favoritesBtn : filterSummaryEl),
+    ]);
+  });
+
+  /**
+   * Take one thing off, or the lot (J15.2). "all" takes the search with
+   * them: it is what the empty list offers as a way out (J15.10), and
+   * there a search is as likely to be the reason as a filter.
+   */
+  function removeFilter(what, tag, focusAfter) {
+    if (what === "tag") activeTags = activeTags.filter((t) => t !== tag);
+    if (what === "favorites") favoritesOnly = false;
+    if (what === "filters" || what === "all") {
+      activeTags = [];
+      favoritesOnly = false;
+    }
+    if (what === "all") {
+      searchTerms = [];
+      searchInput.value = "";
+    }
+    renderKeepingFocus(...(focusAfter || []));
+  }
+
+  /**
+   * Switching books clears the toolbar with it (J15.8). A book you have
+   * just opened showing you a third of itself, for reasons set on a
+   * different book last week, is a bug that looks like missing recipes.
+   *
+   * It hangs off the store rather than off books.js because every way
+   * into another book — switching, deleting one, leaving one, being
+   * removed from one — goes through `useBook`, and only that one knows
+   * whether the list underneath actually changed.
+   */
+  store.onUseBook = () => {
+    searchTerms = [];
+    searchInput.value = "";
+    activeTags = [];
+    favoritesOnly = false;
+    sortBy = "added";
+  };
+
   listEl.addEventListener("click", (event) => {
+    // The way out of an empty list (J15.10) is drawn where the cards
+    // would be, so it is answered here.
+    const clearBtn = event.target.closest("[data-remove]");
+    if (clearBtn && clearBtn.dataset.remove) {
+      // This one clears the search with the filters, and it draws itself
+      // where the recipes are — so once they are back it is gone, and the
+      // top of the toolbar is where the keyboard belongs rather than the
+      // body. Only for a keyboard, though: a click synthesised by Enter
+      // carries a detail of 0, and putting a thumb on the search box
+      // would raise the on-screen one over the recipes just asked for.
+      const byKey = event.detail === 0;
+      removeFilter(clearBtn.dataset.remove, undefined, byKey ? [() => searchInput] : []);
+      return;
+    }
     // Checked first: these sit inside a card, which is itself a button.
     const planBtn = event.target.closest("[data-plan]");
     if (planBtn && planBtn.dataset.plan) {
@@ -2273,20 +2503,50 @@
     return tryCloseEditor();
   });
 
-  // --- Overflow menu ---
-  // <details> doesn't close on outside clicks or after choosing an item.
-  const moreMenu = $("#more-menu");
-  if (moreMenu) {
-    moreMenu.addEventListener("click", (event) => {
-      if (event.target.closest(".more-item")) moreMenu.open = false;
-    });
-    document.addEventListener("click", (event) => {
-      if (moreMenu.open && !moreMenu.contains(event.target)) moreMenu.open = false;
-    });
+  // --- Menus ---
+  // <details> doesn't close on outside clicks or after choosing an item,
+  // and there are three of them now (J15.1), so the closing is written
+  // once. Choosing does not always finish the question — the tags do not
+  // (J15.3) — so each menu says whether an item ends it.
+  function wireMenu(menu, { closeOnChoose = true } = {}) {
+    if (!menu) return;
+    if (closeOnChoose) {
+      menu.addEventListener("click", (event) => {
+        if (event.target.closest(".more-item")) menu.open = false;
+      });
+    }
+    // Asked on the way down, not on the way up. Choosing a tag redraws
+    // the menu under the thumb — it stays open, because two tags mean
+    // both and one is rarely the end of the sentence (J15.3) — which
+    // throws away the button the tap started on. By the time a bubbling
+    // listener saw the tap, `contains` was being asked about a node no
+    // longer in the page, said no, and shut the menu on every choice.
+    // In the capture phase the page has not moved yet.
+    document.addEventListener(
+      "click",
+      (event) => {
+        if (menu.open && !menu.contains(event.target)) menu.open = false;
+      },
+      true
+    );
     document.addEventListener("keydown", (event) => {
-      if (event.key === "Escape" && moreMenu.open) moreMenu.open = false;
+      if (event.key !== "Escape" || !menu.open) return;
+      // Escape hides the panel, and the keyboard was very likely inside
+      // it: left there it is parked on a control nobody can see, and the
+      // next Tab starts from somewhere off the screen. It comes back to
+      // the summary, which is what shutting a menu leaves you looking at.
+      const inside = menu.contains(document.activeElement);
+      menu.open = false;
+      if (inside) {
+        const summary = menu.querySelector("summary");
+        if (summary) summary.focus();
+      }
     });
   }
+
+  wireMenu($("#more-menu"));
+  wireMenu(sortMenu);
+  wireMenu(filterMenu, { closeOnChoose: false });
 
   // Handle for the sync layer (account.js/sync.js): shared store plus a
   // way to redraw once remote changes land.

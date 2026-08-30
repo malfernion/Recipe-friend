@@ -30,7 +30,28 @@ function appWith(recipes) {
     ui.el("search-input").value = text;
     ui.el("search-input").fire("input");
   };
-  return { ...ui, titles, search };
+  // The toolbar's three delegated handlers, driven the way a thumb does:
+  // pick a tag out of the Filter menu, an order out of Sort, and take one
+  // thing off in the row underneath (J15.1, J15.2).
+  const tapTag = (tag) =>
+    ui.el("tag-menu").fire("click", {
+      target: { closest: (sel) => (sel === "[data-tag]" ? { dataset: { tag } } : null) },
+    });
+  const chooseSort = (sort) =>
+    ui.el("sort-options").fire("click", {
+      target: { closest: (sel) => (sel === "[data-sort]" ? { dataset: { sort } } : null) },
+    });
+  const tapRow = (remove, tag) =>
+    ui.el("active-filters").fire("click", {
+      target: { closest: (sel) => (sel === "[data-remove]" ? { dataset: { remove, tag } } : null) },
+    });
+  const tapEmpty = (remove) =>
+    ui.el("recipe-list").fire("click", {
+      target: { closest: (sel) => (sel === "[data-remove]" ? { dataset: { remove } } : null) },
+    });
+  const row = () => ui.el("active-filters").innerHTML;
+  const menu = () => ui.el("tag-menu").innerHTML;
+  return { ...ui, titles, search, tapTag, chooseSort, tapRow, tapEmpty, row, menu };
 }
 
 const ROAST = aRecipe({
@@ -101,12 +122,12 @@ test("J3.1 · an ingredient matches as you see it, not only as written", () => {
   assert.deepEqual(app.titles(), ["Tomato Soup"]);
 });
 
-test("J3.2 · a tag chip narrows the list, and clicking it again clears it", () => {
+test("J3.2 · a tag from the menu narrows the list, and picking it again clears it", () => {
   const app = appWith([ROAST, SOUP, CURRY]);
-  app.el("tag-filters").fire("click", {
-    target: { closest: () => ({ dataset: { tag: "quick" } }) },
-  });
+  app.tapTag("quick");
   assert.deepEqual(app.titles().sort(), ["Chickpea Curry", "Tomato Soup"]);
+  app.tapTag("quick");
+  assert.deepEqual(app.titles().length, 3);
 });
 
 test("J3.2 · the favourites filter narrows the list, and combines with search", () => {
@@ -208,6 +229,319 @@ test("J3.6 · a favourite belongs to the recipe, so a book shares it", () => {
   assert.equal(app.store.getById(soup.id).favorite, true);
   assert.match(app.store.exportJSON(), /"favorite": true/,
     "and it travels with the recipe rather than with the device");
+});
+
+// --- J15 · choosing what to look at -------------------------------------
+
+/** One tag's entry in the Filter menu, as markup. */
+function option(app, tag) {
+  const m = new RegExp(`<button[^>]*data-tag="${tag}"[\\s\\S]*?</button>`).exec(app.menu());
+  return m ? m[0] : "";
+}
+/** The number beside it — the size of the list with that tag on (J15.4). */
+const leaves = (app, tag) => Number((/tag-option-count">(\d+)</.exec(option(app, tag)) || [])[1]);
+
+test("J15.1 · the two menus each say what they are doing in their own label", () => {
+  const app = appWith([ROAST, SOUP, CURRY]);
+  assert.equal(app.el("filter-summary").textContent, "Filter");
+  assert.equal(app.el("sort-summary").textContent, "Sort · Newest",
+    "the default is an answer like any other, so it is said rather than left blank");
+
+  app.tapTag("quick");
+  assert.equal(app.el("filter-summary").textContent, "Filter · 1");
+  app.tapTag("vegan");
+  assert.equal(app.el("filter-summary").textContent, "Filter · 2");
+  app.chooseSort("name");
+  assert.equal(app.el("sort-summary").textContent, "Sort · A–Z");
+});
+
+test("J15.3 · two tags mean both, and combining them narrows", () => {
+  const app = appWith([ROAST, SOUP, CURRY]);
+  app.tapTag("quick");
+  assert.deepEqual(app.titles().sort(), ["Chickpea Curry", "Tomato Soup"]);
+  app.tapTag("vegan");
+  assert.deepEqual(app.titles(), ["Chickpea Curry"],
+    "a shorter list than either alone, not the two put together");
+});
+
+test("J15.2 · the row shows only what is on, and nothing at all when nothing is", () => {
+  const app = appWith([ROAST, SOUP, CURRY]);
+  assert.equal(app.el("active-filters").hidden, true, "nothing on, nothing there");
+  assert.equal(app.row(), "");
+
+  app.tapTag("quick");
+  assert.equal(app.el("active-filters").hidden, false);
+  assert.match(app.row(), /data-tag="quick"/);
+  assert.doesNotMatch(app.row(), /data-tag="vegan"/,
+    "the row is what is on, not what could be — the tags it does not name are in the menu");
+});
+
+test("J15.2 · each filter comes off on its own, and one control clears the lot", () => {
+  const app = appWith([ROAST, SOUP, CURRY]);
+  const soup = app.store.recipes.find((r) => r.name === "Tomato Soup");
+  app.store.toggleFavorite(soup.id);
+
+  app.el("favorites-filter").fire("click");
+  app.tapTag("quick");
+  assert.match(app.row(), /Favourites/);
+  assert.match(app.row(), /data-tag="quick"/);
+
+  app.tapRow("tag", "quick");
+  assert.doesNotMatch(app.row(), /data-tag="quick"/, "that one off");
+  assert.match(app.row(), /Favourites/, "and the other still on");
+
+  app.tapTag("quick");
+  app.tapRow("filters");
+  assert.equal(app.el("active-filters").hidden, true);
+  assert.deepEqual(app.titles().length, 3, "and the whole book is back");
+});
+
+test("J15.4 · each tag says the size of the list with that tag on", () => {
+  const app = appWith([ROAST, SOUP, CURRY]);
+  assert.equal(leaves(app, "quick"), 2);
+  assert.equal(leaves(app, "vegan"), 1);
+  assert.equal(leaves(app, "beef"), 1);
+});
+
+test("J15.4 · the number beside a tag counts recipes, not the times it is written", () => {
+  // "Vegan, vegan" is one word typed twice — a thumb, a paste, or an
+  // import that spells it both ways — and lowercasing (J2.6) is what
+  // makes the pair. Counted twice, the menu promised two recipes and the
+  // tap gave one.
+  const app = appWith([aRecipe({ name: "Dal", steps: ["Simmer."], tags: ["Vegan", "vegan"] })]);
+  assert.equal(leaves(app, "vegan"), 1);
+  app.tapTag("vegan");
+  assert.deepEqual(app.titles(), ["Dal"], "and the list is the length the menu said it was");
+});
+
+test("J15.4 · the count is what the rest of the toolbar has left, not what the book holds", () => {
+  const app = appWith([ROAST, SOUP, CURRY]);
+  app.search("chickpeas");
+  assert.equal(leaves(app, "quick"), 1,
+    "the size of the list the tap would give you, not the two the book has");
+
+  app.search("");
+  app.tapTag("vegan");
+  assert.equal(leaves(app, "quick"), 1, "and the tags already on count too");
+  assert.equal(leaves(app, "vegan"), 1,
+    "with the tag filter itself set aside, so the one that is on reads as the list it left");
+});
+
+test("J15.5 · a tag that would leave nothing is shown and cannot be chosen", () => {
+  const app = appWith([ROAST, SOUP, CURRY]);
+  app.tapTag("vegan");
+  // Nothing is both vegan and a Sunday roast.
+  assert.match(option(app, "beef"), /disabled/, "greyed with a nought beside it");
+  assert.equal(leaves(app, "beef"), 0);
+  assert.match(app.menu(), /data-tag="beef"/,
+    "still listed — a tag vanishing as you filter reads as a book losing things");
+});
+
+test("J15.5 · a tag already on is always choosable, whatever its count", () => {
+  const app = appWith([ROAST, SOUP, CURRY]);
+  app.tapTag("quick");
+  // A search matching nothing takes every count to nought, and the tag
+  // that is on is the way back out: greying it there would shut the door
+  // on somebody standing in an empty list.
+  app.search("zzzz");
+  assert.equal(leaves(app, "quick"), 0);
+  assert.doesNotMatch(option(app, "quick"), /disabled/,
+    "the tap that takes it off is not the tap the nought is about");
+  assert.match(option(app, "sunday"), /disabled/, "where one that is off at nought is shut");
+
+  app.tapTag("quick");
+  assert.equal(app.el("active-filters").hidden, true, "and the tap really does take it off");
+});
+
+test("J15.6 · the list can be put in name order, and back", () => {
+  const app = appWith([ROAST, SOUP, CURRY]);
+  assert.deepEqual(app.titles(), ["Chickpea Curry", "Tomato Soup", "Sunday Roast"],
+    "the collection's own order, newest first");
+  app.chooseSort("name");
+  assert.deepEqual(app.titles(), ["Chickpea Curry", "Sunday Roast", "Tomato Soup"]);
+  app.chooseSort("added");
+  assert.deepEqual(app.titles(), ["Chickpea Curry", "Tomato Soup", "Sunday Roast"]);
+});
+
+test("J15.7 · a sort chosen by name outranks the search's ranking", () => {
+  const app = appWith([ROAST, SOUP, CURRY]);
+  // The soup answers both terms and the curry only one, so the ranking
+  // wants the soup first — and A to Z wants it last. The two orders
+  // disagree on purpose: an order they happen to share would pass this
+  // test with the sort thrown away entirely.
+  app.search("onion, tomatoes");
+  assert.deepEqual(app.titles(), ["Tomato Soup", "Chickpea Curry"], "ranked, best first");
+
+  app.chooseSort("name");
+  assert.deepEqual(app.titles(), ["Chickpea Curry", "Tomato Soup"],
+    "the sort has the last word, against what the ranking asked for");
+
+  app.chooseSort("added");
+  assert.deepEqual(app.titles(), ["Tomato Soup", "Chickpea Curry"],
+    "and where no sort is chosen the ranking decides again, exactly as it always has");
+});
+
+test("J15.8 · switching books forgets the search, the filters and the sort", () => {
+  const app = appWith([]);
+  app.store.useBook("11111111-1111-4111-8111-111111111111");
+  app.store.add(ROAST);
+  app.store.add(SOUP);
+  app.app.render();
+
+  app.search("roast");
+  app.tapTag("sunday");
+  app.el("favorites-filter").fire("click");
+  app.chooseSort("name");
+
+  // Every way into another book goes through this — switching, deleting
+  // one, leaving one, being removed from one.
+  app.store.useBook("22222222-2222-4222-8222-222222222222");
+  app.store.add(CURRY);
+  app.app.render();
+
+  assert.equal(app.el("search-input").value, "", "the box is empty");
+  assert.equal(app.el("active-filters").hidden, true, "and so is the row");
+  assert.equal(app.el("sort-summary").textContent, "Sort · Newest");
+  assert.equal(app.el("filter-summary").textContent, "Filter");
+  assert.deepEqual(app.titles(), ["Chickpea Curry"],
+    "the list you open is your whole book, not a third of it for reasons set last week");
+});
+
+test("J15.8 · walking out of your last book clears the toolbar with it", () => {
+  // Leaving or deleting the book you were in, with none left to go to,
+  // points the cache back at the keyless one it had before there was a
+  // book. That is a different list like any other, and the toolbar
+  // belonged to the one that has gone.
+  const app = appWith([]);
+  app.store.useBook("11111111-1111-4111-8111-111111111111");
+  app.store.add(ROAST);
+  app.app.render();
+  app.search("roast");
+  app.tapTag("sunday");
+  app.chooseSort("name");
+
+  app.store.useBook(null);
+  app.app.render();
+
+  assert.equal(app.el("search-input").value, "");
+  assert.equal(app.el("active-filters").hidden, true);
+  assert.equal(app.el("sort-summary").textContent, "Sort · Newest");
+});
+
+test("J15.10 · where the filters leave nothing, the list offers to clear them", () => {
+  const app = appWith([ROAST, SOUP, CURRY]);
+  app.tapTag("vegan");
+  app.el("favorites-filter").fire("click");
+  assert.deepEqual(app.titles(), []);
+  assert.match(app.el("recipe-list").innerHTML, /No recipes match these filters/);
+  assert.match(app.el("recipe-list").innerHTML, /Clear the filters/);
+
+  app.tapEmpty("all");
+  assert.deepEqual(app.titles().length, 3, "the way out of an empty list is in the empty list");
+});
+
+test("J15.10 · the way out is named after what it would clear", () => {
+  const app = appWith([ROAST, SOUP, CURRY]);
+  app.search("zzzz");
+  assert.match(app.el("recipe-list").innerHTML, /Clear the search</,
+    "a search is what emptied this one, and the button says so");
+
+  // Picked while it still had a recipe behind it, then searched into
+  // nothing — the order a person would actually arrive this way.
+  app.search("");
+  app.tapTag("vegan");
+  app.search("zzzz");
+  assert.match(app.el("recipe-list").innerHTML, /Clear the search and filters</);
+
+  app.tapEmpty("all");
+  assert.equal(app.el("search-input").value, "");
+  assert.deepEqual(app.titles().length, 3);
+});
+
+// --- the keyboard, in a menu built for choosing several things ---------
+/*
+  Every one of these choices redraws the control it was made in, and
+  rewriting innerHTML throws the focused button away. Nothing here can see
+  a real focus ring — the stub has no layout and no tab order — but it can
+  see which element was asked to take focus, which is the whole of the
+  defect: before this, none of them was, and the keyboard landed on the
+  body. Where focus lands once the menus are drawn for real was checked in
+  a browser; see the note at the end of docs/journeys.md.
+*/
+
+/** A row of the redrawn tag menu, standing in for what render() wrote. */
+function tagRow(tag) {
+  return { dataset: { tag }, disabled: false, focus() { this.focused = true; } };
+}
+
+test("J15.3 · choosing a tag leaves the keyboard on that tag, so the next one is a keypress away", () => {
+  const app = appWith([ROAST, SOUP, CURRY]);
+  const rows = [tagRow("vegan"), tagRow("curry")];
+  app.el("tag-menu").querySelectorAll = (sel) => (sel === "[data-tag]" ? rows : []);
+
+  app.tapTag("curry");
+  assert.equal(rows[1].focused, true, "the tag just chosen, in the menu as it was redrawn");
+  assert.equal(rows[0].focused, undefined);
+
+  app.tapTag("vegan");
+  assert.equal(rows[0].focused, true, "and again, because two tags mean both");
+});
+
+test("J15.5 · a tag whose row cannot be pressed after the choice hands focus to the Filter chip", () => {
+  const app = appWith([ROAST, SOUP, CURRY]);
+  // Taking a tag off can take its own count to nought against what is
+  // still on, and a nought cannot be pressed — so there is nothing to go
+  // back to, and the summary catches it rather than the body.
+  const dead = { ...tagRow("curry"), disabled: true, focus() { this.focused = true; } };
+  app.el("tag-menu").querySelectorAll = (sel) => (sel === "[data-tag]" ? [dead] : []);
+
+  app.tapTag("curry");
+  assert.equal(dead.focused, undefined, "a row nobody can press is not where focus goes");
+  assert.equal(app.el("filter-summary").focused, true);
+});
+
+test("J15.6 · choosing a sort closes its menu and leaves the keyboard on the Sort chip", () => {
+  const app = appWith([ROAST, SOUP, CURRY]);
+  app.chooseSort("name");
+  assert.equal(app.el("sort-menu").open, false);
+  assert.equal(app.el("sort-summary").focused, true,
+    "the chip is what now says what was chosen; the menu it was chosen in has gone");
+});
+
+test("J15.2 · taking a filter off in the row hands the keyboard to the control that turned it on", () => {
+  const app = appWith([ROAST, SOUP, CURRY]);
+  app.tapTag("vegan");
+  app.tapRow("tag", "vegan");
+  assert.equal(app.el("active-filters").hidden, true, "the row it was pressed in has gone");
+  assert.equal(app.el("filter-summary").focused, true);
+
+  app.el("favorites-filter").fire("click");
+  app.el("filter-summary").focused = false;
+  app.tapRow("favorites");
+  assert.equal(app.el("favorites-filter").focused, true,
+    "Favourites is chosen in the toolbar (J15.9), so that is what it goes back to");
+});
+
+test("J15.10 · the way out of an empty list hands the keyboard back to the search box", () => {
+  const app = appWith([ROAST, SOUP, CURRY]);
+  app.search("zzzz");
+  // Pressed rather than tapped: a click synthesised by Enter carries a
+  // detail of 0, and only that one moves focus. A thumb gets the list
+  // back without the on-screen keyboard coming up over it.
+  app.el("recipe-list").fire("click", {
+    detail: 0,
+    target: { closest: (sel) => (sel === "[data-remove]" ? { dataset: { remove: "all" } } : null) },
+  });
+  assert.equal(app.titles().length, 3);
+  assert.equal(app.el("search-input").focused, true,
+    "the button was drawn where the recipes are, and the recipes are back");
+
+  const tapped = appWith([ROAST, SOUP, CURRY]);
+  tapped.search("zzzz");
+  tapped.tapEmpty("all");
+  assert.equal(tapped.titles().length, 3);
+  assert.equal(tapped.el("search-input").focused, undefined,
+    "a thumb gets the recipes back and not the on-screen keyboard over them");
 });
 
 // --- the search result count, for anyone who cannot see the list --------

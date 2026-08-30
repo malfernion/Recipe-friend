@@ -65,7 +65,12 @@
 
   /**
    * Does this recipe survive the current filters?
-   * criteria: {terms, tag, favoritesOnly, prefs}
+   * criteria: {terms, tags, favoritesOnly, sort, plannedIndex, prefs}
+   *
+   * Tags combine as "both", not "either" (J15.3): two of them is a
+   * shorter list than either alone, which is what somebody deciding what
+   * to cook means by saying both. An "any of these" filter is a different
+   * question, and one control cannot answer both legibly.
    *
    * A recipe answering none of the terms is not shown. That makes a list
    * of ingredients a question about what you can cook tonight rather than
@@ -74,27 +79,108 @@
   function matchesFilters(recipe, criteria) {
     const c = criteria || {};
     if (c.favoritesOnly && !recipe.favorite) return false;
-    if (c.tag && !recipe.tags.includes(c.tag)) return false;
+    const tags = c.tags || [];
+    if (tags.length && !tags.every((tag) => recipe.tags.includes(tag))) return false;
     if (!c.terms || c.terms.length === 0) return true;
     return matchedTerms(recipe, c.terms, c.prefs).length > 0;
   }
 
   /**
-   * The recipes to show, in the order to show them: filtered, and — when
+   * The sorts, in the order the menu offers them (J15.6). A small closed
+   * set on purpose: a list of every order a collection could be put in is
+   * another wall. `added` is what the list has always done — the
+   * collection's own order — and stays the default.
+   *
+   * `short` is what a chip has room for; `label` is what the menu says.
+   * The two sorts that read the archive say so, so a page without the
+   * planner can leave them out rather than offer an order it cannot make.
+   */
+  const SORTS = [
+    { id: "added", label: "Recently added", short: "Newest" },
+    { id: "name", label: "Name A–Z", short: "A–Z" },
+    { id: "least-planned", label: "Least recently planned", short: "Not lately", needsPlan: true },
+    { id: "most-planned", label: "Most often planned", short: "Most often", needsPlan: true },
+    { id: "quickest", label: "Quickest first", short: "Quickest" },
+  ];
+
+  const sortById = (id) => SORTS.find((s) => s.id === id) || null;
+
+  /** A sort that keeps the incoming order between equals. */
+  function orderBy(list, compare) {
+    return list
+      .map((r, i) => ({ r, i }))
+      .sort((a, b) => compare(a.r, b.r) || a.i - b.i)
+      .map((x) => x.r);
+  }
+
+  /**
+   * How long a recipe takes, for "quickest first". A recipe that does not
+   * say goes last rather than first: no timings is not the same claim as
+   * ten minutes, and a list of quick suppers headed by everything nobody
+   * has filled in is not the list that was asked for.
+   */
+  function minutes(recipe) {
+    const total = (recipe.prepMinutes || 0) + (recipe.cookMinutes || 0);
+    return total > 0 ? total : Infinity;
+  }
+
+  function plannedCount(recipe, index) {
+    const entry = index && index[recipe.id];
+    return entry ? entry.count : 0;
+  }
+
+  /**
+   * Put the list in the chosen order (J15.6), keeping whatever order it
+   * arrived in between recipes the sort cannot separate — which is what
+   * makes the search's ranking the tiebreak (J15.7).
+   *
+   * The archive is the only record of when anything was planned (J14.11)
+   * and it is handed in: this file knows about recipes, not about where a
+   * book keeps its plans. A page without plan.js is offered neither of
+   * the sorts that need it, and answers with the order it already had if
+   * one is asked for anyway.
+   */
+  function applySort(list, c) {
+    const sort = c.sort || "added";
+    if (sort === "name") {
+      return orderBy(list, (a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: "base" }));
+    }
+    if (sort === "quickest") return orderBy(list, (a, b) => minutes(a) - minutes(b));
+    if (!global.RecipePlan) return list;
+    if (sort === "least-planned") {
+      // One definition of "least recently planned", in the file that
+      // already had it (J14.9) — and it keeps the incoming order between
+      // equals, like everything here.
+      return global.RecipePlan.byLeastRecentlyPlanned(list, c.plannedIndex);
+    }
+    if (sort === "most-planned") {
+      // Every appearance counts, and the count is worked out from the
+      // archive rather than stored (J14.10).
+      return orderBy(list, (a, b) => plannedCount(b, c.plannedIndex) - plannedCount(a, c.plannedIndex));
+    }
+    return list; // `added`, and anything unrecognised: the collection's own order
+  }
+
+  /**
+   * The recipes to show, in the order to show them: filtered, then — when
    * several terms were listed — best matches first, stable within an equal
-   * count so the list does not shuffle on every keystroke.
+   * count so the list does not shuffle on every keystroke, and then put in
+   * whichever order was chosen by name.
    *
    * One term is skipped rather than ranked: everything shown matches it
    * exactly once, so sorting by count is a no-op on a stable sort. The
    * skip saves recomputing the matches, and changes nothing observable.
    *
-   * "Not planned lately" (J14.9) is the last word on the order, and it
-   * orders rather than hides: J14.9 calls it a sort, and any line drawn
-   * between "lately" and "not lately" would be a number nobody chose. It
-   * is applied after the ranking rather than instead of it, so a search
-   * still decides between two recipes planned the same day — the chip
-   * combines with search and tags exactly as Favourites does (J3.2),
-   * which is what makes it a chip and not a screen.
+   * **The sort has the last word, and the ranking breaks its ties**
+   * (J15.7). It used to be the other way about, when the only sort was a
+   * chip reading "not planned lately": beside a search box that chip was
+   * ambiguous about which of the two decided the order, so the search —
+   * the thing the reader had just typed — won, and the chip ordered
+   * within each group of equally good matches. Picking an order out of a
+   * menu called Sort is not ambiguous, and this is the answer that
+   * matches what was asked: a person who says "name A to Z" and gets
+   * something else has been overruled. Where no sort is chosen a listed
+   * search ranks exactly as it always has (J3.3).
    */
   function visibleRecipes(recipes, criteria) {
     const c = criteria || {};
@@ -106,29 +192,55 @@
             .map((r, i) => ({ r, i, n: matchedTerms(r, c.terms, c.prefs).length }))
             .sort((a, b) => b.n - a.n || a.i - b.i)
             .map((x) => x.r);
-    // The archive is the only record of when anything was planned
-    // (J14.11), and it is handed in: this file knows about recipes, not
-    // about where a book keeps its plans. A page without plan.js simply
-    // does not offer the chip.
-    if (!c.notPlannedLately || !global.RecipePlan) return ranked;
-    const byPlanned = (list) => global.RecipePlan.byLeastRecentlyPlanned(list, c.plannedIndex);
-    // Two chips, one order, and one of them has to lose (J14.9). The
-    // search wins: a card says which terms it matched (J3.3), so a
-    // recipe answering one of two terms sitting above one answering
-    // both makes the caption look like a lie. The chip orders within
-    // each group of equally good matches instead — which is the whole
-    // list whenever there are fewer than two terms, and that is the
-    // case somebody planning a week is actually in.
-    if (!c.terms || c.terms.length < 2) return byPlanned(ranked);
-    const groups = new Map();
-    for (const r of ranked) {
-      const n = matchedTerms(r, c.terms, c.prefs).length;
-      if (!groups.has(n)) groups.set(n, []);
-      groups.get(n).push(r);
-    }
-    // `ranked` is already best-first, so the groups come out in order.
-    return [...groups.values()].flatMap(byPlanned);
+    return applySort(ranked, c);
   }
 
-  global.RecipeSearch = { readable, parseTerms, matchedTerms, matchesFilters, visibleRecipes };
+  /**
+   * Every tag in the book, each with the size of the list with that tag on
+   * (J15.4) — which is the thing a row of bare chips could not say at all.
+   *
+   * The count is taken against what the other filters and the search have
+   * already left, and with the tag filter itself set aside, rather than
+   * against the whole book, so it is not a promise the rest of the toolbar
+   * has already broken. "The size of the list with that tag on" is one
+   * sentence for a tag that is off and a tag that is on: for the first it
+   * is what the tap gives you, for the second it is what you are already
+   * looking at — where "what the tap would give you" would be a lie about
+   * the second, since that tap takes the tag off and the list gets longer.
+   *
+   * A tag that would leave nothing counts 0 and is still listed (J15.5):
+   * the caller greys it rather than dropping it, because a tag vanishing
+   * as you filter reads as a book losing things.
+   */
+  function tagCounts(recipes, criteria) {
+    const c = criteria || {};
+    const active = c.tags || [];
+    // Everything the rest of the toolbar leaves, then everything the tags
+    // already chosen leave of that. Adding one more tag can only narrow
+    // the second, so counting within it is the answer to "and this one?".
+    const pool = recipes.filter((r) => matchesFilters(r, { ...c, tags: [] }));
+    const chosen = pool.filter((r) => active.every((tag) => r.tags.includes(tag)));
+    const counts = new Map();
+    // The universe is the book, not the pool: a tag filtered down to
+    // nothing still has to be there to say so.
+    for (const r of recipes) for (const tag of r.tags) if (!counts.has(tag)) counts.set(tag, 0);
+    for (const r of chosen) for (const tag of r.tags) counts.set(tag, counts.get(tag) + 1);
+    return [...counts.keys()]
+      // The same comparison the A to Z sort uses (J15.6), so "épicé"
+      // files where a reader expects it in both places rather than
+      // after "zeste" in one of them.
+      .sort((a, b) => a.localeCompare(b, undefined, { sensitivity: "base" }))
+      .map((tag) => ({ tag, count: counts.get(tag), active: active.includes(tag) }));
+  }
+
+  global.RecipeSearch = {
+    readable,
+    parseTerms,
+    matchedTerms,
+    matchesFilters,
+    visibleRecipes,
+    tagCounts,
+    SORTS,
+    sortById,
+  };
 })(window);
