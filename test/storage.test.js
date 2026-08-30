@@ -60,6 +60,15 @@ test("J2.6 · tags are lowercased", () => {
   assert.deepEqual(r.tags, ["sunday", "beef", "roast"]);
 });
 
+test("J2.6, J15.4 · a tag a recipe carries twice is one tag", () => {
+  // The lowercasing above is what makes the pair: "Vegan" and "vegan" are
+  // one word typed twice, from a thumb, a paste or an import. A recipe
+  // carrying it twice was counted twice in the filter menu, where the
+  // number beside a tag is a number of recipes (J15.4).
+  const r = sanitize(aRecipe({ tags: ["Vegan", "vegan", "quick", "quick"] }));
+  assert.deepEqual(r.tags, ["vegan", "quick"]);
+});
+
 test("J2.2 · a recognised unit is normalised on the way in", () => {
   const r = sanitize(aRecipe({ ingredients: [{ amount: 2, unit: "Kilograms", item: "beef" }] }));
   assert.equal(r.ingredients[0].unit, "kg");
@@ -68,7 +77,9 @@ test("J2.2 · a recognised unit is normalised on the way in", () => {
 test("an oversized payload is bounded rather than stored whole", () => {
   const r = sanitize(aRecipe({
     steps: Array(5000).fill("x".repeat(50000)),
-    tags: Array(5000).fill("t"),
+    // Distinct, because identical ones are one tag now (J2.6) and would
+    // be bounded by that rather than by the cap this is about.
+    tags: Array.from({ length: 5000 }, (_, i) => `t${i}`),
     ingredients: Array(5000).fill({ amount: 1, unit: "g", item: "y" }),
   }));
   assert.equal(r.steps.length, 200);
@@ -162,4 +173,27 @@ test("J9.4 · a deleted recipe leaves a tombstone so it cannot come back", () =>
   assert.equal(store.recipes.length, 0);
   assert.ok(store.tombstones.some((t) => t.id === saved.id),
     "the delete is recorded, not just forgotten");
+});
+
+test("J9.7 · each book caches separately, and the box built before signing in is adopted", () => {
+  const win = loadApp("units.js", "scale.js", "storage.js");
+  const store = new win.RecipeStore();
+  const announced = [];
+  store.onUseBook = (id) => announced.push(id);
+
+  store.add(aRecipe({ name: "Before" }));
+  const first = "11111111-1111-4111-8111-111111111111";
+  store.useBook(first);
+  assert.deepEqual(store.recipes.map((r) => r.name), ["Before"],
+    "a box built before there was an account is not stranded in the keyless cache");
+  assert.equal(win.localStorage.getItem("recipe-friend:v1"), null, "which is then retired");
+  assert.deepEqual(announced, [],
+    "and nothing changed under the reader: the same list has only just been given a name");
+
+  store.useBook("22222222-2222-4222-8222-222222222222");
+  assert.equal(store.recipes.length, 0, "a second book is a second cache");
+  assert.equal(announced.length, 1, "and that one is a book change, announced as one (J15.8)");
+
+  store.useBook(first);
+  assert.deepEqual(store.recipes.map((r) => r.name), ["Before"], "and the first is still there");
 });

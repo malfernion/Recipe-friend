@@ -238,7 +238,7 @@ function option(app, tag) {
   const m = new RegExp(`<button[^>]*data-tag="${tag}"[\\s\\S]*?</button>`).exec(app.menu());
   return m ? m[0] : "";
 }
-/** The number beside it — what it says it would leave. */
+/** The number beside it — the size of the list with that tag on (J15.4). */
 const leaves = (app, tag) => Number((/tag-option-count">(\d+)</.exec(option(app, tag)) || [])[1]);
 
 test("J15.1 · the two menus each say what they are doing in their own label", () => {
@@ -296,11 +296,22 @@ test("J15.2 · each filter comes off on its own, and one control clears the lot"
   assert.deepEqual(app.titles().length, 3, "and the whole book is back");
 });
 
-test("J15.4 · each tag says how many recipes it would leave", () => {
+test("J15.4 · each tag says the size of the list with that tag on", () => {
   const app = appWith([ROAST, SOUP, CURRY]);
   assert.equal(leaves(app, "quick"), 2);
   assert.equal(leaves(app, "vegan"), 1);
   assert.equal(leaves(app, "beef"), 1);
+});
+
+test("J15.4 · the number beside a tag counts recipes, not the times it is written", () => {
+  // "Vegan, vegan" is one word typed twice — a thumb, a paste, or an
+  // import that spells it both ways — and lowercasing (J2.6) is what
+  // makes the pair. Counted twice, the menu promised two recipes and the
+  // tap gave one.
+  const app = appWith([aRecipe({ name: "Dal", steps: ["Simmer."], tags: ["Vegan", "vegan"] })]);
+  assert.equal(leaves(app, "vegan"), 1);
+  app.tapTag("vegan");
+  assert.deepEqual(app.titles(), ["Dal"], "and the list is the length the menu said it was");
 });
 
 test("J15.4 · the count is what the rest of the toolbar has left, not what the book holds", () => {
@@ -326,6 +337,22 @@ test("J15.5 · a tag that would leave nothing is shown and cannot be chosen", ()
     "still listed — a tag vanishing as you filter reads as a book losing things");
 });
 
+test("J15.5 · a tag already on is always choosable, whatever its count", () => {
+  const app = appWith([ROAST, SOUP, CURRY]);
+  app.tapTag("quick");
+  // A search matching nothing takes every count to nought, and the tag
+  // that is on is the way back out: greying it there would shut the door
+  // on somebody standing in an empty list.
+  app.search("zzzz");
+  assert.equal(leaves(app, "quick"), 0);
+  assert.doesNotMatch(option(app, "quick"), /disabled/,
+    "the tap that takes it off is not the tap the nought is about");
+  assert.match(option(app, "sunday"), /disabled/, "where one that is off at nought is shut");
+
+  app.tapTag("quick");
+  assert.equal(app.el("active-filters").hidden, true, "and the tap really does take it off");
+});
+
 test("J15.6 · the list can be put in name order, and back", () => {
   const app = appWith([ROAST, SOUP, CURRY]);
   assert.deepEqual(app.titles(), ["Chickpea Curry", "Tomato Soup", "Sunday Roast"],
@@ -338,16 +365,20 @@ test("J15.6 · the list can be put in name order, and back", () => {
 
 test("J15.7 · a sort chosen by name outranks the search's ranking", () => {
   const app = appWith([ROAST, SOUP, CURRY]);
-  app.search("onion, chickpeas");
-  assert.deepEqual(app.titles(), ["Chickpea Curry", "Tomato Soup"], "ranked, best first");
+  // The soup answers both terms and the curry only one, so the ranking
+  // wants the soup first — and A to Z wants it last. The two orders
+  // disagree on purpose: an order they happen to share would pass this
+  // test with the sort thrown away entirely.
+  app.search("onion, tomatoes");
+  assert.deepEqual(app.titles(), ["Tomato Soup", "Chickpea Curry"], "ranked, best first");
 
   app.chooseSort("name");
   assert.deepEqual(app.titles(), ["Chickpea Curry", "Tomato Soup"],
-    "and now in name order, which happens to agree here");
+    "the sort has the last word, against what the ranking asked for");
 
-  app.search("tomatoes, garlic");
-  assert.deepEqual(app.titles(), ["Chickpea Curry", "Tomato Soup"],
-    "each answers one term, so the sort is the whole of the order");
+  app.chooseSort("added");
+  assert.deepEqual(app.titles(), ["Tomato Soup", "Chickpea Curry"],
+    "and where no sort is chosen the ranking decides again, exactly as it always has");
 });
 
 test("J15.8 · switching books forgets the search, the filters and the sort", () => {
@@ -374,6 +405,27 @@ test("J15.8 · switching books forgets the search, the filters and the sort", ()
   assert.equal(app.el("filter-summary").textContent, "Filter");
   assert.deepEqual(app.titles(), ["Chickpea Curry"],
     "the list you open is your whole book, not a third of it for reasons set last week");
+});
+
+test("J15.8 · walking out of your last book clears the toolbar with it", () => {
+  // Leaving or deleting the book you were in, with none left to go to,
+  // points the cache back at the keyless one it had before there was a
+  // book. That is a different list like any other, and the toolbar
+  // belonged to the one that has gone.
+  const app = appWith([]);
+  app.store.useBook("11111111-1111-4111-8111-111111111111");
+  app.store.add(ROAST);
+  app.app.render();
+  app.search("roast");
+  app.tapTag("sunday");
+  app.chooseSort("name");
+
+  app.store.useBook(null);
+  app.app.render();
+
+  assert.equal(app.el("search-input").value, "");
+  assert.equal(app.el("active-filters").hidden, true);
+  assert.equal(app.el("sort-summary").textContent, "Sort · Newest");
 });
 
 test("J15.10 · where the filters leave nothing, the list offers to clear them", () => {

@@ -256,9 +256,11 @@
   // --- Rendering ---
   /**
    * The tag menu (J15.1). Every tag in the book is listed, each with the
-   * number of recipes it would leave (J15.4) — and a tag that would leave
+   * size of the list with that tag on (J15.4) — and a tag that would leave
    * none is greyed rather than dropped (J15.5), because a tag vanishing
-   * as you filter reads as a book losing things.
+   * as you filter reads as a book losing things. A tag already on is never
+   * greyed, whatever its count: that tap is the way off, and a search
+   * matching nothing takes every count to nought.
    *
    * The menu draws every tag, which is what the filter row used to do and
    * what made it a wall (J15.2). In a menu that is the right shape: it is
@@ -2462,9 +2464,20 @@
         if (event.target.closest(".more-item")) menu.open = false;
       });
     }
-    document.addEventListener("click", (event) => {
-      if (menu.open && !menu.contains(event.target)) menu.open = false;
-    });
+    // Asked on the way down, not on the way up. Choosing a tag redraws
+    // the menu under the thumb — it stays open, because two tags mean
+    // both and one is rarely the end of the sentence (J15.3) — which
+    // throws away the button the tap started on. By the time a bubbling
+    // listener saw the tap, `contains` was being asked about a node no
+    // longer in the page, said no, and shut the menu on every choice.
+    // In the capture phase the page has not moved yet.
+    document.addEventListener(
+      "click",
+      (event) => {
+        if (menu.open && !menu.contains(event.target)) menu.open = false;
+      },
+      true
+    );
     document.addEventListener("keydown", (event) => {
       if (event.key === "Escape" && menu.open) menu.open = false;
     });

@@ -282,6 +282,17 @@ test("J15.6 · quickest first, and a recipe that does not say goes last", () => 
   );
 });
 
+test("J15.6 · a recipe that gives half its timings is sorted on the half it gives", () => {
+  // Half a timing is still something a recipe says about how long it
+  // takes; nothing at all is not, and only that goes last.
+  const PREP_ONLY = recipe({ name: "Salad", prepMinutes: 8 });
+  const COOK_ONLY = recipe({ name: "Boiled Egg", cookMinutes: 4 });
+  assert.deepEqual(
+    visibleRecipes([UNTIMED, PANCAKES, PREP_ONLY, COOK_ONLY], { sort: "quickest" }).map((r) => r.name),
+    ["Boiled Egg", "Salad", "Pancakes", "Zabaglione"]
+  );
+});
+
 test("J15.6 · a page without the planner still draws a list", () => {
   // plan.js is what the two planned sorts read. Where it never loaded,
   // the menu does not offer them — and asking anyway gets the order the
@@ -330,9 +341,9 @@ test("J3.3, J15.7 · where no sort is chosen, a listed search ranks as it always
   );
 });
 
-// --- what a tag would leave (J15.4, J15.5) ----------------------------
+// --- the size of the list with a tag on (J15.4, J15.5) ----------------
 
-test("J15.4 · each tag says how many recipes it would leave", () => {
+test("J15.4 · each tag says the size of the list with that tag on", () => {
   const box = [SOUP, CURRY, PANCAKES];
   assert.deepEqual(tagCounts(box, {}), [
     { tag: "quick", count: 3, active: false },
@@ -342,9 +353,9 @@ test("J15.4 · each tag says how many recipes it would leave", () => {
 
 test("J15.4 · the count is what the other filters and the search have left", () => {
   const box = [SOUP, CURRY, PANCAKES];
-  // A search for chickpeas leaves the curry, so "quick" would leave one
-  // recipe rather than three — the size of the list the tap would give
-  // you, not a promise the rest of the toolbar has already broken.
+  // A search for chickpeas leaves the curry, so the list with "quick" on
+  // is one recipe rather than three — counted against what the rest of
+  // the toolbar has already left, so it is not a promise it has broken.
   assert.deepEqual(tagCounts(box, { terms: ["chickpeas"] }), [
     { tag: "quick", count: 1, active: false },
     { tag: "vegan", count: 1, active: false },

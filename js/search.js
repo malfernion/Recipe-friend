@@ -196,14 +196,17 @@
   }
 
   /**
-   * Every tag in the book, each with the number of recipes it would leave
+   * Every tag in the book, each with the size of the list with that tag on
    * (J15.4) — which is the thing a row of bare chips could not say at all.
    *
    * The count is taken against what the other filters and the search have
-   * already left, and with the tag filter itself set aside, so it is the
-   * size of the list the tap would actually give you rather than a promise
-   * the rest of the toolbar has already broken. For a tag that is already
-   * on, that is the list as it stands.
+   * already left, and with the tag filter itself set aside, rather than
+   * against the whole book, so it is not a promise the rest of the toolbar
+   * has already broken. "The size of the list with that tag on" is one
+   * sentence for a tag that is off and a tag that is on: for the first it
+   * is what the tap gives you, for the second it is what you are already
+   * looking at — where "what the tap would give you" would be a lie about
+   * the second, since that tap takes the tag off and the list gets longer.
    *
    * A tag that would leave nothing counts 0 and is still listed (J15.5):
    * the caller greys it rather than dropping it, because a tag vanishing

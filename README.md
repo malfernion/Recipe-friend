@@ -14,7 +14,7 @@ accounts and sync.
   in the bucket is publicly readable.
 - **Search, filter and sort** — search across names, ingredients and tags;
   filter by any number of tags, which combine as "both", each saying how
-  many recipes it would leave; sort by name, by how long a recipe takes,
+  long the list is with it on; sort by name, by how long a recipe takes,
   or by what you have not had in ages. A search is a comma-separated
   list, so typing what you have — `chicken, rice` — shows what you can
   cook, best matches first. What is on shows in a row under the toolbar

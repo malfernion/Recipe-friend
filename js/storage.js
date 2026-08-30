@@ -49,6 +49,19 @@
       .filter(Boolean);
   }
 
+  /**
+   * A recipe's tags: free text, lowercased (J2.6) — and each of them kept
+   * once. The lowercasing is what makes the duplicates: "Vegan, vegan" is
+   * one word typed twice, and so is a paste or an import that spells it
+   * both ways. A tag is something a recipe carries or does not, and one
+   * carried twice was counted twice in the filter menu, where the number
+   * beside a tag is a number of recipes (J15.4) — so the menu promised
+   * two and the tap gave you one.
+   */
+  function normalizeTags(value) {
+    return [...new Set(normalizeStringList(value, MAX_TAGS, 40).map((t) => t.toLowerCase()))];
+  }
+
   /** Ingredients are structured: {amount: number|null, unit, item}. */
   function sanitizeIngredient(raw) {
     if (!raw || typeof raw !== "object") return null;
@@ -122,7 +135,7 @@
       // paste (J5.2). Not the same as its id — see findIncoming.
       sharedFrom:
         typeof raw.sharedFrom === "string" && UUID_RE.test(raw.sharedFrom) ? raw.sharedFrom : "",
-      tags: normalizeStringList(raw.tags, MAX_TAGS, 40).map((t) => t.toLowerCase()),
+      tags: normalizeTags(raw.tags),
       favorite: Boolean(raw.favorite),
       createdAt: num(raw.createdAt) || Date.now(),
       updatedAt: num(raw.updatedAt) || Date.now(),
