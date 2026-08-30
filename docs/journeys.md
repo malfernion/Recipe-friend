@@ -719,8 +719,9 @@ recipe is, what it says on screen, and what survives a round trip. Those
 are the failures that would be silent — a recipe quietly losing its tags is
 worse than a page that will not load.
 
-Nine of the 102 criteria have no test naming them. Five more things the
-tests do not reach, recorded so the gap is visible:
+Nine of the 140 criteria have no test naming them — J4.15, J4.16, J4.23,
+J5.10, J11.1 to J11.4, and J12.12. Six more things the tests do not
+reach, recorded so the gap is visible:
 
 - **The 48-hour lifetime and single use of an invite** are the database's,
   not the app's (J7.4). The client asks only for links that have not
@@ -736,8 +737,13 @@ tests do not reach, recorded so the gap is visible:
 - **Deployment and the keepalive ping** (J11) are a static host and two
   workflow files. There is no code to exercise, and J5.10 records a reason
   for a decision rather than a behaviour.
+- **That the plan keeps working with no network** (J12.12) is the local
+  cache being the working copy, which J9.1 already holds tests for. There
+  is nothing about the planner that makes it truer or less true; it is
+  written down because the supermarket is where it matters and a future
+  change could break it without breaking anything a test names.
 - **What the recipe view looks like at a given size** (J4.15, J4.16,
-  J4.19, J4.23) is media queries and inline flow, and the stub DOM has no
+  J4.23) is media queries and inline flow, and the stub DOM has no
   layout: it has no viewport, so it cannot be asked what fits on one.
   J4.17, J4.18, J4.20, J4.21, J4.22 and J2.11 are behaviour and markup and
   are held by tests; the rest was measured in a real browser instead, and

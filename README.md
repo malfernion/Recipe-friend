@@ -17,6 +17,14 @@ accounts and sync.
   have — `chicken, rice` — shows what you can cook, best matches first.
 - **Portion scaling and measurement preferences** — amounts rescale on the
   fly and appear in your own units, without ever editing the stored recipe.
+- **Meal planner and shopping list** — put recipes in a plan at the
+  portions you mean to cook them at, and get one list of everything they
+  need, combined and in your own units. Cross off what you already have,
+  tick off what goes in the basket, and copy what is left into whatever
+  shopping app you use. Finishing a plan records that those recipes were
+  planned, so a card can say "Planned 3 weeks ago" and a chip can put
+  what you have not had lately under your thumb. A plan belongs to the
+  book, so whoever does the shop sees what whoever planned it chose.
 - **A recipe view built for a worktop** — it takes the whole screen on a
   phone, puts ingredients beside the method wherever there is width for
   two columns (a phone on its side included), and keeps its controls to
@@ -79,9 +87,9 @@ type in the search box, pick a photo, click Export, open an invite link.
 
 Every test name quotes a criterion from [`docs/journeys.md`](docs/journeys.md),
 so a failure points at behaviour that was agreed rather than at an
-implementation detail. **93 of the 102 criteria have a test naming them**;
-the nine that do not are listed at the end of the journeys, along with the
-database, which is deliberately outside the net.
+implementation detail. **131 of the 140 criteria have a test naming
+them**; the nine that do not are listed at the end of the journeys, along
+with the database, which is deliberately outside the net.
 
 The database is deliberately not covered — see the note at the end of the
 journeys. Row-level security is verified by hand when a migration is run.
@@ -186,6 +194,9 @@ js/html.js                     Escaping, in one place
 js/api.js                      Everything the app asks the server for
 js/cookmode.js                 Keeping the screen awake while cooking
 js/search.js                   Search, filters, and "what can I cook?" ranking
+js/plan.js                     The plan: meals, settled amounts, and merging
+js/shoplist.js                 Combining planned recipes into one shopping list
+js/planstore.js                The plan's local cache, per book
 js/share.js                    Encode/decode single-recipe share links
 js/ask.js                      The confirm dialog, asked before anything undoable
 js/account.js                  Google sign-in, session, sync bootstrap
@@ -198,7 +209,9 @@ supabase/migrations/           Additive schema changes, run in order
                                 005 tightens membership and invites;
                                 006 fixes a recipe to its book, makes
                                 moving one an owner's act, and adds the
-                                read-only member role)
+                                read-only member role; 007 adds the live
+                                plan a book keeps and the plans it has
+                                finished)
 docs/journeys.md               What the app is meant to do, as criteria
 test/                          Tests, named for the criteria they check
 .github/workflows/deploy-pages.yml   GitHub Pages deployment
