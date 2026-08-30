@@ -728,19 +728,32 @@ ages" being the one this journey is named for.
 3. **Tags combine, and combining them narrows.** Two tags mean both and
    not either: "curry" and "quick" is a shorter list than either alone,
    which is what somebody deciding what to cook means by saying both.
-4. **Each tag says how many recipes it would leave**, which is the thing
+4. **Each tag says how many recipes it accounts for**, which is the thing
    the old row could not say at all. The count is taken against what the
-   other filters have already left, not against the whole book, so it is
-   the size of the list you would actually get rather than a promise the
-   rest of the toolbar has already broken.
+   other filters and the search have already left, not against the whole
+   book, so it is not a promise the rest of the toolbar has already
+   broken. Precisely, it is **the size of the list with that tag on** —
+   which is what a tap gives you while the tag is off, and what you are
+   already looking at once it is on. Said as "what the tap would give
+   you" it would be a lie about the tags already chosen, where the tap
+   takes the tag off and the list gets longer.
 5. **A tag that would leave nothing is shown and cannot be chosen**,
    rather than being taken out of the menu. A tag vanishing as you filter
    reads as a book losing things; a tag greyed with a nought beside it
-   reads as an answer.
+   reads as an answer. **A tag already on is always choosable**, whatever
+   its count, because that tap is the way off: a search matching nothing
+   takes every count to nought, and locking the tags on at that moment
+   traps somebody in an empty list with the door shut.
 6. The sorts are **recently added, name A to Z, least recently planned,
    most often planned, and quickest first** — a small closed set, because
    a list of every order a collection could be put in is another wall.
    Recently added is what the list has always done and stays the default.
+
+   **A recipe that lacks what a sort reads goes last**, never first: one
+   with no timings is not a claim to be quick, and one never planned is
+   not the most often planned. The exception is least recently planned,
+   where never planned really is the far end of the scale and sorts
+   first (J14.9).
 7. **A sort chosen by name outranks the search's own ranking** (J3.3), and
    the ranking becomes the tiebreak within it. This reverses what J14.9
    settled, and the reversal is the point: a chip reading "not planned
@@ -796,8 +809,9 @@ accident:
   open is your whole book.
 - **Tag counts are what the other filters have left**, not what the book
   holds (J15.4), so the same tag reads differently depending on what else
-  is on. That is the number worth having: it is the size of the list the
-  tap would give you.
+  is on. That is the number worth having — but it is the size of the list
+  *with that tag on*, not the size of the list a tap would produce, and
+  the two differ for a tag already chosen.
 - A plan is a bag of meals, not a calendar: nothing in it is assigned to
   a day or a date (J12.1).
 - Plans are shared with the book, so a read-only member cannot plan or
