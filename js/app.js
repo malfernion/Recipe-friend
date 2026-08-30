@@ -2098,6 +2098,31 @@
     render();
   });
 
+  /**
+   * A choice redraws the thing it was made in, and rewriting innerHTML
+   * throws away the button the keyboard was on — which left you on the
+   * body after choosing a tag, in the one menu built for choosing several
+   * things in a row (J15.3). So the caller says where focus belongs
+   * afterwards, and the first candidate that is there and choosable gets
+   * it: the same control where it survives, and the one that governs it
+   * where the choice was to take that control away.
+   */
+  function renderKeepingFocus(...candidates) {
+    render();
+    for (const find of candidates) {
+      const el = find();
+      if (el && !el.disabled) {
+        el.focus();
+        return;
+      }
+    }
+  }
+
+  /** The tag's own row in the redrawn menu, found by its name rather than
+      by a selector: a tag is free text and need not be one. */
+  const tagOption = (tag) => () =>
+    Array.from(tagMenuEl.querySelectorAll("[data-tag]")).find((b) => b.dataset.tag === tag);
+
   // A tag goes on or off and the menu stays open: two tags mean both
   // (J15.3), so choosing one is rarely the end of the sentence.
   tagMenuEl.addEventListener("click", (event) => {
@@ -2107,7 +2132,10 @@
     activeTags = activeTags.includes(tag)
       ? activeTags.filter((t) => t !== tag)
       : [...activeTags, tag];
-    render();
+    // Taking a tag off can take its count to nought against what is still
+    // on, and a nought is not choosable (J15.5) — so the summary catches
+    // focus in the one case the row cannot.
+    renderKeepingFocus(tagOption(tag), () => filterSummaryEl);
   });
 
   sortOptionsEl.addEventListener("click", (event) => {
@@ -2115,12 +2143,28 @@
     if (!btn || !btn.dataset.sort) return;
     sortBy = btn.dataset.sort;
     if (sortMenu) sortMenu.open = false; // one choice, so the menu is done
-    render();
+    // The menu it was chosen in has gone, and the chip is now what says
+    // what was chosen, so that is where the keyboard lands.
+    renderKeepingFocus(() => sortSummaryEl);
   });
 
   activeFiltersEl.addEventListener("click", (event) => {
     const btn = event.target.closest("[data-remove]");
-    if (btn && btn.dataset.remove) removeFilter(btn.dataset.remove, btn.dataset.tag);
+    if (!btn || !btn.dataset.remove) return;
+    // The chip you press is the thing you are taking away, so there is no
+    // equivalent to come back to: focus goes to whatever now stands where
+    // it stood, and to the control that turned it on once the row is
+    // empty and gone.
+    const row = Array.from(activeFiltersEl.querySelectorAll("[data-remove]"));
+    const at = row.indexOf(btn);
+    const wasFavorites = btn.dataset.remove === "favorites";
+    removeFilter(btn.dataset.remove, btn.dataset.tag, [
+      () => {
+        const left = activeFiltersEl.querySelectorAll("[data-remove]");
+        return left[Math.min(at, left.length - 1)];
+      },
+      () => (wasFavorites ? favoritesBtn : filterSummaryEl),
+    ]);
   });
 
   /**
@@ -2128,7 +2172,7 @@
    * them: it is what the empty list offers as a way out (J15.10), and
    * there a search is as likely to be the reason as a filter.
    */
-  function removeFilter(what, tag) {
+  function removeFilter(what, tag, focusAfter) {
     if (what === "tag") activeTags = activeTags.filter((t) => t !== tag);
     if (what === "favorites") favoritesOnly = false;
     if (what === "filters" || what === "all") {
@@ -2139,7 +2183,7 @@
       searchTerms = [];
       searchInput.value = "";
     }
-    render();
+    renderKeepingFocus(...(focusAfter || []));
   }
 
   /**
@@ -2165,7 +2209,14 @@
     // would be, so it is answered here.
     const clearBtn = event.target.closest("[data-remove]");
     if (clearBtn && clearBtn.dataset.remove) {
-      removeFilter(clearBtn.dataset.remove);
+      // This one clears the search with the filters, and it draws itself
+      // where the recipes are — so once they are back it is gone, and the
+      // top of the toolbar is where the keyboard belongs rather than the
+      // body. Only for a keyboard, though: a click synthesised by Enter
+      // carries a detail of 0, and putting a thumb on the search box
+      // would raise the on-screen one over the recipes just asked for.
+      const byKey = event.detail === 0;
+      removeFilter(clearBtn.dataset.remove, undefined, byKey ? [() => searchInput] : []);
       return;
     }
     // Checked first: these sit inside a card, which is itself a button.
@@ -2479,7 +2530,17 @@
       true
     );
     document.addEventListener("keydown", (event) => {
-      if (event.key === "Escape" && menu.open) menu.open = false;
+      if (event.key !== "Escape" || !menu.open) return;
+      // Escape hides the panel, and the keyboard was very likely inside
+      // it: left there it is parked on a control nobody can see, and the
+      // next Tab starts from somewhere off the screen. It comes back to
+      // the summary, which is what shutting a menu leaves you looking at.
+      const inside = menu.contains(document.activeElement);
+      menu.open = false;
+      if (inside) {
+        const summary = menu.querySelector("summary");
+        if (summary) summary.focus();
+      }
     });
   }
 

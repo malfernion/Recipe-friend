@@ -510,7 +510,10 @@ body {
 .toolbar-panel {
   left: 0;
   right: auto;
-  min-width: 13rem;
+  /* Wide enough for the longest thing in either menu. At 13rem "Least
+     recently planned" took two lines in a menu of one-liners, which read
+     as two sorts rather than one. */
+  min-width: 15rem;
   max-width: calc(100vw - 2.5rem);
   max-height: min(60vh, 22rem);
   overflow-y: auto;
@@ -587,15 +590,29 @@ body {
   color: var(--ink-faint);
 }
 
-/* Nothing left to choose. Greyed and still there, saying nought (J15.5). */
+/*
+  Nothing left to choose. Greyed and still there, saying nought (J15.5) —
+  and the nought has to be readable, because it is the answer this row is
+  giving. A flat 45% opacity took the name to 2.2:1 and the count to
+  1.9:1 on the panel, which is a row you can see is there and cannot
+  read. The step down is made in the palette instead: the name drops from
+  --ink-soft to the --ink-faint the count already wears, which is a
+  visible half-tone quieter than the rows above and below it and still
+  measures 5.4:1 in the light and 5.3:1 in the dark. Nothing answers the
+  pointer, which is the other half of saying it cannot be pressed.
+*/
 .tag-option[disabled] {
   cursor: default;
-  opacity: 0.45;
+  color: var(--ink-faint);
+}
+
+.tag-option[disabled] .tag-option-count {
+  color: var(--ink-faint);
 }
 
 .tag-option[disabled]:hover {
   background: none;
-  color: var(--ink-soft);
+  color: var(--ink-faint);
 }
 
 .sort-option {
@@ -1858,6 +1875,47 @@ body {
 /* Phones */
 @media (max-width: 480px) {
   /*
+    A panel hangs from the row rather than from its own chip. Hung from
+    the chip, Filter starts 136.5px across a 320px screen and finished at
+    344.5 — 24.5px off the right of it, taking the counts that are the
+    point of the menu (J15.4) with it, and giving the page a 25px
+    sideways scroll it has at no other moment. Sort was worse: it is the
+    last control in the row, so its panel hangs leftwards from its chip,
+    and wherever the row wraps that chip is back at the left margin — the
+    panel was drawn from x −61.4 at 320 and 360, and −40.9 at 393, with
+    the first third of every sort's name off the side of the screen.
+    Anchored to the row, Filter still opens from the left edge and Sort
+    still from the right, which is the same sentence said where there is
+    room to say it.
+  */
+  .filter-row {
+    position: relative;
+  }
+
+  .toolbar-menu {
+    position: static;
+  }
+
+  /*
+    Filter takes the width of the row, because a tag of forty characters
+    and a count on the right want every pixel of a 320px screen. Sort
+    holds five short labels and takes what they need, so the two menus
+    still open to different shapes from opposite edges rather than to one
+    sheet twice.
+  */
+  .toolbar-panel {
+    left: 0;
+    right: auto;
+    max-width: 100%;
+  }
+
+  .filter-row > .toolbar-menu:last-child .toolbar-panel {
+    left: auto;
+    right: 0;
+    max-width: min(100%, 15rem);
+  }
+
+  /*
     Servings, prep and cook hold two digits each. Stacked, they were three
     full-width rows — some 300px of scrolling to get past six characters —
     so they stay side by side and just get narrower.
@@ -1943,6 +2001,46 @@ body {
 }
 
 /*
+  The filter row is three controls now — Favourites, Filter, Sort (J15.1)
+  — where it used to be two chips and every tag in the book, and the
+  tracking is still what buys them their row. The width to fit is not the
+  one they start at: Filter says how many tags are on (J15.1), so it
+  grows by 23.3px the moment one is, and at full tracking the three and
+  their gaps then come to 396.9px and stop fitting a phone below 437px.
+  So the trade the bars below make — a third of the letter-spacing, and
+  some of the padding and the gaps — is made from that width down. It
+  brings the three to 320.6px with a tag on, which is one row of 44px
+  from 375 up, where all but one of these widths used to wrap.
+
+  At 320 it does not, and honestly cannot: 280px of row against three
+  controls whose words are already the smallest type on the screen. They
+  keep two rows there, Favourites and Filter above Sort, 92.8px of a
+  568px screen — against the 198px the wall of tags used to take. Buying
+  the last 40px would mean 3px between chips or a word off a label, and
+  neither is worth a row. At 360 the row holds one line until a tag goes
+  on, and 1.4px of gap is all that is left in it, so a two-digit count
+  takes the second line there — as it does in the few pixels above 440
+  where the full tracking comes back. Ten tags on at once is a corner,
+  and a tidy second row is what it costs.
+*/
+@media (max-width: 440px) {
+  .filter-row,
+  .active-filters {
+    gap: 0.25rem;
+  }
+
+  .chip {
+    letter-spacing: 0.08em;
+    padding-inline: 0.3rem;
+  }
+
+  /* The label and its ▾ sit closer; the ▾ still reads as a ▾. */
+  .toolbar-summary {
+    gap: 0.2rem;
+  }
+}
+
+/*
   Below this the three-across ingredient row stops working: the item field
   is last in a row that has already run out, so the field holding the
   longest text — "tomato purée", "plain flour" — ends up the narrowest of
@@ -1957,22 +2055,6 @@ body {
   .ing-row .ing-item {
     flex: 1 0 100%;
     order: 1;
-  }
-
-  /*
-    The filter row is three controls now — Favourites, Filter, Sort
-    (J15.1) — where it used to be two chips and every tag in the book,
-    and the tracking is still what buys them their row. Measured at 320px
-    the old pair alone came to 313px of a 280px row and the row ran to
-    six lines; the three fit one line here with the tracking and the
-    padding given up, which is the same place the bars below take theirs.
-    The chips are already the smallest type on the screen and a name
-    people read as a name is worth more than a sixth of an em, so it
-    comes out of neither label.
-  */
-  .chip {
-    letter-spacing: 0.08em;
-    padding-inline: 0.4rem;
   }
 
   /*

@@ -869,9 +869,9 @@ recipe is, what it says on screen, and what survives a round trip. Those
 are the failures that would be silent — a recipe quietly losing its tags is
 worse than a page that will not load.
 
-Nine of the 140 criteria have no test naming them — J4.15, J4.16, J4.23,
-J5.10, J11.1 to J11.4, and J12.12. Six more things the tests do not
-reach, recorded so the gap is visible:
+Ten of the 151 criteria have no test naming them — J4.15, J4.16, J4.23,
+J5.10, J11.1 to J11.4, J12.12 and J15.11. Six more things the tests do
+not reach, recorded so the gap is visible:
 
 - **The 48-hour lifetime and single use of an invite** are the database's,
   not the app's (J7.4). The client asks only for links that have not
@@ -893,12 +893,25 @@ reach, recorded so the gap is visible:
   written down because the supermarket is where it matters and a future
   change could break it without breaking anything a test names.
 - **What the recipe view looks like at a given size** (J4.15, J4.16,
-  J4.23) is media queries and inline flow, and the stub DOM has no
-  layout: it has no viewport, so it cannot be asked what fits on one.
-  J4.17, J4.18, J4.20, J4.21, J4.22 and J2.11 are behaviour and markup and
-  are held by tests; the rest was measured in a real browser instead, and
-  the numbers are below so a regression has something to be a regression
-  from.
+  J4.23), and **that an open menu covers the list rather than shoving it
+  down the page** (J15.11), are media queries and absolute positioning,
+  and the stub DOM has no layout: it has no viewport, so it cannot be
+  asked what fits on one. J4.17, J4.18, J4.20, J4.21, J4.22 and J2.11 are
+  behaviour and markup and are held by tests; the rest was measured in a
+  real browser instead, and the numbers are below so a regression has
+  something to be a regression from.
+
+  The same blindness hid a live bug for as long as the menus existed.
+  The listener that shuts a menu on an outside click ran in the bubble
+  phase, and choosing a tag redraws the menu under the thumb — so by the
+  time it looked, `contains` was being asked about a button no longer in
+  the page, said no, and shut the Filter menu on every single choice, in
+  the one menu built for choosing several things in a row (J15.3). It
+  listens in the capture phase now. The stub has no event propagation and
+  no `contains`, so nothing in `test/` can tell the two apart; it was
+  confirmed by tapping two tags in a browser, and confirmed again by
+  putting the listener back in the bubble phase, where the menu shuts
+  after one.
 
   Opening this recipe — 11 ingredients, 8 steps, a three-line title —
   and counting what is on screen before any scrolling:
@@ -971,6 +984,94 @@ reach, recorded so the gap is visible:
   struck-through line in the basket, the "sorted / to get" tail, what a
   line is made of, and the removed group's summary — all sit at 5.26:1
   on the dialog's ground, and at 5.4:1 in the light.
+
+  **What the two menus measure.** The Filter row column above measures a
+  row that no longer exists: it was every tag in the book drawn as a
+  chip, and four rows of it at 198px on a phone is the wall J15.2 was
+  written about. What stands there now is three controls — Favourites,
+  Filter, Sort — and a row beneath them holding only what is on. Measured
+  in Chromium with a coarse pointer and a phone's overlay scrollbars, so
+  the row really is 280px wide at 320px as the plan's bar was, on a book
+  of 22 recipes carrying 25 tags between them — two of them 39 characters
+  long, six of them on one recipe only, four recipes with no timings and
+  three with no servings — with Favourites and two tags on:
+
+  | Viewport | Toolbar row | Active row | Filter panel | Sort panel |
+  |---|---|---|---|---|
+  | Narrow 320×568 | 2 rows, 92px | 2 rows, 92px | 280×341 at x 20–300 | 240×261 at x 60–300 |
+  | 360×640 | 1 row, 44px | 2 rows, 92px | 320×352 at x 20–340 | 240×261 at x 100–340 |
+  | iPhone SE 375×667 | 1 row, 44px | 2 rows, 92px | 335×352 at x 20–355 | 240×261 at x 115–355 |
+  | iPhone 14 393×852 | 1 row, 44px | 2 rows, 92px | 353×352 at x 20–373 | 240×261 at x 133–373 |
+  | Phone landscape 852×393 | 1 row, 44px | 1 row, 44px | 240×236 at x 155–395 | 240×236 at x 154–394 |
+  | iPad mini 744×1133 | 1 row, 44px | 1 row, 44px | 240×352 at x 155–395 | 240×261 at x 154–394 |
+  | Desktop 1440×900 | 1 row, 44px | 1 row, 44px | 240×352 at x 345–585 | 240×261 at x 344–584 |
+
+  **The row was built for two chips and now holds three**, which costs a
+  second line at 320 and nowhere else. At full tracking the three come to
+  373.6px, and to 396.9px once Filter says how many tags are on — so the
+  compaction the bars below use now runs to 440px rather than 380px, and
+  brings them to 320.6px, one line from 375 up. At 320 they need 320.6px
+  of a 280px row and keep two lines of 44px, which is still less than half
+  what the wall of tags took. At 360 the one line survives a single-digit
+  count with 1.4px to spare and takes a second line at two digits, which
+  means ten tags on at once.
+
+  **Neither panel pushes the list** (J15.11): the first card sits at the
+  same y open or shut at every one of the seven — 320.7 at 320×568, 272.7
+  at the three taller phones, 246.8 at the three wide ones — and both
+  panels paint over the active row rather than reflowing it. **Neither
+  runs off an edge** now. Hung from its own chip, Filter began 136.5px
+  across a 320px screen and ended at 344.5, putting the counts that are
+  the point of the menu (J15.4) past the edge and giving the page a 25px
+  sideways scroll it has at no other moment; Sort, being the last control
+  in the row, hung leftwards from a chip the wrap had returned to the left
+  margin and was drawn from x −61.4 at 320 and 360, and −40.9 at 393. On a
+  phone both now hang from the row instead — Filter from its left edge and
+  the full width of it, Sort from the right at 15rem, which is what its
+  five labels need. Nothing scrolls sideways at any width from 320 to 1920,
+  with either menu open, a 39-character tag on, and the list empty.
+
+  **Everything is 44px** (J4.19): both summaries, every tag row, every
+  sort row, every chip in the active row along with its ×, "Clear filters"
+  and the empty list's way out, at all seven sizes in both themes. The 25
+  tags come to 1167px of rows in a panel 236 to 352px tall, so it scrolls,
+  and a 39-character tag wraps to two lines of 50.2px with its count still
+  in the right-hand column. The empty state's message and its way out are
+  centred across the grid at every width, and the longest way out — "Clear
+  the search and filters" — holds one line at 261.8px of a 280px row.
+
+  In the light, a tag's name reads at 8.71:1 on the panel and its count at
+  5.40:1; a tag that is on reads at 15.80:1 with its ✓ at 5.86:1; and a
+  tag greyed at nought reads at 5.40:1 — it was 2.23:1 and its nought
+  1.90:1 under a flat 45% opacity, which is a row you can see is there and
+  cannot read, and J15.5 wants that nought read as an answer. The step
+  down is made in the palette now instead. In the dark those are 7.31,
+  5.26, 13.22, 5.67 and 5.26:1. An open summary carries its label at
+  5.56:1 in the light and 6.10:1 in the dark, and its ▾ — a mark, not text
+  — at 3.58 and 3.71:1, against 3.92 and 4.28:1 while it rests.
+
+  **What is left, and left deliberately.** The panel is capped at 60vh, so
+  on the shortest screens its foot lands below the fold: 71px of it at
+  320×568 and 56.7px at 852×393, reached by scrolling the page a little
+  before scrolling the panel. Tying the cap to the space actually below
+  the toolbar cannot be said in CSS without a magic number that a wrapped
+  toolbar row would falsify, and how much of a short screen a menu may
+  take is a decision rather than a defect, so it is written down here
+  rather than guessed at.
+
+  The keyboard was the other thing the tests could not see. Every choice
+  in either menu rewrites the innerHTML it was made in, which threw away
+  the focused button and left the keyboard on the body — after the first
+  tag, in the menu built for choosing several (J15.3), and after taking
+  anything off the row. Focus now goes back to the equivalent control:
+  the same tag's row, the next chip along in the row, the chip that turned
+  a filter on once the row has emptied, the Sort chip after a sort, and
+  the summary when Escape shuts a menu from inside it. The empty list's
+  way out lands in the search box, but only when it was pressed rather
+  than tapped — a click synthesised by Enter carries a detail of 0, and a
+  thumb should get the recipes back without the on-screen keyboard rising
+  over them. Tab to Filter, Enter, Tab, Enter, Tab, Enter now leaves two
+  tags ticked, the menu open, and the keyboard on the second tag.
 
 **The database is deliberately outside the net.** The row-level security
 policies — including the ones on `live_plans` and `plans`, which are what

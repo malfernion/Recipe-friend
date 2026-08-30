@@ -458,6 +458,92 @@ test("J15.10 · the way out is named after what it would clear", () => {
   assert.deepEqual(app.titles().length, 3);
 });
 
+// --- the keyboard, in a menu built for choosing several things ---------
+/*
+  Every one of these choices redraws the control it was made in, and
+  rewriting innerHTML throws the focused button away. Nothing here can see
+  a real focus ring — the stub has no layout and no tab order — but it can
+  see which element was asked to take focus, which is the whole of the
+  defect: before this, none of them was, and the keyboard landed on the
+  body. Where focus lands once the menus are drawn for real was checked in
+  a browser; see the note at the end of docs/journeys.md.
+*/
+
+/** A row of the redrawn tag menu, standing in for what render() wrote. */
+function tagRow(tag) {
+  return { dataset: { tag }, disabled: false, focus() { this.focused = true; } };
+}
+
+test("J15.3 · choosing a tag leaves the keyboard on that tag, so the next one is a keypress away", () => {
+  const app = appWith([ROAST, SOUP, CURRY]);
+  const rows = [tagRow("vegan"), tagRow("curry")];
+  app.el("tag-menu").querySelectorAll = (sel) => (sel === "[data-tag]" ? rows : []);
+
+  app.tapTag("curry");
+  assert.equal(rows[1].focused, true, "the tag just chosen, in the menu as it was redrawn");
+  assert.equal(rows[0].focused, undefined);
+
+  app.tapTag("vegan");
+  assert.equal(rows[0].focused, true, "and again, because two tags mean both");
+});
+
+test("J15.5 · a tag whose row cannot be pressed after the choice hands focus to the Filter chip", () => {
+  const app = appWith([ROAST, SOUP, CURRY]);
+  // Taking a tag off can take its own count to nought against what is
+  // still on, and a nought cannot be pressed — so there is nothing to go
+  // back to, and the summary catches it rather than the body.
+  const dead = { ...tagRow("curry"), disabled: true, focus() { this.focused = true; } };
+  app.el("tag-menu").querySelectorAll = (sel) => (sel === "[data-tag]" ? [dead] : []);
+
+  app.tapTag("curry");
+  assert.equal(dead.focused, undefined, "a row nobody can press is not where focus goes");
+  assert.equal(app.el("filter-summary").focused, true);
+});
+
+test("J15.6 · choosing a sort closes its menu and leaves the keyboard on the Sort chip", () => {
+  const app = appWith([ROAST, SOUP, CURRY]);
+  app.chooseSort("name");
+  assert.equal(app.el("sort-menu").open, false);
+  assert.equal(app.el("sort-summary").focused, true,
+    "the chip is what now says what was chosen; the menu it was chosen in has gone");
+});
+
+test("J15.2 · taking a filter off in the row hands the keyboard to the control that turned it on", () => {
+  const app = appWith([ROAST, SOUP, CURRY]);
+  app.tapTag("vegan");
+  app.tapRow("tag", "vegan");
+  assert.equal(app.el("active-filters").hidden, true, "the row it was pressed in has gone");
+  assert.equal(app.el("filter-summary").focused, true);
+
+  app.el("favorites-filter").fire("click");
+  app.el("filter-summary").focused = false;
+  app.tapRow("favorites");
+  assert.equal(app.el("favorites-filter").focused, true,
+    "Favourites is chosen in the toolbar (J15.9), so that is what it goes back to");
+});
+
+test("J15.10 · the way out of an empty list hands the keyboard back to the search box", () => {
+  const app = appWith([ROAST, SOUP, CURRY]);
+  app.search("zzzz");
+  // Pressed rather than tapped: a click synthesised by Enter carries a
+  // detail of 0, and only that one moves focus. A thumb gets the list
+  // back without the on-screen keyboard coming up over it.
+  app.el("recipe-list").fire("click", {
+    detail: 0,
+    target: { closest: (sel) => (sel === "[data-remove]" ? { dataset: { remove: "all" } } : null) },
+  });
+  assert.equal(app.titles().length, 3);
+  assert.equal(app.el("search-input").focused, true,
+    "the button was drawn where the recipes are, and the recipes are back");
+
+  const tapped = appWith([ROAST, SOUP, CURRY]);
+  tapped.search("zzzz");
+  tapped.tapEmpty("all");
+  assert.equal(tapped.titles().length, 3);
+  assert.equal(tapped.el("search-input").focused, undefined,
+    "a thumb gets the recipes back and not the on-screen keyboard over them");
+});
+
 // --- the search result count, for anyone who cannot see the list --------
 
 test("the count is announced, not the whole grid", () => {
