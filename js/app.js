@@ -19,6 +19,10 @@
   let existingPhotoPath = ""; // photo already in Storage for the recipe being edited
   let formBaseline = ""; // the editor's contents as it opened, to spot unsaved work
   let detailScale = 1; // display-only scaling factor for the open detail view
+  // Planning is a mode over the list, not a screen of its own (J12.4).
+  // Nothing about it is stored: turning it off changes nothing but what
+  // the cards offer.
+  let planMode = false;
 
   // --- Elements ---
   const $ = (sel) => document.querySelector(sel);
@@ -33,7 +37,19 @@
   const dialogTitle = $("#dialog-title");
   const detailDialog = $("#detail-dialog");
   const detailContent = $("#detail-content");
+  const planDialog = $("#plan-dialog");
+  const planContent = $("#plan-content");
   const toastEl = $("#toast");
+  const toastActionEl = $("#toast-action");
+
+  /**
+   * Where this book's plan is kept (J12.2). Made here so the screen and
+   * the sync layer share one object — account.js adopts this one rather
+   * than making a second (see window.RecipeApp at the foot of the file).
+   * Absent only in a page that has not loaded planstore.js, where the
+   * planner is simply not offered rather than half-offered.
+   */
+  const planStore = window.RecipePlanStore ? new window.RecipePlanStore() : null;
 
   // --- Helpers ---
   const escapeHTML = RecipeHTML.escapeHTML;
@@ -48,7 +64,7 @@
    * it is honoured; this stops the page moving at all.
    */
   function syncScrollLock() {
-    const open = detailDialog.open || recipeDialog.open;
+    const open = detailDialog.open || recipeDialog.open || planDialog.open;
     document.body.classList.toggle("dialog-open", open);
     // The scrolling element is <html>, not <body>, so a rule on the body
     // alone leaves the page free to move — measured, after trying exactly
@@ -58,13 +74,47 @@
   }
 
   let toastTimer = null;
-  function toast(message) {
+  let toastAction = null;
+
+  /**
+   * A message, and at most one thing to do about it.
+   *
+   * The action is a sibling of the message rather than a child of it: the
+   * message is written by assigning textContent, which would take any
+   * child element with it. Finishing a plan is the one thing in the app
+   * that offers a way back this way (J14.2) — somebody who has just said
+   * they are finished is told what happened and offered Undo, not asked
+   * whether they meant it.
+   *
+   * A toast carrying an action stays up longer than one that only
+   * reports: 2.6 seconds is enough to read "Planned 4 meals" and not
+   * enough to reach for it.
+   */
+  function toast(message, action) {
     toastEl.textContent = message;
     toastEl.hidden = false;
+    toastAction = action || null;
+    if (toastActionEl) {
+      toastActionEl.hidden = !toastAction;
+      if (toastAction) toastActionEl.textContent = toastAction.label;
+    }
     clearTimeout(toastTimer);
-    toastTimer = setTimeout(() => {
-      toastEl.hidden = true;
-    }, 2600);
+    toastTimer = setTimeout(hideToast, toastAction ? 9000 : 2600);
+  }
+
+  function hideToast() {
+    toastEl.hidden = true;
+    toastAction = null;
+    if (toastActionEl) toastActionEl.hidden = true;
+  }
+
+  if (toastActionEl) {
+    toastActionEl.addEventListener("click", () => {
+      const action = toastAction;
+      clearTimeout(toastTimer);
+      hideToast();
+      if (action) action.run();
+    });
   }
 
   function totalTime(recipe) {
@@ -166,10 +216,16 @@
                 .join("")}</div>`
             : ""
         }
+        ${planCardRow(recipe)}
       </article>`;
   }
 
   function render() {
+    // A recipe that has left the book leaves the plan (J12.8), and this is
+    // where the book's recipes are read. `prune` hands the plan straight
+    // back when nothing has gone, so an ordinary redraw writes nothing and
+    // pushes nothing.
+    prunePlan();
     const visible = RecipeSearch.visibleRecipes(store.recipes, criteria());
     listEl.innerHTML = visible.map((r, i) => recipeCard(r, i)).join("");
 
@@ -186,6 +242,10 @@
     favoritesBtn.classList.toggle("chip-active", favoritesOnly);
     favoritesBtn.setAttribute("aria-pressed", String(favoritesOnly));
     renderTagFilters();
+    syncPlanUI();
+    // The plan is read from the same store, so a redraw it did not cause
+    // — a sync landing somebody else's meal — still reaches it.
+    if (planDialog.open) renderPlan();
   }
 
   /**
@@ -702,6 +762,15 @@
     }
     document.body.classList.toggle("read-only", !canEditBook);
     syncTransferButtons();
+    // A viewer gets no planner at all (J12.10, J7.17): the plan belongs to
+    // the book, so putting anything in it is a write like any other, and a
+    // viewer's client never pushes. Hiding the controls is a courtesy — the
+    // gate is row-level security, and nothing here is asked to be one.
+    if (!canPlan()) {
+      planMode = false;
+      if (planDialog.open) planDialog.close();
+    }
+    syncPlanUI();
   }
 
   function syncTransferButtons() {
@@ -803,6 +872,9 @@
     { name: "edit", re: /^#edit=(.+)$/ },
     { name: "new", re: /^#new$/ },
     { name: "review", re: /^#review$/ },
+    // The plan is a place too, and full-screen on a phone it reads as a
+    // page: Back closes it exactly as it closes an open recipe (J12.9).
+    { name: "plan", re: /^#plan$/ },
   ];
 
   const isEditorRoute = (name) => name === "edit" || name === "new" || name === "review";
@@ -895,6 +967,15 @@
       openRecipeDialog(null, false, { restoring: true });
       return true;
     }
+    if (route.name === "plan") {
+      if (planDialog.open) return true;
+      // A viewer has no planner to come back to (J12.10).
+      if (!canPlan()) return false;
+      if (detailDialog.open) closeQuietly(detailDialog);
+      if (recipeDialog.open) closeQuietly(recipeDialog);
+      openPlanDialog({ restoring: true });
+      return true;
+    }
     // A review holds a recipe that is not in the box yet, so there is
     // nothing to rebuild it from once it has gone.
     if (route.name === "review") return recipeDialog.open;
@@ -931,6 +1012,579 @@
     btn.setAttribute("aria-label", recipe.favorite ? "Favourited" : "Favourite");
     btn.classList.toggle("is-on", recipe.favorite);
   }
+
+  /**
+   * --- Planning a week, and shopping for it (J12, J13, J14) -----------
+   *
+   * The arithmetic is elsewhere and pure: plan.js knows what a meal is,
+   * shoplist.js knows what a shop is, planstore.js knows where the plan
+   * lives. Everything here is the screen — which control exists, what it
+   * says, and what it does when a thumb lands on it.
+   *
+   * Two things are worth saying out loud, because they are decisions
+   * rather than plumbing. Planning is a mode over the list and not a
+   * screen of its own (J12.4), so nothing below narrows or reorders
+   * anything: search, the chips, Favourites and the ranking all go on
+   * working exactly as they were, because choosing between recipes is
+   * what the list is already for. And a viewer gets no planner at all
+   * (J12.10) — the plan is the book's, so adding to it is a write.
+   */
+  const thePlan = () => (planStore ? planStore.plan : null);
+
+  /** Is there a planner here at all, and is this book ours to plan in? */
+  function canPlan() {
+    return Boolean(planStore) && canEditBook;
+  }
+
+  /** The shop as it stands, for this reader's units (J13.6). */
+  function shopList() {
+    return RecipeShopList.build(thePlan(), store.recipes, store.prefs);
+  }
+
+  function prunePlan() {
+    if (!planStore) return;
+    const plan = planStore.plan;
+    const pruned = RecipePlan.prune(plan, store.recipes.map((r) => r.id));
+    if (pruned !== plan) planStore.setPlan(pruned);
+  }
+
+  /** Every entry this recipe has in the plan — it may have several (J12.6). */
+  function mealsFor(recipeId) {
+    const plan = thePlan();
+    return plan ? plan.meals.filter((m) => m.recipeId === recipeId) : [];
+  }
+
+  /**
+   * How a meal's portions read, in the words the recipe view uses for the
+   * same thing (J12.5): servings where the recipe has them, a multiplier
+   * where it has not.
+   */
+  function portionsLabel(meal, recipe) {
+    if (meal.portions) return `Serves ${Math.round(meal.portions * 10) / 10}`;
+    return `× ${RecipeScale.formatQuantity(RecipePlan.factorFor(meal, recipe))}`;
+  }
+
+  /**
+   * Put a recipe in the plan at the portions on screen.
+   *
+   * `addMeal` puts it in at the recipe's own servings, which is the
+   * default J12.5 asks for. Where the reader has already stepped the
+   * portions — in the recipe view, whose stepper this reuses — the new
+   * meal is walked to match by the same steps a finger would take,
+   * rather than by writing a number in behind them: one definition of
+   * what a step is, and it is plan.js's.
+   */
+  function addToPlan(recipe, factor = 1) {
+    if (!planStore || !recipe) return null;
+    const now = Date.now();
+    let plan = RecipePlan.addMeal(thePlan(), recipe, now);
+    const id = plan.meals[plan.meals.length - 1].id;
+    const at = (p) => RecipePlan.factorFor(p.meals.find((m) => m.id === id), recipe);
+    // Bounded twice over: by the step that stops improving — a limit
+    // reached, or a half-batch step that would overshoot — and by a
+    // guard, because a loop that walks towards a number must not be the
+    // one thing in the app that can spin.
+    for (let guard = 0; guard < 32; guard++) {
+      const current = at(plan);
+      if (Math.abs(current - factor) < 0.01) break;
+      const next = RecipePlan.stepPortions(plan, id, current < factor ? "up" : "down", recipe, now);
+      if (next === plan || Math.abs(at(next) - factor) >= Math.abs(current - factor)) break;
+      plan = next;
+    }
+    planStore.setPlan(plan);
+    return id;
+  }
+
+  // --- Plan mode over the list -----------------------------------------
+
+  /**
+   * What a card offers in plan mode: a way in, and the portions of what
+   * it has already put in. The stepper appears with the meal it steps —
+   * before there is one there is nothing to step, and inventing a number
+   * to hold in the meantime would be a second place portions live.
+   */
+  function planCardRow(recipe) {
+    if (!planMode || !canPlan()) return "";
+    const mine = mealsFor(recipe.id);
+    const last = mine[mine.length - 1];
+    const id = escapeHTML(recipe.id);
+    const name = escapeHTML(recipe.name);
+    return `
+        <div class="plan-card-row">
+          <button type="button" class="btn btn-ghost plan-add" data-plan="add" data-id="${id}"
+                  aria-label="${mine.length ? `Add ${name} to the plan again` : `Add ${name} to the plan`}"
+                  >${mine.length ? "+ Again" : "+ Plan"}</button>
+          ${
+            last
+              ? `<span class="plan-portions" role="group" aria-label="Portions of ${name}">
+              <button type="button" class="scale-btn" data-plan="down" data-id="${id}"
+                      aria-label="Fewer portions of ${name}">−</button>
+              <span class="scale-value">${escapeHTML(portionsLabel(last, recipe))}</span>
+              <button type="button" class="scale-btn" data-plan="up" data-id="${id}"
+                      aria-label="More portions of ${name}">+</button>
+            </span>`
+              : ""
+          }
+          ${
+            // The glyph is a count, and "times 2" is not what it says. The
+            // words go beside it where a screen reader will read them.
+            mine.length > 1
+              ? `<span class="plan-times"><span aria-hidden="true">×${mine.length}</span
+                 ><span class="visually-hidden">${mine.length} meals of ${name} planned</span></span>`
+              : ""
+          }
+        </div>`;
+  }
+
+  /** A tap on a card's plan controls. The stepper steps the latest entry. */
+  function cardPlanAction(action, recipeId) {
+    if (!canPlan()) return;
+    const recipe = store.getById(recipeId);
+    if (!recipe) return;
+    if (action === "add") {
+      addToPlan(recipe);
+      toast(`Added “${recipe.name}” to the plan.`);
+    } else {
+      const mine = mealsFor(recipeId);
+      const last = mine[mine.length - 1];
+      if (!last) return;
+      planStore.setPlan(RecipePlan.stepPortions(thePlan(), last.id, action, recipe));
+    }
+    render();
+  }
+
+  /**
+   * The header toggle, its count, and the bar over the list. Called from
+   * render(), so anything that changes the plan keeps them honest.
+   */
+  function syncPlanUI() {
+    const available = canPlan();
+    const planBtn = $("#plan-btn");
+    if (planBtn) {
+      planBtn.hidden = !available;
+      planBtn.setAttribute("aria-pressed", String(planMode));
+      planBtn.classList.toggle("is-on", planMode);
+    }
+    const meals = available ? thePlan().meals.length : 0;
+    const count = $("#plan-count");
+    if (count) {
+      // A count of nothing is not a count: the toggle carries a number
+      // once there is a plan to have one (J12.4).
+      count.hidden = meals === 0;
+      const text = meals ? String(meals) : "";
+      if (count.textContent !== text) count.textContent = text;
+    }
+    const bar = $("#plan-bar");
+    if (bar) bar.hidden = !(available && planMode);
+    const barText = $("#plan-bar-text");
+    if (barText && available && planMode) {
+      const left = shopList().toBuy.length;
+      barText.textContent =
+        meals === 0
+          ? "Nothing in the plan yet — add what you mean to cook."
+          : `${meals} ${meals === 1 ? "meal" : "meals"} in the plan · ` +
+            (left === 0 ? "nothing left to buy" : `${left} ${left === 1 ? "thing" : "things"} to buy`);
+    }
+    syncPlanButtons();
+  }
+
+  /**
+   * The recipe view gains a way in only in plan mode (J12.7) — the rule
+   * Copy and Move already follow. J4.19 fought to keep that row on one
+   * line at 360px, and a control for something you are not doing is not
+   * what the room is spent on.
+   */
+  function syncPlanButtons() {
+    const btn = $("#detail-plan-btn");
+    if (btn) btn.hidden = !(canPlan() && planMode);
+  }
+
+  // --- The plan readout (J12.9, J13) -----------------------------------
+
+  /**
+   * Meals above the shopping list, sharing one scroll, for the reason
+   * J4.16 gives for ingredients above steps: two panes would be the top
+   * half of each, and neither list would ever be finished.
+   */
+  function openPlanDialog({ restoring = false } = {}) {
+    if (!planStore) return false;
+    const wasOpen = planDialog.open;
+    renderPlan();
+    if (!wasOpen) {
+      if (!restoring) pushRoute("#plan");
+      planDialog.showModal();
+      // The heading, not the first control — which is a portions stepper
+      // and does not say what has just filled the screen (J4.21).
+      const heading = $("#plan-heading");
+      if (heading && heading.focus) heading.focus();
+      syncScrollLock();
+    }
+    return true;
+  }
+
+  function renderPlan() {
+    if (!planStore) return;
+    const plan = thePlan();
+    const list = shopList();
+    planContent.innerHTML = planMealsHTML(plan) + shopListHTML(list);
+
+    const nothingToBuy = list.toBuy.length === 0;
+    // Offered only where there is something for it to do (J4.13).
+    $("#plan-copy-btn").hidden = nothingToBuy;
+    $("#plan-share-btn").hidden = nothingToBuy || !canShareText();
+    // Finishing needs at least one recipe: an empty plan has nothing to
+    // record and offers no Done (J14.3).
+    $("#plan-done-btn").hidden = plan.meals.length === 0;
+    $("#plan-clear-btn").hidden = plan.meals.length === 0;
+  }
+
+  function planMealsHTML(plan) {
+    if (!plan || plan.meals.length === 0) {
+      return `
+        <section class="plan-section">
+          <h3>Meals</h3>
+          <p class="plan-empty">Nothing in the plan yet. Turn on Plan above the recipe
+             list, then add what you mean to cook.</p>
+        </section>`;
+    }
+    return `
+      <section class="plan-section">
+        <h3>Meals</h3>
+        <ul class="plan-meals">${plan.meals.map(planMealHTML).join("")}</ul>
+      </section>`;
+  }
+
+  function planMealHTML(meal) {
+    const recipe = store.getById(meal.recipeId);
+    // The name the plan copied down, so an archived plan still reads
+    // correctly after the recipe has gone (J14.12).
+    const name = escapeHTML(meal.name || (recipe && recipe.name) || "");
+    const id = escapeHTML(meal.id);
+    return `
+          <li class="plan-meal">
+            <span class="plan-meal-name">${name}</span>
+            <span class="plan-portions" role="group" aria-label="Portions of ${name}">
+              <button type="button" class="scale-btn" data-plan="meal-down" data-meal="${id}"
+                      aria-label="Fewer portions of ${name}">−</button>
+              <span class="scale-value">${escapeHTML(portionsLabel(meal, recipe))}</span>
+              <button type="button" class="scale-btn" data-plan="meal-up" data-meal="${id}"
+                      aria-label="More portions of ${name}">+</button>
+            </span>
+            <button type="button" class="icon-btn plan-meal-remove" data-plan="meal-remove"
+                    data-meal="${id}" aria-label="Take ${name} out of the plan">×</button>
+          </li>`;
+  }
+
+  function shopListHTML(list) {
+    if (list.lines.length === 0) {
+      return `
+        <section class="plan-section">
+          <h3>Shopping list</h3>
+          <p class="plan-empty">The shopping list is whatever the meals above ask for.</p>
+        </section>`;
+    }
+    const removed = list.alreadyHave;
+    return `
+      <section class="plan-section">
+        <h3>Shopping list</h3>
+        <ul class="shop-lines">
+          ${list.toBuy.map((l) => shopLineHTML(l, "")).join("")}
+          ${list.inBasket.map((l) => shopLineHTML(l, "got")).join("")}
+        </ul>
+        ${
+          removed.length
+            ? `<details class="shop-have">
+          <summary>${removed.length} ${removed.length === 1 ? "thing" : "things"} you already have</summary>
+          <ul class="shop-lines shop-lines-have">
+            ${removed.map((l) => shopLineHTML(l, "have")).join("")}
+          </ul>
+        </details>`
+            : ""
+        }
+      </section>`;
+  }
+
+  /**
+   * One line of the shop: the combined amount, what it is made of, and
+   * the two gestures that settle it.
+   *
+   * `state` is how the line stands — still wanted, in the basket, or at
+   * home already. ✗ and ✓ both record an amount rather than a tick
+   * (J13.9), and both can be taken back, because ✗ is a fast gesture and
+   * fast gestures are mistyped (J13.13).
+   */
+  function shopLineHTML(line, state) {
+    const amount = line.amount === null ? "" : RecipeScale.formatQuantity(line.amount);
+    const measure = [amount, line.unit].filter(Boolean).join(" ");
+    const item = escapeHTML(line.item);
+    const key = escapeHTML(line.key);
+    const buttons =
+      state === "have"
+        ? `<button type="button" class="btn btn-ghost shop-restore" data-plan="unhave" data-key="${key}"
+                   aria-label="Put ${item} back on the list">Put back</button>`
+        : state === "got"
+          ? `<button type="button" class="icon-btn shop-btn is-on" data-plan="unget" data-key="${key}"
+                     aria-pressed="true" aria-label="Take ${item} out of the basket">✓</button>`
+          : `<button type="button" class="icon-btn shop-btn" data-plan="have" data-key="${key}"
+                     aria-label="We already have ${item}">✗</button>
+             <button type="button" class="icon-btn shop-btn" data-plan="got" data-key="${key}"
+                     aria-pressed="false" aria-label="Put ${item} in the basket">✓</button>`;
+    return `
+            <li class="shop-line${state === "got" ? " shop-line-got" : ""}">
+              <div class="shop-line-text">
+                <p class="shop-what">${
+                  measure ? `<span class="shop-amount">${escapeHTML(measure)}</span> ` : ""
+                }${item}${line.toTaste ? ' <span class="shop-taste">to taste</span>' : ""}</p>
+                ${shopFromHTML(line)}
+              </div>
+              <div class="shop-line-btns">${buttons}</div>
+            </li>`;
+  }
+
+  /**
+   * What the line is made of (J13.7) — "Bolognese 4 · Curry 2".
+   *
+   * Where the recipes wrote the item differently the line says what each
+   * of them wrote, because the plural rule (J13.4) is what makes a wrong
+   * merge and naming the recipes alone would not show it. Where they all
+   * wrote the same thing that parenthetical is noise, and goes.
+   */
+  function shopFromHTML(line) {
+    if (!line.from.length) return "";
+    const differ = new Set(line.from.map((f) => f.item)).size > 1;
+    const bits = line.from.map((f) => {
+      const written = differ ? ` (${f.item})` : "";
+      return escapeHTML(`${f.name}${f.text ? ` ${f.text}` : ""}${written}`);
+    });
+    return `<p class="shop-from">${bits.join(" · ")}</p>`;
+  }
+
+  /** A tap inside the readout: the meals above, the shop below. */
+  function planAction(action, dataset) {
+    if (!canPlan()) return;
+    if (action === "meal-remove") {
+      const plan = thePlan();
+      const meal = plan.meals.find((m) => m.id === dataset.meal);
+      planStore.setPlan(RecipePlan.removeMeal(plan, dataset.meal));
+      if (meal) toast(`Took “${meal.name}” out of the plan.`);
+      render();
+      return;
+    }
+    if (action === "meal-up" || action === "meal-down") {
+      const plan = thePlan();
+      const meal = plan.meals.find((m) => m.id === dataset.meal);
+      if (!meal) return;
+      const direction = action === "meal-up" ? "up" : "down";
+      planStore.setPlan(
+        RecipePlan.stepPortions(plan, meal.id, direction, store.getById(meal.recipeId))
+      );
+      render();
+      return;
+    }
+    // Returned rather than dropped: settling the last line finishes the
+    // plan, which is a promise, and a test wants to be able to wait for it.
+    if (action === "have" || action === "got") return settleShopLine(dataset.key, action);
+    if (action === "unhave" || action === "unget") {
+      unsettleShopLine(dataset.key, action === "unhave" ? "have" : "got");
+    }
+    return undefined;
+  }
+
+  /**
+   * ✗ and ✓, and the one moment a plan finishes itself.
+   *
+   * Whether this tap finishes the shop is asked of the list **before** the
+   * tap lands (J14.2). `allSettled` after the fact cannot tell somebody
+   * settling the last line from a requirement that fell away — dropping a
+   * meal, or a recipe leaving the book from another device, takes an
+   * outstanding amount off the list with nobody touching it, and a plan
+   * that archived itself on that would be recording a shop nobody said
+   * they had done.
+   */
+  function settleShopLine(key, field) {
+    const list = shopList();
+    const line = list.lines.find((l) => l.key === key);
+    if (!line) return;
+    const finishes = RecipeShopList.finishesShop(list, line);
+    planStore.setPlan(RecipeShopList.settleLine(thePlan(), line, field, Date.now()));
+    render();
+    return finishes ? finishPlan() : undefined;
+  }
+
+  function unsettleShopLine(key, field) {
+    const line = shopList().lines.find((l) => l.key === key);
+    if (!line) return;
+    planStore.setPlan(RecipeShopList.unsettleLine(thePlan(), line, field, Date.now()));
+    render();
+  }
+
+  // --- Finishing, and taking it back (J14.1, J14.2) --------------------
+
+  /**
+   * Done: every recipe in the plan is stamped as planned, the plan is
+   * archived, and an empty one takes its place. It says what it did and
+   * offers Undo rather than asking first — pressing Done, or settling the
+   * last line, is somebody saying they have finished, and you do not
+   * interrogate them about it.
+   *
+   * The plan closes with it: the shop is over, and what is left to say
+   * fits in the toast that carries the way back.
+   */
+  async function finishPlan() {
+    if (!canPlan()) return;
+    const plan = thePlan();
+    if (!plan || plan.meals.length === 0) return; // J14.3
+    const cloud = window.RecipeCloud;
+    const sync = cloud && cloud.sync;
+    if (!sync || !sync.completePlan) {
+      toast("Finishing a plan needs your account — sign in and try again.");
+      return;
+    }
+    let done;
+    try {
+      done = await sync.completePlan(Date.now());
+    } catch (err) {
+      console.warn("Recipe Friend: could not finish the plan.", err);
+      toast("Couldn't finish that plan — it is still here.");
+      render();
+      return;
+    }
+    if (!done) return;
+    const count = done.archived.meals.length;
+    if (planDialog.open) planDialog.close();
+    render();
+    toast(`Planned ${count} ${count === 1 ? "meal" : "meals"}.`, {
+      label: "Undo",
+      run: () => undoFinishPlan(done.archived.id),
+    });
+  }
+
+  /**
+   * Undo is the one thing in the plan that needs a network (J14.2). A
+   * finished plan is recorded for the whole book, so taking the record
+   * back has to reach the server — a device that dropped it locally would
+   * be handed it straight back by the next sync. It says so rather than
+   * appearing to work.
+   */
+  async function undoFinishPlan(planId) {
+    const cloud = window.RecipeCloud;
+    const sync = cloud && cloud.sync;
+    if (!sync || !sync.undoComplete) {
+      toast("Undo needs a connection — that plan is on the record for the whole book.");
+      return;
+    }
+    try {
+      const restored = await sync.undoComplete(planId, Date.now());
+      render();
+      toast(restored ? "The plan is back." : "That plan has already gone from the record.");
+    } catch (err) {
+      console.warn("Recipe Friend: could not undo finishing the plan.", err);
+      toast("Couldn't undo that — it needs a connection, and the plan is still recorded.");
+    }
+  }
+
+  /**
+   * Clear discards a plan without recording it: a week that never
+   * happened should not claim to have been planned (J14.4). Unlike Done
+   * it is not something you have just said you wanted, and it cannot be
+   * taken back, so it asks first — the same question everything
+   * destructive here asks (J2.10).
+   */
+  async function clearPlan() {
+    if (!canPlan()) return;
+    const plan = thePlan();
+    const meals = plan.meals.length;
+    if (meals === 0) return;
+    const ok = await RecipeAsk.ask(
+      `Clear the plan? ${meals} ${meals === 1 ? "meal goes" : "meals go"} from it, along with ` +
+        "everything ticked off the shopping list, and nothing is recorded as planned.",
+      { confirmLabel: "Clear", danger: true }
+    );
+    if (!ok) return;
+    // A new plan is a new generation, and a generation carries the moment
+    // it began: stamped past the plan it replaces, so a device still
+    // holding the old one yields to this rather than handing it back
+    // (see mergePlans in plan.js). `generationAfter` is where that sum
+    // lives, so Clear, Done and Undo all order themselves the same way.
+    planStore.setPlan(RecipePlan.emptyPlan(RecipePlan.generationAfter(plan)));
+    if (planDialog.open) planDialog.close();
+    toast("Plan cleared.");
+    render();
+  }
+
+  // --- Taking the list to the shop (J13.12) ----------------------------
+
+  const canShareText = () => Boolean(navigator && typeof navigator.share === "function");
+
+  /** What is left: neither removed nor settled, and never asked for twice. */
+  const outstandingText = () => RecipeShopList.copyText(shopList());
+
+  // --- Wiring ----------------------------------------------------------
+
+  $("#plan-btn").addEventListener("click", () => {
+    if (!canPlan()) return;
+    planMode = !planMode;
+    render();
+  });
+
+  $("#plan-open-btn").addEventListener("click", () => {
+    if (canPlan()) openPlanDialog();
+  });
+
+  $("#detail-plan-btn").addEventListener("click", () => {
+    const recipe = detailId && store.getById(detailId);
+    if (!recipe || !canPlan()) return;
+    // At the portions on screen: the recipe view's own stepper is the one
+    // the plan reuses, so what it says is what goes in (J12.5).
+    addToPlan(recipe, detailScale);
+    toast(`Added “${recipe.name}” to the plan.`);
+    render();
+  });
+
+  planContent.addEventListener("click", (event) => {
+    const btn = event.target.closest("[data-plan]");
+    if (!btn || !btn.dataset.plan) return undefined;
+    return planAction(btn.dataset.plan, btn.dataset);
+  });
+
+  $("#plan-close-btn").addEventListener("click", () => planDialog.close());
+
+  planDialog.addEventListener("close", () => {
+    syncScrollLock();
+    unwind(currentRoute().name === "plan");
+  });
+
+  $("#plan-done-btn").addEventListener("click", () => finishPlan());
+  $("#plan-clear-btn").addEventListener("click", () => clearPlan());
+
+  $("#plan-copy-btn").addEventListener("click", async () => {
+    const text = outstandingText();
+    if (!text) {
+      toast("Nothing left to buy.");
+      return;
+    }
+    try {
+      await navigator.clipboard.writeText(text);
+      toast("Shopping list copied.");
+    } catch {
+      // No clipboard permission, or an insecure context: fall back to
+      // something the person can actually get at.
+      window.prompt("Copy your shopping list:", text);
+    }
+  });
+
+  $("#plan-share-btn").addEventListener("click", async () => {
+    const text = outstandingText();
+    if (!text || !canShareText()) return;
+    try {
+      await navigator.share({ title: "Shopping list", text });
+    } catch (err) {
+      // Backing out of the share sheet is an answer, not a failure.
+      if (err && err.name === "AbortError") return;
+      console.warn("Recipe Friend: could not share the shopping list.", err);
+      toast("Couldn't share that list — it is still on the clipboard's Copy.");
+    }
+  });
 
   // --- Import / export ---
   function exportRecipes() {
@@ -1139,6 +1793,12 @@
   });
 
   listEl.addEventListener("click", (event) => {
+    // Checked first: these sit inside a card, which is itself a button.
+    const planBtn = event.target.closest("[data-plan]");
+    if (planBtn && planBtn.dataset.plan) {
+      cardPlanAction(planBtn.dataset.plan, planBtn.dataset.id);
+      return;
+    }
     const favBtn = event.target.closest('[data-action="favorite"]');
     if (favBtn) {
       store.toggleFavorite(favBtn.dataset.id);
@@ -1334,6 +1994,7 @@
 
     if (detailDialog.open) closeQuietly(detailDialog);
     if (recipeDialog.open) closeQuietly(recipeDialog);
+    if (planDialog.open) closeQuietly(planDialog);
     // Back into a recipe that has since been deleted or moved away: the
     // address must not go on naming it. Only ever reached from a live
     // navigation, so this cannot strip a link that is merely waiting on
@@ -1400,7 +2061,7 @@
 
   // Close dialogs when clicking the backdrop. These hold nothing that
   // isn't already saved, so they go without asking.
-  for (const dialog of [detailDialog, prefsDialog, aiHelpDialog, pasteDialog]) {
+  for (const dialog of [detailDialog, planDialog, prefsDialog, aiHelpDialog, pasteDialog]) {
     dialog.addEventListener("click", (event) => {
       if (event.target === dialog) dialog.close();
     });
@@ -1433,7 +2094,9 @@
 
   // Handle for the sync layer (account.js/sync.js): shared store plus a
   // way to redraw once remote changes land.
-  window.RecipeApp = { store, render, toast, showPendingShare, openFromHash, setCanEdit };
+  // planStore goes out with it: account.js adopts this one rather than
+  // making a second, so the screen and the sync layer read one plan.
+  window.RecipeApp = { store, planStore, render, toast, showPendingShare, openFromHash, setCanEdit };
 
   render();
   handleIncomingShare();

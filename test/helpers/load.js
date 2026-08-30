@@ -83,9 +83,16 @@ function loadUI(options = {}) {
   // set here rather than after, because app.js reads them on the way in.
   if (options.hash) win.location.hash = options.hash;
   if (options.gated) win.document.body.classList.add("gated");
-  const base = loadApp("api.js", "units.js", "scale.js", "storage.js", "share.js", "cookmode.js");
+  // The planner goes in with the rest: app.js makes a plan store as it
+  // loads, and reaches for plan.js and shoplist.js as bare globals, the
+  // same way a browser hands them over from index.html.
+  const base = loadApp(
+    "api.js", "units.js", "scale.js", "storage.js", "plan.js", "planstore.js",
+    "shoplist.js", "share.js", "cookmode.js"
+  );
 
-  for (const key of ["RecipeHTML", "RecipeApi", "RecipeUnits", "RecipeScale", "RecipeStore", "RecipeShare", "RecipeCookMode"]) {
+  for (const key of ["RecipeHTML", "RecipeApi", "RecipeUnits", "RecipeScale", "RecipeStore",
+                     "RecipePlan", "RecipePlanStore", "RecipeShopList", "RecipeShare", "RecipeCookMode"]) {
     win[key] = base[key];
     globalThis[key] = base[key];
   }
@@ -118,7 +125,14 @@ function loadUI(options = {}) {
     if (name === "ask.js") globalThis.RecipeAsk = win.RecipeAsk;
   }
 
-  return { win, el: win.document.el, app: win.RecipeApp, store: win.RecipeApp.store, restore };
+  return {
+    win,
+    el: win.document.el,
+    app: win.RecipeApp,
+    store: win.RecipeApp.store,
+    planStore: win.RecipeApp.planStore,
+    restore,
+  };
 }
 
 function swapGlobals(values) {

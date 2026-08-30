@@ -82,7 +82,8 @@ body.dialog-open {
   from here. Row-level security is what actually refuses — this is about
   not offering a control that would fail.
 */
-body.read-only .fav-btn {
+body.read-only .fav-btn,
+body.read-only .plan-card-row {
   display: none;
 }
 
@@ -1233,20 +1234,305 @@ body {
   color: var(--ink-faint);
 }
 
-/* ---------- Toast ---------- */
-.toast {
+/* ---------- Planning a week, and shopping for it ----------
+   J12 is a mode over the list rather than a screen of its own, so almost
+   nothing here is a layout: it is one row added to a card, one bar over
+   the list, and the readout the two lead to. The readout borrows the
+   recipe view's dialog wholesale — full screen on a phone, one scroll,
+   the same headings — because it is read the same way and in worse
+   conditions: one hand, in an aisle. */
+
+/* The count on the header toggle. A number, not a badge: the app has no
+   other pill, and one here would be the loudest thing in the bar. */
+.plan-count {
+  margin-left: 0.4rem;
+  font-variant-numeric: tabular-nums;
+  color: var(--accent);
+}
+
+.btn.is-on {
+  color: var(--ink);
+  border-bottom-color: var(--accent);
+}
+
+/* What the plan holds so far, over the list you are choosing from. */
+.plan-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 0.5rem 1rem;
+  margin: 0 0 1.9rem;
+  padding: 0.6rem 0.9rem;
+  border: 1px solid var(--rule);
+  background: var(--paper-raised);
+}
+
+.plan-bar-text {
+  margin: 0;
+  font-family: var(--serif);
+  font-style: italic;
+  font-size: 0.95rem;
+  color: var(--ink-soft);
+}
+
+/* The card's way in, and the portions of what it has already put in. */
+.plan-card-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.4rem 0.6rem;
+  margin-top: 0.9rem;
+  padding-top: 0.75rem;
+  border-top: 1px solid var(--rule);
+}
+
+.plan-add {
+  border: 1px solid var(--rule-strong);
+  padding: 0.5rem 0.7rem;
+  min-height: 2.75rem;
+}
+
+.plan-add:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.plan-portions {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+}
+
+/* Narrower than the recipe view's, which has a dialog's width to spend;
+   a card is 280px and holds a stepper and a button on one row. */
+.plan-portions .scale-value {
+  min-width: 4.6rem;
+  font-size: 0.95rem;
+}
+
+.plan-times {
+  font-size: 0.7rem;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  color: var(--ink-faint);
+}
+
+/*
+  The plan's bar carries four controls where the recipe's carries three,
+  and Done is a filled button among them. Down to 400px the spacer is
+  what holds Clear away from it; below that the spacer is what would
+  push Done onto a second row, so it goes and the ends of the row do the
+  same job. Neither bar wraps: in this view a wrapped bar is a row of
+  the list nobody can see.
+*/
+@media (max-width: 400px) {
+  .detail-actions.plan-actions {
+    justify-content: space-between;
+  }
+
+  .detail-actions.plan-actions .dialog-actions-spacer {
+    display: none;
+  }
+}
+
+/* ---------- The plan readout ---------- */
+.plan-section {
+  margin-bottom: 2.2rem;
+}
+
+.plan-empty {
+  margin: 0;
+  font-family: var(--serif);
+  font-style: italic;
+  color: var(--ink-faint);
+}
+
+.plan-meals,
+.shop-lines {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.plan-meal,
+.shop-line {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.4rem 0;
+  border-bottom: 1px solid var(--rule);
+}
+
+.plan-meal:last-child,
+.shop-line:last-child {
+  border-bottom: none;
+}
+
+/* Both lists hold names somebody typed, so both have to be able to break
+   one: a long ingredient must widen nothing and scroll nothing sideways. */
+.plan-meal-name,
+.shop-line-text {
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.plan-meal-name {
+  font-family: var(--serif);
+  font-size: 1.02rem;
+}
+
+.plan-meal-remove {
+  flex: none;
+}
+
+/* ---------- The shopping list ---------- */
+.shop-line {
+  align-items: flex-start;
+}
+
+.shop-what {
+  margin: 0;
+  font-family: var(--serif);
+  font-size: 1.02rem;
+  line-height: 1.45;
+  padding-top: 0.5rem;
+}
+
+.shop-amount {
+  font-weight: 600;
+}
+
+.shop-taste {
+  font-family: var(--sans);
+  font-size: 0.66rem;
+  font-weight: 600;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+}
+
+/* What the line is made of (J13.7). Quiet, and under the thing it
+   explains — it is read when a total looks wrong, not before. */
+.shop-from {
+  margin: 0.1rem 0 0.35rem;
+  font-size: 0.76rem;
+  color: var(--ink-faint);
+}
+
+.shop-line-btns {
+  display: flex;
+  align-items: center;
+  gap: 0.15rem;
+  flex: none;
+}
+
+.shop-btn {
+  font-size: 1.05rem;
+}
+
+.shop-btn.is-on {
+  color: var(--accent);
+}
+
+.shop-line-got .shop-what {
+  text-decoration: line-through;
+  color: var(--ink-faint);
+}
+
+/* Removed lines are not gone: they collapse into a group that says how
+   many, and one tap puts one back (J13.13). */
+.shop-have {
+  margin-top: 1rem;
+  border-top: 1px solid var(--rule);
+}
+
+.shop-have > summary {
+  display: flex;
+  align-items: center;
+  min-height: 2.75rem;
+  font-size: 0.7rem;
+  font-weight: 600;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+  cursor: pointer;
+  touch-action: manipulation;
+}
+
+.shop-have > summary:hover {
+  color: var(--ink);
+}
+
+.shop-lines-have .shop-what {
+  color: var(--ink-faint);
+}
+
+.shop-restore {
+  min-height: 2.75rem;
+  white-space: nowrap;
+}
+
+/* ---------- Toast ----------
+   The message and its one action are siblings in a tray rather than
+   parent and child: the message is written by assigning textContent,
+   which would take a child button with it. The tray is not a target —
+   only the two things inside it are, so an empty one never swallows a
+   tap meant for the page. */
+.toast-tray {
   position: fixed;
   bottom: 1.5rem;
   left: 50%;
   transform: translateX(-50%);
+  display: flex;
+  align-items: stretch;
+  z-index: 100;
+  max-width: calc(100vw - 2rem);
+  pointer-events: none;
+}
+
+.toast-tray > * {
+  pointer-events: auto;
+}
+
+.toast {
   background: var(--ink);
   color: var(--paper);
   padding: 0.6rem 1.4rem;
   font-size: 0.8rem;
   letter-spacing: 0.06em;
-  z-index: 100;
-  max-width: calc(100vw - 2rem);
   box-shadow: 0 8px 24px rgba(20, 15, 8, 0.3);
+}
+
+/* Attached to the message rather than floating near it, and sized to the
+   44px floor: this is Undo on a plan somebody has just finished. */
+.toast-action {
+  display: inline-flex;
+  align-items: center;
+  min-height: 2.75rem;
+  padding: 0 1.1rem;
+  font-family: var(--sans);
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  background: var(--accent);
+  color: #fdf9f2;
+  border: none;
+  border-radius: 0;
+  cursor: pointer;
+  touch-action: manipulation;
+  box-shadow: 0 8px 24px rgba(20, 15, 8, 0.3);
+}
+
+.toast-action:hover {
+  background: var(--accent-ink);
+}
+
+.toast-action:focus-visible {
+  outline: 2px solid var(--paper);
+  outline-offset: -4px;
 }
 
 /* ---------- Footer ---------- */
@@ -1462,7 +1748,8 @@ body {
      to find your place in, which is the one thing a recipe must not be.
      The bars keep the full width — their backgrounds have to reach the
      edges, or content scrolls visibly past them. */
-  .detail-dialog > #detail-content {
+  .detail-dialog > #detail-content,
+  .plan-dialog > #plan-content {
     max-width: 46rem;
     margin-inline: auto;
   }
@@ -1495,7 +1782,8 @@ body {
   instead of down a long thin one.
 */
 @media (min-width: 820px) {
-  .detail-dialog > #detail-content {
+  .detail-dialog > #detail-content,
+  .plan-dialog > #plan-content {
     max-width: none;
   }
 
