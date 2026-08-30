@@ -566,8 +566,15 @@
         if (!ok) return;
         try {
           await this.api.leaveBook(current.id);
-          // Drop this book's local cache so it doesn't linger on the device.
-          this.app.store.useBook(null);
+          // Drop this book's local cache so it doesn't linger on the
+          // device. `useBook(null)` only pointed the cache somewhere else
+          // and said it dropped it: the book's recipes stayed in local
+          // storage under their own key, and after J12 its plan would
+          // have stayed there with them. Leaving is J7.13's situation
+          // arrived at deliberately, so it takes J7.13's path — which
+          // announces the book, and is what carries the plan away too
+          // (J12.2, J12.3).
+          this.app.store.forgetBook(current.id);
           this.books = this.books.filter((b) => b.id !== current.id);
           const next = this.books[0];
           if (next) {
@@ -576,6 +583,11 @@
             rememberSelection(this.sync.userId, next.id);
             await this.sync.syncNow();
           } else {
+            // Nothing of the book we walked out of is left pointed at, so
+            // the cache goes back to the keyless one it had before there
+            // was a book (the same place deleting your last book leaves
+            // it).
+            this.app.store.useBook(null);
             // Nothing left to sync with, and saying so keeps the refresh
             // below from reading a book we walked out of as one that was
             // deleted out from under us.

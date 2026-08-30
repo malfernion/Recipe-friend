@@ -870,6 +870,27 @@ test("J7.6 · a member can leave a book, and its recipes stay with the book", as
   assert.equal(h.lastToast(), "Left “Household”.");
 });
 
+test("J7.6 · leaving a book leaves nothing of it on the device", async () => {
+  const h = harness({ book: SHARED });
+  const cacheKey = `recipe-friend:v1:book:${SHARED}`;
+  h.typed({ name: "Sam's stew" }); // cached locally, as any synced recipe is
+  assert.ok(h.win.localStorage.getItem(cacheKey), "the book's recipes are on this device");
+  // The plan is the book's too (J12.2), and the app carries it away on
+  // the same gesture the recipes go on.
+  const forgotten = [];
+  h.store.onForgetBook = (id) => forgotten.push(id);
+  await h.books.refresh();
+  h.setConfirm(true);
+
+  await h.el("leave-book-btn").fire("click");
+
+  assert.equal(h.win.localStorage.getItem(cacheKey), null,
+    "a book you walked out of does not go on sitting in local storage");
+  assert.deepEqual(forgotten, [SHARED], "and its plan goes with it");
+  assert.deepEqual(h.store.recipes.map((r) => r.name), [],
+    "the box on screen is the book you are in now, not the one you left");
+});
+
 test("J7.6 · a book you decided to stay in is not left", async () => {
   const h = harness({ book: SHARED });
   await h.books.refresh();

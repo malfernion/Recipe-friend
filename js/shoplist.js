@@ -14,6 +14,10 @@
  *     item, unit, amount, text,  // what to show: "400 g tomatoes"
  *     family, baseUnit,          // how it was summed
  *     required, have, got, outstanding,   // all in base units
+ *     shortfall, shortfallText,  // what is left to buy — J13.10, and
+ *                                // what Copy takes: "1 onion"
+ *     partText,                  // "3 sorted, 1 to get", on a line that
+ *                                // is part-settled and only then
  *     settled,                   // "" | "have" | "got"
  *     toTaste,                   // J13.8 — a presence, not a quantity
  *     unitIsItem,                // "2 cloves": the unit is the only name
@@ -187,40 +191,47 @@
   /** Settle up one accumulated line and work out how it should read. */
   function finish(line, plan, prefs) {
     const settledAmounts = global.RecipePlan.settledFor(plan, line.key);
-    const outstanding = Math.max(0, line.required - settledAmounts.have - settledAmounts.got);
+    const sorted = settledAmounts.have + settledAmounts.got;
+    const outstanding = Math.max(0, line.required - sorted);
 
-    // Formatted once, here, and in the reader's units (J13.6, J8): two
-    // people in one book read one list each their own way.
-    const shown = displayAmount(line, prefs);
-    const amountText = shown.amount === null ? "" : global.RecipeScale.formatQuantity(shown.amount);
-    // A shopping quantity is never rendered as 0 (J13.3). J4.8 accepts it
-    // in a recipe, where the recipe as written is one tap away at full
-    // portions; a list that says "0 g butter" is telling you to buy
-    // nothing. Below that size the line shows the item and no amount —
-    // and no unit either, since "g butter" is no better.
-    const readable = amountText && amountText !== "0";
-    const ratio = readable && line.required > 0 ? shown.amount / line.required : 0;
+    // Three numbers, one set of maths: what the plan asks for, what has
+    // been settled against it, and what is left (J13.10). Each is
+    // converted and formatted in its own right rather than being scaled
+    // off the total afterwards, so a shortfall of 100 g under a total of
+    // 1.5 kg reads as 100 g rather than as 0.1 kg — and so a shortfall
+    // too small to render is caught by the same J13.3 rule the total is.
+    // The screen shows all three and Copy takes the last of them; they
+    // are worked out here precisely so the two cannot disagree about
+    // which number is which.
+    const whole = render(line, displayAmount(line, prefs, line.required));
+    const short = render(line, displayAmount(line, prefs, outstanding));
+    const done = render(line, displayAmount(line, prefs, sorted));
 
-    // Where the item is the unit, the unit shown is the item: "1.5 kg",
-    // not "1.5 kg g" and not "1500 g" printed as "1.5 kg g" either. The
-    // converted label is the one to use, since that is the size the
-    // reader is being given (J13.6).
-    const label = line.unitIsItem && readable ? shown.unit : line.item;
+    const ratio = whole.amount !== null && line.required > 0 ? whole.amount / line.required : 0;
 
     return {
       key: line.key,
-      item: label,
-      unit: readable && !line.unitIsItem ? shown.unit : "",
-      amount: readable ? shown.amount : null,
-      text: [readable ? amountText : "", readable && !line.unitIsItem ? shown.unit : "", label]
-        .filter(Boolean)
-        .join(" "),
+      item: whole.label,
+      unit: whole.unit,
+      amount: whole.amount,
+      text: whole.text,
       family: line.family,
       baseUnit: line.baseUnit,
       required: line.required,
       have: settledAmounts.have,
       got: settledAmounts.got,
       outstanding,
+      // What is actually missing, ready to go to a shop (J13.10). On a
+      // line nothing has been said about this is the total, word for
+      // word — which is what keeps an unsettled line reading exactly as
+      // it did before there was such a thing as settling.
+      shortfall: short.amount,
+      shortfallText: short.text,
+      // "3 sorted, 1 to get": said only where some of the line is
+      // settled and some of it is not. The total stays on screen beside
+      // what it is made of (J13.7), because that is what the plan asks
+      // for; this is the half of the line a shop cares about.
+      partText: sorted > 0 && outstanding > 0 ? partly(done.measure, short.measure) : "",
       // Still wanted, in the basket, or already at home. A line settled
       // both ways reads as in the basket: it is the half that is still
       // worth seeing on the list.
@@ -234,6 +245,49 @@
         return { ...c, amount, text: text === "0" ? "" : text };
       }),
     };
+  }
+
+  /**
+   * How one amount of a line reads: "400 g", "4", "1 clove". The total,
+   * what is settled and what is left all come through here, so they are
+   * spelled the same way and rounded by the same rule.
+   *
+   * A shopping quantity is never rendered as 0 (J13.3). J4.8 accepts it
+   * in a recipe, where the recipe as written is one tap away at full
+   * portions; a list that says "0 g butter" is telling you to buy
+   * nothing. Below that size the amount shows the item and no amount —
+   * and no unit either, since "g butter" is no better.
+   *
+   * Where the item is the unit, the unit shown is the item: "1.5 kg",
+   * not "1.5 kg g" and not "1500 g" printed as "1.5 kg g" either. The
+   * converted label is the one to use, since that is the size the reader
+   * is being given (J13.6).
+   */
+  function render(line, shown) {
+    const amountText = shown.amount === null ? "" : global.RecipeScale.formatQuantity(shown.amount);
+    const readable = Boolean(amountText) && amountText !== "0";
+    const label = line.unitIsItem && readable ? shown.unit : line.item;
+    const unit = readable && !line.unitIsItem ? shown.unit : "";
+    return {
+      amount: readable ? shown.amount : null,
+      unit,
+      label,
+      // The amount on its own, for the places that have already said what
+      // the item is: "400 g", "4", "1 clove".
+      measure: readable ? [amountText, line.unitIsItem ? shown.unit : unit].filter(Boolean).join(" ") : "",
+      text: [readable ? amountText : "", unit, label].filter(Boolean).join(" "),
+    };
+  }
+
+  /**
+   * Both numbers on a part-settled line (J13.10). Either can be too small
+   * to render (J13.3) without the other being, and half a sentence is
+   * better than a sentence with a hole in it.
+   */
+  function partly(done, short) {
+    if (done && short) return `${done} sorted, ${short} to get`;
+    if (done) return `${done} sorted`;
+    return short ? `${short} to get` : "";
   }
 
   /**
@@ -256,20 +310,30 @@
    *
    * Spoons and unrecognised units are already in the only unit they have
    * (J4.6), and are shown in it.
+   *
+   * The amount is a parameter rather than always the line's total,
+   * because a part-settled line has three of them to show — what is
+   * asked for, what is settled and what is left (J13.10) — and each is
+   * an amount of the same thing. Sizing each one on its own is what
+   * lets 100 g outstanding under a 1.5 kg total read as 100 g; it is
+   * also the only way the copy can be trusted, since a shortfall taken
+   * as a fraction of the total afterwards would inherit the total's unit
+   * and, below 0.05 of it, would round away to nothing.
    */
-  function displayAmount(line, prefs) {
+  function displayAmount(line, prefs, amount) {
+    const wanted = amount === undefined ? line.required : amount;
     if (line.toTaste) return { amount: null, unit: "" };
     if (line.family !== "mass" && line.family !== "volume") {
-      return { amount: line.required, unit: line.baseUnit };
+      return { amount: wanted, unit: line.baseUnit };
     }
     const system = line.family === "mass" ? prefs && prefs.mass : prefs && prefs.volume;
     // An amount too small for the reader's units comes back as 0, which
-    // `finish` renders as the item alone (J13.3) — there is one place a
+    // `render` shows as the item alone (J13.3) — there is one place a
     // shopping quantity can be zero, and it is caught there.
-    if (system) return global.RecipeUnits.fromBase(line.family, system, line.required);
+    if (system) return global.RecipeUnits.fromBase(line.family, system, wanted);
     const unit = largestContributor(line);
     const size = global.RecipeUnits.toBase(1, unit);
-    return { amount: size ? line.required / size : line.required, unit };
+    return { amount: size ? wanted / size : wanted, unit };
   }
 
   /**
@@ -331,9 +395,17 @@
    * item, amount first. A static site has no supermarket to talk to, so
    * this is the interop — and because it is derived from what is still
    * outstanding, copying twice never asks for the same thing twice.
+   *
+   * What goes out is the shortfall, not the total (J13.10). A line whose
+   * four onions are three-quarters settled says "4 onions · 3 sorted, 1
+   * to get" on screen, because the total is what the plan asks for and
+   * belongs beside what it is made of; but the only useful thing to take
+   * to a shop is the one onion. Copying the total would buy four to get
+   * one, which is the mistake settling a line exists to prevent. On a
+   * line nothing has been said about the two are the same string.
    */
   function copyText(list) {
-    return (list && list.toBuy ? list.toBuy : []).map((l) => l.text).join("\n");
+    return (list && list.toBuy ? list.toBuy : []).map((l) => l.shortfallText).join("\n");
   }
 
   global.RecipeShopList = { build, copyText, itemKey, stemWord, settleAmount, settleLine, unsettleLine, finishesShop };

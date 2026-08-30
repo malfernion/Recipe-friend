@@ -623,6 +623,21 @@ body {
   color: var(--ink-faint);
 }
 
+/*
+  When this was last planned, or that it is in the plan now (J14.6,
+  J14.8). Set like the meta line beneath it, because it answers the same
+  kind of question; a recipe that has never been planned says nothing at
+  all and this element is simply not there (J14.7).
+*/
+.card-planned {
+  margin: 0.15rem 0 0;
+  font-size: 0.68rem;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+}
+
 .card-tags {
   display: flex;
   gap: 0.3rem 0.7rem;
@@ -1410,6 +1425,16 @@ body {
   font-weight: 600;
   letter-spacing: 0.16em;
   text-transform: uppercase;
+  color: var(--ink-faint);
+}
+
+/*
+  Both numbers on a part-settled line (J13.10) — "4 onions · 3 sorted, 1
+  to get". Quieter than the total it follows: the total is the line, and
+  this says how far through it you are.
+*/
+.shop-part {
+  font-size: 0.8rem;
   color: var(--ink-faint);
 }
 

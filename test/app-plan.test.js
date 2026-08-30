@@ -477,6 +477,56 @@ test("J13.13 · Copy gives what is left, neither removed nor settled", async () 
     "what is removed and what is settled are both off the list");
 });
 
+test("J13.10 · a part-settled line shows both numbers on screen", () => {
+  const app = planMode([BOLOGNESE, CURRY]);
+  app.card("add", app.named("Bolognese").id); // two onions
+  app.open();
+  app.tap({ plan: "got", key: app.keyFor("onion") }); // both in the basket
+  app.card("add", app.named("Curry").id); // and now one more is wanted
+
+  assert.match(app.words(), /3 onions · 2 sorted, 1 to get/,
+    "the total belongs on screen beside what it is made of; the shortfall is what a shop is for");
+});
+
+test("J13.10 · what Copy gives is the shortfall, not the total", async () => {
+  const app = planMode([BOLOGNESE, CURRY]);
+  app.card("add", app.named("Bolognese").id);
+  app.open();
+  app.tap({ plan: "got", key: app.keyFor("onion") });
+  app.card("add", app.named("Curry").id);
+
+  let copied = null;
+  app.win.navigator.clipboard.writeText = async (text) => {
+    copied = text;
+  };
+  await app.el("plan-copy-btn").fire("click");
+  await flush();
+
+  // The item is spelled as the line is spelled — the app has never
+  // singularised anything (J13.4) — but the number is the one onion that
+  // is missing rather than the three the plan asks for.
+  assert.match(copied, /^1 onions$/m);
+  assert.doesNotMatch(copied, /3 onions/,
+    "copying the total would buy three onions to get one");
+});
+
+test("J13.10 · a line nothing has been settled against reads exactly as it did", async () => {
+  const app = planMode([BOLOGNESE]);
+  app.card("add", app.named("Bolognese").id);
+  app.open();
+
+  assert.match(app.words(), /2 onions/);
+  assert.doesNotMatch(app.words(), /sorted|to get/, "there is no second number to show");
+
+  let copied = null;
+  app.win.navigator.clipboard.writeText = async (text) => {
+    copied = text;
+  };
+  await app.el("plan-copy-btn").fire("click");
+  await flush();
+  assert.equal(copied, "2 onions\n400 g tomatoes");
+});
+
 test("J13.13 · sharing is offered only where the browser can do it", () => {
   const app = planMode([BOLOGNESE]);
   app.card("add", app.named("Bolognese").id);
@@ -630,6 +680,140 @@ test("J14.4 · a cleared plan is a new generation, so an older device cannot han
     app.plan().id,
     "the cleared plan wins the merge against the one it replaced"
   );
+});
+
+// ---------------------------------------------------------------------
+// J14.6-J14.9 · what the list says about what was planned
+// ---------------------------------------------------------------------
+
+const DAY = 24 * 60 * 60 * 1000;
+
+/**
+ * A week that was planned and finished, `daysAgo` days back. Recorded the
+ * way Done records one — a plan with the recipe in it, stamped completed —
+ * because the archive is the only record there is (J14.11).
+ */
+function planned(app, recipe, daysAgo) {
+  const plan = app.win.RecipePlan;
+  const at = Date.now() - daysAgo * DAY;
+  const week = plan.addMeal(plan.emptyPlan(at - 1000), recipe, at - 500);
+  app.planStore.archivePlan(plan.complete(week, at));
+  app.app.render();
+}
+
+/** What a card says about planning, if anything. */
+const noteOnCard = (app) => {
+  const m = /<p class="card-planned">([^<]*)<\/p>/.exec(app.el("recipe-list").innerHTML);
+  return m ? m[1] : "";
+};
+
+test("J14.6 · a recipe's card and its recipe view say when it was last planned", () => {
+  const app = planning([BOLOGNESE]);
+  planned(app, app.named("Bolognese"), 21);
+
+  assert.equal(noteOnCard(app), "Planned 3 weeks ago",
+    "the ordinary way of saying it, not which Tuesday it was");
+
+  app.openRecipe(app.named("Bolognese").id);
+  assert.match(app.el("detail-content").innerHTML, /Planned 3 weeks ago/);
+});
+
+test("J14.6 · the word is always planned, and the date is the date the plan was finished", () => {
+  const app = planning([BOLOGNESE]);
+  planned(app, app.named("Bolognese"), 1);
+
+  assert.equal(noteOnCard(app), "Planned yesterday");
+  assert.doesNotMatch(app.el("recipe-list").innerHTML, /cook/i,
+    "this is a planner, not an oven: nothing here knows whether a pan was used");
+});
+
+test("J14.6 · the newest of several plans is the one a recipe reports", () => {
+  const app = planning([BOLOGNESE]);
+  planned(app, app.named("Bolognese"), 40);
+  planned(app, app.named("Bolognese"), 3);
+
+  assert.equal(noteOnCard(app), "Planned 3 days ago");
+});
+
+test("J14.7 · a recipe that has never been planned says nothing at all", () => {
+  const app = planning([BOLOGNESE]);
+
+  assert.equal(noteOnCard(app), "", "no line at all, rather than an empty one");
+  assert.doesNotMatch(app.el("recipe-list").innerHTML, /never/i,
+    "“Never planned” reads as a reproach on a recipe typed five minutes ago");
+  app.openRecipe(app.named("Bolognese").id);
+  assert.doesNotMatch(app.el("detail-content").innerHTML, /planned/i);
+});
+
+test("J14.4 · a plan that was cleared rather than finished says nothing either", () => {
+  const app = planning([BOLOGNESE]);
+  const plan = app.win.RecipePlan;
+  // Archived without ever being completed is not a record of anything.
+  app.planStore.archivePlan(plan.addMeal(plan.emptyPlan(1000), app.named("Bolognese"), 1001));
+  app.app.render();
+
+  assert.equal(noteOnCard(app), "", "a week that never happened should not claim to have been planned");
+});
+
+test("J14.8 · a recipe in the live plan says so instead", () => {
+  const app = planMode([BOLOGNESE]);
+  planned(app, app.named("Bolognese"), 21);
+  app.card("add", app.named("Bolognese").id);
+
+  assert.equal(noteOnCard(app), "In the plan",
+    "more use than a date while you are deciding, and it stops it going in twice by accident");
+  app.openRecipe(app.named("Bolognese").id);
+  assert.match(app.el("detail-content").innerHTML, /In the plan/);
+  assert.doesNotMatch(app.el("detail-content").innerHTML, /Planned 3 weeks ago/);
+});
+
+test("J14.9 · Not planned lately sorts least recently planned first, never-planned before them", () => {
+  const app = planning([BOLOGNESE, CURRY, PANCAKES]);
+  planned(app, app.named("Curry"), 2);
+  planned(app, app.named("Bolognese"), 30);
+
+  assert.deepEqual(app.titles(), ["Pancakes", "Curry", "Bolognese"],
+    "the box as it stands, newest first");
+
+  app.el("not-planned-filter").fire("click");
+  assert.deepEqual(app.titles(), ["Pancakes", "Bolognese", "Curry"],
+    "the one nobody has ever planned, then the oldest, then the newest");
+
+  app.el("not-planned-filter").fire("click");
+  assert.deepEqual(app.titles(), ["Pancakes", "Curry", "Bolognese"], "and off again");
+});
+
+test("J14.9, J3.2 · the chip combines with search and tags as the others do", () => {
+  const app = planning([BOLOGNESE, CURRY, PANCAKES]);
+  planned(app, app.named("Curry"), 2);
+  planned(app, app.named("Pancakes"), 30);
+  app.el("not-planned-filter").fire("click");
+
+  app.el("tag-filters").fire("click", {
+    target: { closest: () => ({ dataset: { tag: "quick" } }) },
+  });
+  assert.deepEqual(app.titles(), ["Pancakes", "Curry"],
+    "the tag still narrows, and the chip still orders what is left");
+
+  app.el("tag-filters").fire("click", {
+    target: { closest: () => ({ dataset: { tag: "quick" } }) },
+  });
+  app.el("search-input").value = "onion";
+  app.el("search-input").fire("input");
+  assert.deepEqual(app.titles(), ["Bolognese", "Curry"],
+    "and so does a search: never planned first, then the least recent of the rest");
+});
+
+test("J14.9 · Favourites and the chip narrow and order together", () => {
+  const app = planning([BOLOGNESE, CURRY, PANCAKES]);
+  planned(app, app.named("Curry"), 2);
+  app.store.toggleFavorite(app.named("Curry").id);
+  app.store.toggleFavorite(app.named("Pancakes").id);
+  app.app.render();
+
+  app.el("favorites-filter").fire("click");
+  app.el("not-planned-filter").fire("click");
+  assert.deepEqual(app.titles(), ["Pancakes", "Curry"]);
 });
 
 test("the plan readout keeps the meals above the shopping list", () => {

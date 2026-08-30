@@ -28,10 +28,72 @@
   // it, and is untrusted for exactly the reason a recipe is. Caps far above
   // any real week: a household plans a handful of meals and settles a few
   // dozen lines.
-  const MAX_MEALS = 200;
-  const MAX_SETTLED = 500;
+  //
+  // They are also what keeps a plan small enough for the server to accept,
+  // and that is the harder of the two jobs. Migration 007 checks
+  // `pg_column_size(data) <= 200000` on both plan tables, and a plan this
+  // client is happy to hold but the server refuses is the worst failure
+  // shape the app has: the push fails for ever, sync parks on an error,
+  // and the person cannot even see why — the plan looks fine on their
+  // phone. So the caps below are chosen to fit inside 200000 by
+  // arithmetic rather than by hope.
+  //
+  // `pg_column_size` measures the stored jsonb, so the sum is done in
+  // jsonb's terms, with each term rounded up:
+  //
+  //   · a string of N UTF-16 units is at most 3N bytes of UTF-8 (a
+  //     surrogate pair is two units and four bytes, so 3 per unit is the
+  //     ceiling);
+  //   · a number is at most 24 bytes as a numeric — a double carries 17
+  //     significant digits, which is five base-10000 groups and a header;
+  //   · every element — each container, each key, each value — costs at
+  //     most 8 bytes of jsonb bookkeeping (a 4-byte JEntry, and alignment
+  //     padding that cannot exceed another 3).
+  //
+  // One meal is an object of six fields: 13 elements (the object, six
+  // keys, six values) at 8 = 104, its key names 39, two uuids 72, a name
+  // of at most MAX_NAME_CHARS units 360, and three numbers 72 — 647
+  // bytes, called 700.
+  //
+  // One settled item is a key and an object of two fields, each an object
+  // of two: 14 elements at 8 = 112, a key of at most MAX_KEY_CHARS units
+  // 720, the inner key names 23, and four numbers 96 — 951 bytes, called
+  // 1000.
+  //
+  // The plan around them — id, three stamps, and the two containers — is
+  // 271 bytes, called 300.
+  //
+  //    60 meals   ×  700  =   42000      <- MAX_MEALS
+  //   120 settled × 1000  =  120000      <- MAX_SETTLED
+  //   the plan itself     =     300
+  //                          -------
+  //                          162300  <=  200000, with 37700 to spare
+  //
+  // An archived plan is the same shape and goes into a row with the same
+  // check, so the same sum covers it; MAX_ARCHIVE is about this device's
+  // localStorage rather than about any one row.
+  //
+  // Every plan that reaches the state passes through `sanitizePlan`,
+  // including the result of a merge — see `applyMerge`, which is where
+  // the union of two plans' settled items would otherwise slip past
+  // these numbers.
+  //
+  // A key is 240 because that is what the app can actually generate — an
+  // item is capped at 200 characters (storage.js) and a unit at 24, and
+  // shoplist.js keys a line on the pair. Trimming that would silently
+  // drop the settlement on a long-named item instead. The counts are
+  // what gave way, and they had the room to. 60 meals is two months of
+  // dinners in one plan. Settled lines get the larger share of the
+  // budget because they are the half a real shop can approach — every
+  // distinct thing on the list can be ticked, and a big week's list runs
+  // to a few dozen.
+  const MAX_MEALS = 60;
+  const MAX_SETTLED = 120;
   const MAX_KEY_CHARS = 240;
   const MAX_NAME_CHARS = 120;
+  // The server's own limit, restated here as the thing the sum above has
+  // to come in under. Exported for the test that does the sum.
+  const SERVER_MAX_BYTES = 200000;
   // Roughly eight years of weekly shopping. The server keeps every plan
   // (007); this is only what one device carries around to answer "when was
   // this last planned" (J14.6) without asking.
@@ -346,7 +408,14 @@
      */
     applyMerge(plan, archive) {
       this._applying = true;
-      if (plan) this.state.plan = plan;
+      // Coerced on the way in, like everything else that did not come
+      // from this device. A merge is not a copy of either side: settled
+      // items merge per key and the result holds the *union* of the two
+      // (J12.11), so two plans each at the cap would make one at twice
+      // it — and the sum the caps are chosen by, up at the top of this
+      // file, would be a fiction the moment two phones met. Sanitising
+      // here is what keeps it arithmetic.
+      if (plan) this.state.plan = sanitizePlan(plan) || this.state.plan;
       if (archive) {
         this.state.archive = archive
           .slice()
@@ -377,6 +446,16 @@
   // coerce a row before it believes a word of it.
   RecipePlanStore.sanitizePlan = sanitizePlan;
   RecipePlanStore.sanitizeArchived = sanitizeArchived;
+  // What the caps above are arithmetic about, so a test can do the sum
+  // against the real numbers rather than a copy of them.
+  RecipePlanStore.limits = {
+    MAX_MEALS,
+    MAX_SETTLED,
+    MAX_KEY_CHARS,
+    MAX_NAME_CHARS,
+    MAX_ARCHIVE,
+    SERVER_MAX_BYTES,
+  };
 
   global.RecipePlanStore = RecipePlanStore;
 })(window);

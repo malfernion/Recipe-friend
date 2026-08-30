@@ -10,7 +10,11 @@ const { test } = require("node:test");
 const assert = require("node:assert/strict");
 const { loadApp, aRecipe } = require("./helpers/load.js");
 
-const win = loadApp("units.js", "scale.js", "storage.js", "search.js");
+// plan.js goes in because "not planned lately" is an ordering over
+// recipes (J14.9), and orderings over recipes live here — the archive it
+// reads is handed in, so this file still knows nothing about where a book
+// keeps its plans.
+const win = loadApp("units.js", "scale.js", "storage.js", "plan.js", "search.js");
 const { parseTerms, matchedTerms, matchesFilters, visibleRecipes, readable } = win.RecipeSearch;
 const sanitize = win.RecipeStore.sanitizeRecipe;
 
@@ -167,4 +171,45 @@ test("J3.1 · what search reads is exactly what the screen shows", () => {
 
   // The units as written stay searchable whatever the reader prefers.
   assert.equal(matchesFilters(SOUP, { terms: ["400 g"], prefs }), true);
+});
+
+test("J14.9 · not planned lately orders the list without narrowing it", () => {
+  const NEVER = recipe({ name: "Pancakes", steps: ["Whisk."], tags: ["quick"] });
+  const index = { [SOUP.id]: { lastPlannedAt: 2000, count: 1 }, [CURRY.id]: { lastPlannedAt: 1000, count: 2 } };
+  const criteria = { notPlannedLately: true, plannedIndex: index };
+
+  assert.deepEqual(
+    visibleRecipes([SOUP, CURRY, NEVER], criteria).map((r) => r.name),
+    ["Pancakes", "Chickpea Curry", "Tomato Soup"],
+    "never planned first, then least recently planned — and nothing is hidden"
+  );
+});
+
+test("J14.9, J3.2 · not planned lately combines with the filters rather than replacing them", () => {
+  const NEVER = recipe({ name: "Pancakes", steps: ["Whisk."], tags: ["vegan"] });
+  const index = { [SOUP.id]: { lastPlannedAt: 2000, count: 1 }, [CURRY.id]: { lastPlannedAt: 1000, count: 2 } };
+
+  assert.deepEqual(
+    visibleRecipes([SOUP, CURRY, NEVER], {
+      notPlannedLately: true,
+      plannedIndex: index,
+      tag: "quick",
+    }).map((r) => r.name),
+    ["Chickpea Curry", "Tomato Soup"],
+    "the tag narrows, the chip orders what is left"
+  );
+});
+
+test("J14.9 · a ranked search still decides between two recipes planned the same day", () => {
+  const index = { [SOUP.id]: { lastPlannedAt: 1000, count: 1 }, [CURRY.id]: { lastPlannedAt: 1000, count: 1 } };
+
+  assert.deepEqual(
+    visibleRecipes([SOUP, CURRY], {
+      terms: ["onion", "chickpeas"],
+      notPlannedLately: true,
+      plannedIndex: index,
+    }).map((r) => r.name),
+    ["Chickpea Curry", "Tomato Soup"],
+    "the better match wins a tie the archive cannot break"
+  );
 });

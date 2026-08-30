@@ -87,15 +87,31 @@
    * One term is skipped rather than ranked: everything shown matches it
    * exactly once, so sorting by count is a no-op on a stable sort. The
    * skip saves recomputing the matches, and changes nothing observable.
+   *
+   * "Not planned lately" (J14.9) is the last word on the order, and it
+   * orders rather than hides: J14.7 calls it a sort, and any line drawn
+   * between "lately" and "not lately" would be a number nobody chose. It
+   * is applied after the ranking rather than instead of it, so a search
+   * still decides between two recipes planned the same day — the chip
+   * combines with search and tags exactly as Favourites does (J3.2),
+   * which is what makes it a chip and not a screen.
    */
   function visibleRecipes(recipes, criteria) {
     const c = criteria || {};
     const visible = recipes.filter((r) => matchesFilters(r, c));
-    if (!c.terms || c.terms.length < 2) return visible;
-    return visible
-      .map((r, i) => ({ r, i, n: matchedTerms(r, c.terms, c.prefs).length }))
-      .sort((a, b) => b.n - a.n || a.i - b.i)
-      .map((x) => x.r);
+    const ranked =
+      !c.terms || c.terms.length < 2
+        ? visible
+        : visible
+            .map((r, i) => ({ r, i, n: matchedTerms(r, c.terms, c.prefs).length }))
+            .sort((a, b) => b.n - a.n || a.i - b.i)
+            .map((x) => x.r);
+    // The archive is the only record of when anything was planned
+    // (J14.11), and it is handed in: this file knows about recipes, not
+    // about where a book keeps its plans. A page without plan.js simply
+    // does not offer the chip.
+    if (!c.notPlannedLately || !global.RecipePlan) return ranked;
+    return global.RecipePlan.byLeastRecentlyPlanned(ranked, c.plannedIndex);
   }
 
   global.RecipeSearch = { readable, parseTerms, matchedTerms, matchesFilters, visibleRecipes };

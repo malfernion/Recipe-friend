@@ -220,14 +220,120 @@ test("a hostile plan from the server is sanitised, not trusted", () => {
 
   assert.match(plan.id, /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/,
     "an id that could not be a primary key is replaced with one that can");
-  assert.equal(plan.meals.length, 200, "the plan is bounded");
-  assert.equal(plan.meals[0].name.length, 120);
+  const limits = d.win.RecipePlanStore.limits;
+  assert.equal(plan.meals.length, limits.MAX_MEALS, "the plan is bounded");
+  assert.equal(plan.meals[0].name.length, limits.MAX_NAME_CHARS);
   assert.ok(plan.meals.every((m) => m.recipeId !== "not-a-uuid"),
     "a meal naming no possible recipe is dropped, not carried for ever");
-  assert.equal(Object.keys(plan.settled).length, 500, "and so are the settlements");
+  assert.equal(Object.keys(plan.settled).length, limits.MAX_SETTLED, "and so are the settlements");
   assert.equal(plan.settled.nonsense, undefined, "a settlement with no readable moment cannot merge");
   assert.equal(plan.settled.negative.have.amount, 0, "and nothing settles a negative amount");
   assert.ok(Number.isFinite(plan.createdAt));
+});
+
+/**
+ * The size of a plan as Postgres would store it, which is what migration
+ * 007's `pg_column_size(data) <= 200000` measures — jsonb, not the JSON
+ * text that was sent. The model is the one written down in planstore.js:
+ * strings cost their UTF-8 bytes, a number costs 24 as a numeric, and
+ * every element — container, key or value — costs 8 bytes of jsonb
+ * bookkeeping. Every term is rounded up, so this over-counts a real row.
+ */
+function jsonbBytes(value) {
+  if (value === null || typeof value === "boolean") return 8;
+  if (typeof value === "number") return 8 + 24;
+  if (typeof value === "string") return 8 + Buffer.byteLength(value, "utf8");
+  if (Array.isArray(value)) return 8 + value.reduce((n, v) => n + jsonbBytes(v), 0);
+  return (
+    8 +
+    Object.entries(value).reduce((n, [k, v]) => n + 8 + Buffer.byteLength(k, "utf8") + jsonbBytes(v), 0)
+  );
+}
+
+/**
+ * The biggest plan the client's caps will let through. `from` numbers its
+ * settled keys, so two of these can be made to have settled entirely
+ * different things.
+ */
+function maximalPlan(win, from = 0) {
+  const limits = win.RecipePlanStore.limits;
+  const uuid = () => win.RecipeStore.newId();
+  // The widest a double gets, and the longest characters can be: a
+  // UTF-16 unit is at most three bytes of UTF-8, and jsonb keeps UTF-8.
+  const HUGE = Number.MAX_VALUE;
+  const digits = "〇一二三四五六七八九";
+  const wide = (n) => "中".repeat(n);
+  const key = (i) =>
+    wide(limits.MAX_KEY_CHARS - 6) +
+    String(from + i).padStart(6, "0").split("").map((d) => digits[Number(d)]).join("");
+  return win.RecipePlanStore.sanitizePlan({
+    id: uuid(),
+    createdAt: HUGE,
+    updatedAt: HUGE,
+    completedAt: HUGE,
+    // Twice the caps of everything, so what is measured is what the caps
+    // let through rather than what a test happened to build.
+    meals: Array.from({ length: limits.MAX_MEALS * 2 }, () => ({
+      id: uuid(),
+      recipeId: uuid(),
+      name: wide(limits.MAX_NAME_CHARS * 2),
+      portions: 1234.5678,
+      multiplier: 7.6543219,
+      addedAt: HUGE,
+    })),
+    settled: Object.fromEntries(
+      Array.from({ length: limits.MAX_SETTLED * 2 }, (_, i) => [
+        key(i),
+        { have: { amount: HUGE, at: HUGE }, got: { amount: HUGE, at: HUGE } },
+      ])
+    ),
+  });
+}
+
+test("J12.2 · the biggest plan this client will hold is one the server will take", () => {
+  const cloud = fakeCloud();
+  const d = device(cloud);
+  const limits = d.win.RecipePlanStore.limits;
+  const plan = maximalPlan(d.win);
+
+  assert.equal(plan.meals.length, limits.MAX_MEALS);
+  assert.equal(Object.keys(plan.settled).length, limits.MAX_SETTLED);
+  assert.equal(plan.meals[0].name.length, limits.MAX_NAME_CHARS);
+
+  // A plan the client accepts and the server refuses is the worst shape
+  // there is: the push fails for ever, sync parks on an error, and the
+  // plan looks perfectly fine on the phone that cannot get rid of it.
+  assert.ok(
+    jsonbBytes(plan) <= limits.SERVER_MAX_BYTES,
+    `a maximal plan is ${jsonbBytes(plan)} bytes, and 007 takes ${limits.SERVER_MAX_BYTES}`
+  );
+  // The same row shape holds an archived plan (007), so the same sum
+  // covers what Done records.
+  assert.ok(jsonbBytes({ ...plan, completedAt: Date.now() }) <= limits.SERVER_MAX_BYTES);
+});
+
+test("J12.11 · merging two full plans does not make one the server would refuse", () => {
+  const cloud = fakeCloud();
+  const d = device(cloud);
+  const limits = d.win.RecipePlanStore.limits;
+
+  // Two devices, each at the cap, each having settled entirely different
+  // items: the merge takes the union, which is twice what either side
+  // was allowed to hold.
+  const mine = maximalPlan(d.win);
+  const theirs = {
+    ...maximalPlan(d.win, 500000),
+    id: mine.id,
+    createdAt: mine.createdAt,
+    updatedAt: mine.updatedAt + 1,
+  };
+  const merged = d.plan.mergePlans(mine, theirs);
+  assert.ok(Object.keys(merged.settled).length > limits.MAX_SETTLED, "the union really is bigger");
+
+  d.planStore.applyMerge(merged, []);
+  const held = d.planStore.plan;
+  assert.equal(Object.keys(held.settled).length, limits.MAX_SETTLED, "what is kept is not");
+  assert.ok(jsonbBytes(held) <= limits.SERVER_MAX_BYTES);
 });
 
 test("J13.9 · a settlement off the server cannot make the list ask for more than it needs", () => {

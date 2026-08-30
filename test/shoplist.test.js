@@ -385,6 +385,72 @@ test("J13.9 · ✓ on a line half of which is already at home asks for the half 
   assert.equal(onions(build(plan, BOOK, METRIC)).outstanding, 0);
 });
 
+test("J13.10 · a part-settled line shows both numbers", () => {
+  let plan = addMeal(emptyPlan(1000), BOLOGNESE, 1001); // three onions
+  plan = addMeal(plan, CURRY, 1002); // and two more
+  const key = onions(build(plan, BOOK, METRIC)).key;
+  plan = win.RecipePlan.settle(plan, key, "have", 3, 2000);
+
+  const line = onions(build(plan, BOOK, METRIC));
+  assert.equal(line.text, "5 onions", "the total is what the plan asks for, and stays on the line");
+  assert.equal(line.partText, "3 sorted, 2 to get");
+  assert.equal(line.shortfallText, "2 onions", "and the shortfall is a line in its own right");
+});
+
+test("J13.10 · what is copied is the shortfall, not the total", () => {
+  let plan = addMeal(emptyPlan(1000), BOLOGNESE, 1001);
+  plan = addMeal(plan, CURRY, 1002);
+  const key = onions(build(plan, BOOK, METRIC)).key;
+  plan = win.RecipePlan.settle(plan, key, "got", 3, 2000);
+
+  const copied = copyText(build(plan, BOOK, METRIC));
+  assert.match(copied, /^2 onions$/m, "the two that are missing");
+  assert.doesNotMatch(copied, /5 onions/,
+    "copying the total would buy five onions to get two, which is what settling was for");
+});
+
+test("J13.10 · a line nothing has been settled against reads exactly as it did", () => {
+  const plan = addMeal(emptyPlan(1000), BOLOGNESE, 1001);
+  const list = build(plan, BOOK, METRIC);
+
+  for (const line of list.lines) {
+    assert.equal(line.partText, "", "there is no second number to show");
+    assert.equal(line.shortfallText, line.text, "and what would be copied is the line itself");
+  }
+  assert.equal(copyText(list), "3 onions\n400 g tomatoes\n1 tbsp olive oil\nsalt");
+});
+
+test("J13.10 · the screen and the copy do not disagree about which number is which", () => {
+  // Five bologneses: two kilos of tomatoes, a kilo and a half of them at
+  // home already. The shortfall is sized in its own right, so it reads as
+  // 500 g rather than as a fraction of a total shown in kilos — which is
+  // the number that would go to the shop.
+  let plan = emptyPlan(1000);
+  for (let i = 0; i < 5; i += 1) plan = addMeal(plan, BOLOGNESE, 1001 + i);
+  const key = lineFor(build(plan, BOOK, METRIC), "tomato|mass").key;
+  plan = win.RecipePlan.settle(plan, key, "have", 1500, 2000);
+
+  const line = lineFor(build(plan, BOOK, METRIC), "tomato|mass");
+  assert.equal(line.text, "2 kg tomatoes");
+  assert.equal(line.partText, "1½ kg sorted, 500 g to get");
+  assert.equal(line.shortfallText, "500 g tomatoes");
+  assert.match(copyText(build(plan, BOOK, METRIC)), /^500 g tomatoes$/m);
+});
+
+test("J13.10 · a shortfall too small to say is not copied as a nothing", () => {
+  // A twelfth of a teaspoon left over: J13.3 says a shopping quantity is
+  // never rendered as 0, and the shortfall goes through the same rule the
+  // total does rather than a second one of its own.
+  let plan = addMeal(emptyPlan(1000), CAKE, 1001); // half a teaspoon
+  const key = build(plan, BOOK, METRIC).lines[0].key;
+  plan = win.RecipePlan.settle(plan, key, "have", 0.48, 2000);
+
+  const line = build(plan, BOOK, METRIC).lines[0];
+  assert.equal(line.shortfall, null, "an amount this size says nothing about itself");
+  assert.equal(line.shortfallText, "bicarbonate of soda");
+  assert.equal(line.partText, "½ tsp sorted", "half a sentence beats one with a hole in it");
+});
+
 test("J13.11 · a settled amount is never reduced when the requirement falls", () => {
   let plan = addMeal(emptyPlan(1000), BOLOGNESE, 1001);
   plan = addMeal(plan, CURRY, 1002);

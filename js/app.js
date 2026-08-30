@@ -11,6 +11,10 @@
   // --- UI state (not persisted) ---
   let searchTerms = []; // the query, split on commas (J3.3)
   let favoritesOnly = false;
+  // Least recently planned first, never-planned before them (J14.9). A
+  // chip beside Favourites, and like Favourites it is not persisted: it
+  // is a way of looking at the list, not a property of the book.
+  let notPlannedLately = false;
   let activeTag = null;
   let editingId = null; // recipe id being edited, or null when adding
   let incomingId = null; // id of a shared/pasted recipe being reviewed before saving
@@ -31,6 +35,7 @@
   const resultCountEl = $("#result-count");
   const searchInput = $("#search-input");
   const favoritesBtn = $("#favorites-filter");
+  const notPlannedBtn = $("#not-planned-filter");
   const tagFiltersEl = $("#tag-filters");
   const recipeDialog = $("#recipe-dialog");
   const recipeForm = $("#recipe-form");
@@ -128,8 +133,49 @@
       terms: searchTerms,
       tag: activeTag,
       favoritesOnly,
+      // The chip and what it needs to answer: which recipes were planned
+      // when (J14.9). The index goes with it rather than being fetched
+      // inside search.js, which knows about recipes and not about where
+      // a book keeps its plans.
+      notPlannedLately,
+      plannedIndex: notPlannedLately ? planningIndex() : null,
       prefs: store.prefs,
     };
+  }
+
+  // Built at most once a redraw and answered from (see `render`).
+  let plannedIndexCache = null;
+
+  /**
+   * When each recipe was last planned, worked out from the archive and
+   * nothing else (J14.11). Every card asks, and a hundred cards asking a
+   * hundred times would walk the whole archive a hundred times over.
+   */
+  function planningIndex() {
+    if (!plannedIndexCache) {
+      plannedIndexCache = planStore ? planStore.plannedIndex() : Object.create(null);
+    }
+    return plannedIndexCache;
+  }
+
+  /**
+   * What a card and the recipe view say about planning (J14.6).
+   *
+   * A recipe in the live plan says so instead of saying a date (J14.8):
+   * while you are deciding, that is the more useful of the two, and it
+   * is what stops the same recipe going in twice by accident.
+   *
+   * A recipe that has never been planned says nothing at all (J14.7).
+   * Not "Never planned" — that reads as a reproach on a recipe typed in
+   * five minutes ago, and it still sorts where it matters (J14.9).
+   */
+  function plannedNote(recipe) {
+    // Read off the live plan itself, not off whether this reader may add
+    // to it: a viewer has no planner (J12.10) but the plan is the book's
+    // and they can see what is in it.
+    if (RecipePlan.isPlanned(thePlan(), recipe.id)) return "In the plan";
+    const entry = planningIndex()[recipe.id];
+    return RecipePlan.plannedLabel(entry && entry.lastPlannedAt);
   }
 
   /**
@@ -204,6 +250,10 @@
         </div>
         ${recipe.description ? `<p class="card-desc">${escapeHTML(recipe.description)}</p>` : ""}
         <p class="card-meta">${escapeHTML(meta)}</p>
+        ${(() => {
+          const note = plannedNote(recipe);
+          return note ? `<p class="card-planned">${escapeHTML(note)}</p>` : "";
+        })()}
         ${
           matched.length
             ? `<p class="card-matches">Matches ${matched.map((t) => escapeHTML(t)).join(" · ")}</p>`
@@ -226,6 +276,10 @@
     // back when nothing has gone, so an ordinary redraw writes nothing and
     // pushes nothing.
     prunePlan();
+    // The archive may have moved since the last redraw — a plan finished
+    // here, or one that arrived from another device — so the index is
+    // dropped and rebuilt at most once for the cards that ask (J14.6).
+    plannedIndexCache = null;
     const visible = RecipeSearch.visibleRecipes(store.recipes, criteria());
     listEl.innerHTML = visible.map((r, i) => recipeCard(r, i)).join("");
 
@@ -241,6 +295,14 @@
     announceCount(hasAny ? visible.length : null);
     favoritesBtn.classList.toggle("chip-active", favoritesOnly);
     favoritesBtn.setAttribute("aria-pressed", String(favoritesOnly));
+    if (notPlannedBtn) {
+      // Offered wherever there is a plan to have a history: a book you
+      // may only read has one too, it is only adding to it that is a
+      // write (J12.10).
+      notPlannedBtn.hidden = !planStore;
+      notPlannedBtn.classList.toggle("chip-active", notPlannedLately);
+      notPlannedBtn.setAttribute("aria-pressed", String(notPlannedLately));
+    }
     renderTagFilters();
     syncPlanUI();
     // The plan is read from the same store, so a redraw it did not cause
@@ -702,6 +764,10 @@
       })()}
       ${recipe.description ? `<p class="detail-desc">${escapeHTML(recipe.description)}</p>` : ""}
       ${metaBits.length ? `<p class="card-meta">${escapeHTML(metaBits.join(" · "))}</p>` : ""}
+      ${(() => {
+        const note = plannedNote(recipe);
+        return note ? `<p class="card-planned">${escapeHTML(note)}</p>` : "";
+      })()}
       ${
         recipe.tags.length
           ? `<div class="card-tags">${recipe.tags
@@ -1316,6 +1382,15 @@
   function shopLineHTML(line, state) {
     const amount = line.amount === null ? "" : RecipeScale.formatQuantity(line.amount);
     const measure = [amount, line.unit].filter(Boolean).join(" ");
+    // Both numbers, on the one line that has two (J13.10). The total is
+    // what the plan asks for and stays where it was; the shortfall is
+    // what a shop is for, and is the number Copy takes away. Worked out
+    // in shoplist.js with the rest of the display-unit arithmetic, so
+    // the screen and the copy cannot end up meaning different things by
+    // the same word.
+    const part = line.partText
+      ? ` <span class="shop-part">· ${escapeHTML(line.partText)}</span>`
+      : "";
     const item = escapeHTML(line.item);
     const key = escapeHTML(line.key);
     const buttons =
@@ -1334,7 +1409,7 @@
               <div class="shop-line-text">
                 <p class="shop-what">${
                   measure ? `<span class="shop-amount">${escapeHTML(measure)}</span> ` : ""
-                }${item}${line.toTaste ? ' <span class="shop-taste">to taste</span>' : ""}</p>
+                }${item}${line.toTaste ? ' <span class="shop-taste">to taste</span>' : ""}${part}</p>
                 ${shopFromHTML(line)}
               </div>
               <div class="shop-line-btns">${buttons}</div>
@@ -1784,6 +1859,13 @@
     favoritesOnly = !favoritesOnly;
     render();
   });
+
+  if (notPlannedBtn) {
+    notPlannedBtn.addEventListener("click", () => {
+      notPlannedLately = !notPlannedLately;
+      render();
+    });
+  }
 
   tagFiltersEl.addEventListener("click", (event) => {
     const btn = event.target.closest("[data-tag]");

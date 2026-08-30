@@ -107,6 +107,12 @@
              aria-label="Search recipes, or list ingredients separated by commas">
       <div class="filter-row">
         <button id="favorites-filter" class="chip" aria-pressed="false">★ Favourites</button>
+        <!--
+          Least recently planned first, never-planned before them (J14.9).
+          Beside Favourites because it is the same kind of thing: a way of
+          looking at the list you already have, not a screen of its own.
+        -->
+        <button id="not-planned-filter" class="chip" aria-pressed="false">Not planned lately</button>
         <div id="tag-filters" class="tag-filter-list"></div>
       </div>
     </section>
