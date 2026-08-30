@@ -143,7 +143,17 @@ create table if not exists public.plans (
   data jsonb not null check (pg_column_size(data) <= 200000),
   -- The date the plan was finished, which is what "Planned 3 weeks ago"
   -- says (J14.5) — never a date anything was cooked.
-  completed_at timestamptz not null,
+  -- When Done was pressed, which the client supplies because Done can be
+  -- pressed with no signal (J12.12) and the record belongs to that moment
+  -- rather than to whenever the push got through. That makes it a member's
+  -- word, so it is clamped: a week dated far in the future would sit at the
+  -- top of "last planned" for ever and keep a recipe out of "not planned
+  -- lately" (J14.9) permanently. The window is wide enough that no honest
+  -- clock reaches it. There is deliberately no lower bound — a date in the
+  -- past only makes a recipe look staler than it is, which is a smaller
+  -- lie than the one above, and an editor who wants to spoil a book can
+  -- already delete its recipes (J7.3).
+  completed_at timestamptz not null check (completed_at <= now() + interval '30 days'),
   created_at timestamptz not null default now(),
   -- The key is the book and the plan, not the plan alone. Both halves of
   -- that matter.

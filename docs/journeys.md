@@ -654,10 +654,15 @@ accident:
 - **Two plans are two plans, and the newer one wins whole.** Settlements
   merge per item within a plan (J12.11), but never between one plan and
   the next, or "we have onions" — said about a shop that is over — comes
-  back on the following list. The cost is that a plan built on a device
-  which has never synced this book is lost when it meets the book's own:
-  both really are plans, and a book has one (J12.2). Merging them instead
-  would resurrect exactly what clearing a plan is for (J14.4).
+  back on the following list. **The cost is that work put into the losing
+  generation goes with it**: a plan built on a device which has never
+  synced this book, a meal added on one phone in the window between
+  another phone finishing the plan and this one hearing about it, or one
+  of two plans when two devices each start the first plan a book has ever
+  had. Both really are plans, and a book has one (J12.2); merging them
+  instead would resurrect exactly what clearing a plan is for (J14.4). It
+  is not warned about on screen, because the warning would have to appear
+  every time two devices meet and would be wrong almost every time.
 - **Tolerating plurals when combining (J13.4) merges some things that are
   not the same thing.** "Pepper" and "peppers" are one line, and ground
   pepper and bell peppers are not one shop. The rule earns its place on
