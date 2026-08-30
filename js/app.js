@@ -256,12 +256,12 @@
 
   function recipeCard(recipe, index) {
     const time = totalTime(recipe);
-    const count = recipe.ingredients.length;
-    const meta = [
-      recipe.servings ? `Serves ${recipe.servings}` : null,
-      time,
-      `${count} ${count === 1 ? "ingredient" : "ingredients"}`,
-    ]
+    // How many ingredients a recipe has is not a thing anybody chooses a
+    // dinner by, and it was the longest of the three particulars — long
+    // enough that what the plan has to say about the recipe (J14.8) could
+    // not join the line without wrapping it, which put the row back that
+    // moving it there was meant to save.
+    const meta = [recipe.servings ? `Serves ${recipe.servings}` : null, time]
       .filter(Boolean)
       .join(" · ");
 

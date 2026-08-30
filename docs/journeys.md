@@ -655,11 +655,20 @@ so the app can tell them what to buy.
 8. A recipe in the live plan says "In the plan" instead, which is more use
    than a date while you are deciding, and stops it being added twice by
    accident. **Both sit on the line of particulars** — after "Serves 4 ·
-   45 min · 8 ingredients" — in italic, rather than taking a row of their
-   own. A card's rows are the scarcest thing it has and three words were
-   spending one of them; and what the plan has to say about a recipe is a
-   particular like the others, so it belongs where they are. Where a
-   recipe has no particulars to give, the note is the line.
+   45 min" — in italic, rather than taking a row of their own. A card's
+   rows are the scarcest thing it has and three words were spending one
+   of them; and what the plan has to say about a recipe is a particular
+   like the others, so it belongs where they are. Where a recipe has no
+   particulars to give, the note is the line.
+
+   **A card no longer counts its ingredients.** Moving the note onto that
+   line saved nothing while it did: measured on a card, the line simply
+   wrapped, and a wrapped line costs what the separate row cost — 37px
+   against 36px, which is not a saving. Nobody chooses a dinner by how
+   many ingredients it has and it was the longest of the three, so it
+   went rather than the note going back. From 375px up the line now
+   holds, at 20px; at 320 it still wraps, which is no worse than what it
+   replaced.
 
    **The live one is marked as live**, in the accent the Plan count wears
    in the header, because they are the same fact said in two places. A
