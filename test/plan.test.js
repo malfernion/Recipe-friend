@@ -140,7 +140,7 @@ test("J12.8 · a plan with nothing to prune does not start winning merges it sho
   assert.deepEqual(mergePlans(pruned, theirs).meals.map((m) => m.name), ["Bolognese", "Curry"]);
 });
 
-test("J13.11 · removing the recipe that put onions on the list does not un-settle onions", () => {
+test("J13.12 · removing the recipe that put onions on the list does not un-settle onions", () => {
   let plan = addMeal(emptyPlan(1000), BOLOGNESE, 2000);
   plan = settle(plan, "onion|unit:", "got", 4, 2500);
   const pruned = prune(plan, [], 3000);
@@ -163,14 +163,14 @@ test("J13.9 · ✗ and ✓ are counted together, each keeping its own amount", (
   assert.equal(outstandingFor(plan, "onion|unit:", 6), 1);
 });
 
-test("J13.10 · a settled amount is never reduced when the requirement falls", () => {
+test("J13.11 · a settled amount is never reduced when the requirement falls", () => {
   let plan = settle(emptyPlan(1000), "onion|unit:", "got", 6, 2000);
   assert.equal(outstandingFor(plan, "onion|unit:", 4), 0, "dropping a recipe leaves nothing outstanding");
   assert.deepEqual(settledFor(plan, "onion|unit:"), { have: 0, got: 6 }, "and forgets nothing");
   assert.equal(outstandingFor(plan, "onion|unit:", 8), 2, "putting it back surfaces exactly the shortfall");
 });
 
-test("J13.13 · a removal can be taken back — ✗ is a fast gesture, and fast gestures are mistyped", () => {
+test("J13.14 · a removal can be taken back — ✗ is a fast gesture, and fast gestures are mistyped", () => {
   let plan = settle(emptyPlan(1000), "onion|unit:", "have", 4, 2000);
   plan = unsettle(plan, "onion|unit:", "have", 3000);
   assert.deepEqual(settledFor(plan, "onion|unit:"), { have: 0, got: 0 });
@@ -180,7 +180,7 @@ test("J13.13 · a removal can be taken back — ✗ is a fast gesture, and fast 
   assert.equal(plan.settled["onion|unit:"].have.at, 3000);
 });
 
-test("J13.13 · putting a line back retracts the whole settlement, not part of an amount", () => {
+test("J13.14 · putting a line back retracts the whole settlement, not part of an amount", () => {
   // The requirement grew between the ✗ and the tap that took it back; the
   // retraction is still the whole of that settlement, because the gesture
   // that made it was one tap and so is the gesture that undoes it.
@@ -189,7 +189,7 @@ test("J13.13 · putting a line back retracts the whole settlement, not part of a
   assert.equal(outstandingFor(plan, "onion|unit:", 5), 5, "all five are back on the list");
 });
 
-test("J13.13 · the retraction is stamped like any other settlement, so it wins the merge", () => {
+test("J13.14 · the retraction is stamped like any other settlement, so it wins the merge", () => {
   const settled = settle(emptyPlan(1000), "onion|unit:", "have", 4, 2000);
   const retracted = unsettle(settled, "onion|unit:", "have", 3000);
   // The device that never saw the tap still holds the settlement it made.
@@ -202,7 +202,7 @@ test("J13.13 · the retraction is stamped like any other settlement, so it wins 
   assert.deepEqual(settledFor(mergePlans(retracted, again), "onion|unit:"), { have: 4, got: 0 });
 });
 
-test("J13.13 · a retraction in the same millisecond as the settlement still wins the merge", () => {
+test("J13.14 · a retraction in the same millisecond as the settlement still wins the merge", () => {
   // ✗ is a fast gesture, and a fast gesture can be taken back inside the
   // same millisecond. The merge breaks a tie on the larger amount, so a
   // tie here would be the settlement beating the tap that undid it.
@@ -215,7 +215,7 @@ test("J13.13 · a retraction in the same millisecond as the settlement still win
   }
 });
 
-test("J13.13 · taking back somebody else's settlement wins from a phone whose clock is behind", () => {
+test("J13.14 · taking back somebody else's settlement wins from a phone whose clock is behind", () => {
   const base = emptyPlan(1000);
   const theirs = settle(base, "onion|unit:", "have", 4, 9000); // their clock runs ahead
   const merged = mergePlans(base, theirs);

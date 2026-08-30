@@ -385,7 +385,7 @@ test("J13.9 · ✓ on a line half of which is already at home asks for the half 
   assert.equal(onions(build(plan, BOOK, METRIC)).outstanding, 0);
 });
 
-test("J13.10 · a settled amount is never reduced when the requirement falls", () => {
+test("J13.11 · a settled amount is never reduced when the requirement falls", () => {
   let plan = addMeal(emptyPlan(1000), BOLOGNESE, 1001);
   plan = addMeal(plan, CURRY, 1002);
   let list = build(plan, BOOK, METRIC);
@@ -401,7 +401,7 @@ test("J13.10 · a settled amount is never reduced when the requirement falls", (
   assert.equal(onions(build(back, BOOK, METRIC)).outstanding, 2, "putting it back surfaces exactly the shortfall");
 });
 
-test("J13.11 · settled amounts are held per item, so removing the recipe that put onions on the list does not un-settle onions", () => {
+test("J13.12 · settled amounts are held per item, so removing the recipe that put onions on the list does not un-settle onions", () => {
   let plan = addMeal(emptyPlan(1000), BOLOGNESE, 1001);
   plan = addMeal(plan, CURRY, 1002);
   let list = build(plan, BOOK, METRIC);
@@ -420,13 +420,13 @@ test("J12.8 · a plan naming a recipe the book no longer has contributes nothing
   assert.deepEqual(build(plan, [BOLOGNESE], METRIC).lines, []);
 });
 
-test("J13.12 · copy gives what is left, one line per item, amount first", () => {
+test("J13.13 · copy gives what is left, one line per item, amount first", () => {
   let plan = addMeal(emptyPlan(1000), BOLOGNESE, 1001);
   const list = build(plan, BOOK, METRIC);
   assert.equal(copyText(list), "3 onions\n400 g tomatoes\n1 tbsp olive oil\nsalt");
 });
 
-test("J13.12 · copying twice never asks for the same thing twice", () => {
+test("J13.13 · copying twice never asks for the same thing twice", () => {
   let plan = addMeal(emptyPlan(1000), BOLOGNESE, 1001);
   let list = build(plan, BOOK, METRIC);
   const first = copyText(list);
@@ -452,7 +452,7 @@ test("J13.9 · a settled line reports which gesture settled it", () => {
   assert.deepEqual(list.toBuy.map((l) => l.item), ["olive oil", "salt"]);
 });
 
-test("J13.13 · removed lines are not gone, and one tap puts one back", () => {
+test("J13.14 · removed lines are not gone, and one tap puts one back", () => {
   let plan = addMeal(emptyPlan(1000), BOLOGNESE, 1001);
   let list = build(plan, BOOK, METRIC);
   plan = settleLine(plan, onions(list), "have", 2000);

@@ -1311,7 +1311,7 @@
    * `state` is how the line stands — still wanted, in the basket, or at
    * home already. ✗ and ✓ both record an amount rather than a tick
    * (J13.9), and both can be taken back, because ✗ is a fast gesture and
-   * fast gestures are mistyped (J13.13).
+   * fast gestures are mistyped (J13.14).
    */
   function shopLineHTML(line, state) {
     const amount = line.amount === null ? "" : RecipeScale.formatQuantity(line.amount);
@@ -1512,7 +1512,7 @@
     render();
   }
 
-  // --- Taking the list to the shop (J13.12) ----------------------------
+  // --- Taking the list to the shop (J13.13) ----------------------------
 
   const canShareText = () => Boolean(navigator && typeof navigator.share === "function");
 

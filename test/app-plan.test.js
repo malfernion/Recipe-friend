@@ -419,7 +419,7 @@ test("J13.9 · ✗ settles an amount too — the line is a quantity, not a tick"
   assert.equal(app.list().alreadyHave.length, 1);
 });
 
-test("J13.13 · removed lines collapse into a group that says how many", () => {
+test("J13.14 · removed lines collapse into a group that says how many", () => {
   const app = planMode([BOLOGNESE]);
   app.card("add", app.named("Bolognese").id);
   app.open();
@@ -431,7 +431,7 @@ test("J13.13 · removed lines collapse into a group that says how many", () => {
   assert.match(app.words(), /2 things you already have/);
 });
 
-test("J13.13 · one tap puts a removed line back, and retracts the settlement whole", () => {
+test("J13.14 · one tap puts a removed line back, and retracts the settlement whole", () => {
   const app = planMode([BOLOGNESE]);
   app.card("add", app.named("Bolognese").id);
   app.open();
@@ -445,7 +445,7 @@ test("J13.13 · one tap puts a removed line back, and retracts the settlement wh
   assert.equal(app.list().toBuy.some((l) => l.key === key), true, "and it is back on the list");
 });
 
-test("J13.13 · a line in the basket can be taken back out of it", () => {
+test("J13.14 · a line in the basket can be taken back out of it", () => {
   const app = planMode([BOLOGNESE]);
   app.card("add", app.named("Bolognese").id);
   app.open();
@@ -457,7 +457,7 @@ test("J13.13 · a line in the basket can be taken back out of it", () => {
   assert.equal(app.list().toBuy.some((l) => l.key === key), true);
 });
 
-test("J13.12 · Copy gives what is left, neither removed nor settled", async () => {
+test("J13.13 · Copy gives what is left, neither removed nor settled", async () => {
   const app = planMode([BOLOGNESE, CURRY]);
   app.card("add", app.named("Bolognese").id);
   app.card("add", app.named("Curry").id);
@@ -477,7 +477,7 @@ test("J13.12 · Copy gives what is left, neither removed nor settled", async () 
     "what is removed and what is settled are both off the list");
 });
 
-test("J13.12 · sharing is offered only where the browser can do it", () => {
+test("J13.13 · sharing is offered only where the browser can do it", () => {
   const app = planMode([BOLOGNESE]);
   app.card("add", app.named("Bolognese").id);
   app.open();

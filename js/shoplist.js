@@ -172,7 +172,7 @@
     return {
       lines,
       // What is left to buy, what is struck out in place, and what
-      // collapsed into "you already have" (J13.9, J13.13).
+      // collapsed into "you already have" (J13.9, J13.14).
       toBuy: lines.filter((l) => l.settled === ""),
       inBasket: lines.filter((l) => l.settled === "got"),
       alreadyHave: lines.filter((l) => l.settled === "have"),
@@ -301,7 +301,7 @@
     return global.RecipePlan.settle(plan, line.key, field, settleAmount(line, field), now);
   }
 
-  /** One tap puts a removed line back (J13.13). */
+  /** One tap puts a removed line back (J13.14). */
   function unsettleLine(plan, line, field, now) {
     return global.RecipePlan.unsettle(plan, line.key, field, now);
   }
@@ -327,7 +327,7 @@
 
   /**
    * What is left, ready to paste into whatever shopping app somebody
-   * keeps (J13.12): everything neither removed nor settled, one line per
+   * keeps (J13.13): everything neither removed nor settled, one line per
    * item, amount first. A static site has no supermarket to talk to, so
    * this is the interop — and because it is derived from what is still
    * outstanding, copying twice never asks for the same thing twice.

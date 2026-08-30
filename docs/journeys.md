@@ -484,7 +484,7 @@ so the app can tell them what to buy.
    out by its owner (J7.10), it goes from the plan with it — a plan is a
    list of things to cook, and a recipe nobody in this book has is not one
    of them. What was already settled against it on the shopping list stays
-   settled (J13.11).
+   settled (J13.12).
 9. The plan has an address (`#plan`), so Back closes it the way it closes
    an open recipe (J4.17).
 10. **A read-only member cannot plan.** The plan is the book's, so adding
@@ -548,18 +548,25 @@ so the app can tell them what to buy.
    the amount that was on the line when pressed. What is left to buy is
    the difference — so planning another recipe wanting two more onions
    brings two onions back, without disturbing the three already settled.
-10. A settled amount is never reduced when the requirement falls. Dropping
+10. **A part-settled line shows both numbers, and what is copied is the
+    shortfall.** "4 onions · 3 sorted, 1 to get" — the total is what the
+    plan asks for and belongs on screen beside what it is made of (J13.7),
+    but the only useful thing to take to a shop is what is missing.
+    Copying the total would buy four onions to get one, which is the
+    mistake the settling was there to prevent. The screen and the copy
+    must not disagree about which number is which.
+11. A settled amount is never reduced when the requirement falls. Dropping
     a recipe leaves nothing outstanding; putting it back surfaces exactly
     the shortfall again, because what was settled was never forgotten.
-11. Settled amounts are held per item, not per recipe, so they survive
+12. Settled amounts are held per item, not per recipe, so they survive
     recipes joining and leaving the plan. Removing the recipe that put
     onions on the list does not un-settle onions.
-12. **Copy gives what is left**: everything neither removed nor settled,
+13. **Copy gives what is left**: everything neither removed nor settled,
     one line per item, amount first. A static site has no supermarket to
     talk to (J11), so pasting into the shopping app of your choice is the
     interop — and copying twice must never ask for the same thing twice.
     Where the browser can share, the same text is shared instead.
-13. Removed lines are not gone. They collapse into a group that says how
+14. Removed lines are not gone. They collapse into a group that says how
     many, and one tap puts one back: ✗ is a fast gesture, and fast
     gestures are mistyped. **Putting one back retracts that settlement
     whole**, rather than returning some part of the amount — a settlement

@@ -142,7 +142,7 @@
    * Drop meals whose recipe has left the book (J12.8) — deleted, or moved
    * out by its owner. `settled` is deliberately left alone: settled
    * amounts are held per item, not per recipe, so removing the recipe that
-   * put onions on the list does not un-settle onions (J13.11).
+   * put onions on the list does not un-settle onions (J13.12).
    *
    * An unchanged plan is returned as-is rather than re-stamped. Pruning
    * runs whenever the recipe list is read, and a plan that bumped its
@@ -177,7 +177,7 @@
    * people settling the same line at the same time come out right,
    * because whichever write lands last still says the right total
    * (J12.11). It is also what keeps a settled amount from being reduced
-   * when the requirement falls (J13.10): nothing here reads the
+   * when the requirement falls (J13.11): nothing here reads the
    * requirement at all.
    *
    * The plan's own `updatedAt` is deliberately **not** touched. Meals
@@ -188,7 +188,7 @@
    * merge on it. Sync should push on `touchedAt`, below.
    *
    * The stamp is forced past whatever this line already said, which is
-   * what makes J13.13 true. A settlement and the tap that retracts it can
+   * what makes J13.14 true. A settlement and the tap that retracts it can
    * land in the same millisecond — ✗ is a fast gesture — and the merge
    * broke that tie on the larger amount, so the retraction lost to the
    * settlement it was undoing. Stamping one millisecond after the value
@@ -213,7 +213,7 @@
 
   /**
    * Take a settlement back — ✗ is a fast gesture, and fast gestures are
-   * mistyped (J13.13). Writing a zero rather than deleting the key is
+   * mistyped (J13.14). Writing a zero rather than deleting the key is
    * what lets the retraction win the merge against the settlement it
    * undoes; a deletion has no timestamp to compare.
    */
