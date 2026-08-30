@@ -435,13 +435,19 @@
    * "planned", never "cooked": this is a planner, not an oven, and
    * nothing here can know whether a pan was ever used (J14.5).
    *
+   * "Last planned today", not "Planned today": on a line of particulars
+   * beside "Serves 4" the bare participle reads as a label for the thing
+   * rather than an answer about it, and the question being asked is when
+   * this was last on a list. The word "last" is what says the date is the
+   * most recent of several rather than the only one there ever was.
+   *
    * A recipe that has never been planned says nothing at all — an empty
    * string, not "Never planned", which reads as a reproach on a recipe
    * typed in five minutes ago (J14.7).
    */
   function plannedLabel(at, now = Date.now()) {
     const when = relativeWhen(at, now);
-    return when ? `Planned ${when}` : "";
+    return when ? `Last planned ${when}` : "";
   }
 
   global.RecipePlan = {

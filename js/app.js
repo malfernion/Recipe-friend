@@ -190,10 +190,29 @@
     return label ? { text: label, live: false } : null;
   }
 
+  /**
+   * The line of particulars, with what the plan has to say about this
+   * recipe on the end of it (J14.8). A card's rows are the scarcest thing
+   * it has, and this note was spending one of them on three words. "In the
+   * plan" is a particular like "Serves 4", so it goes where the
+   * particulars are, in italic so the two kinds of fact stay apart.
+   *
+   * The meta line may be empty — a recipe with no servings and no timings
+   * has nothing to say there — and the note still needs somewhere to sit,
+   * so the line is built from whichever of the two exist.
+   */
+  function metaLineHTML(bits, recipe) {
+    const note = plannedNote(recipe);
+    if (!bits && !note) return "";
+    const lead = bits ? escapeHTML(bits) : "";
+    return `<p class="card-meta">${lead}${note ? `${lead ? " · " : ""}${plannedNoteHTML(note)}` : ""}</p>`;
+  }
+
+  /* The separator stays outside the span: the accent is for the words. */
   function plannedNoteHTML(note) {
-    return `<p class="card-planned${note.live ? " card-planned-live" : ""}">${escapeHTML(
+    return `<span class="card-planned${note.live ? " card-planned-live" : ""}">${escapeHTML(
       note.text
-    )}</p>`;
+    )}</span>`;
   }
 
   /**
@@ -237,12 +256,12 @@
 
   function recipeCard(recipe, index) {
     const time = totalTime(recipe);
-    const count = recipe.ingredients.length;
-    const meta = [
-      recipe.servings ? `Serves ${recipe.servings}` : null,
-      time,
-      `${count} ${count === 1 ? "ingredient" : "ingredients"}`,
-    ]
+    // How many ingredients a recipe has is not a thing anybody chooses a
+    // dinner by, and it was the longest of the three particulars — long
+    // enough that what the plan has to say about the recipe (J14.8) could
+    // not join the line without wrapping it, which put the row back that
+    // moving it there was meant to save.
+    const meta = [recipe.servings ? `Serves ${recipe.servings}` : null, time]
       .filter(Boolean)
       .join(" · ");
 
@@ -267,11 +286,7 @@
                   title="${recipe.favorite ? "Remove from" : "Add to"} favourites">${recipe.favorite ? "★" : "☆"}</button>
         </div>
         ${recipe.description ? `<p class="card-desc">${escapeHTML(recipe.description)}</p>` : ""}
-        <p class="card-meta">${escapeHTML(meta)}</p>
-        ${(() => {
-          const note = plannedNote(recipe);
-          return note ? plannedNoteHTML(note) : "";
-        })()}
+        ${metaLineHTML(meta, recipe)}
         ${
           matched.length
             ? `<p class="card-matches">Matches ${matched.map((t) => escapeHTML(t)).join(" · ")}</p>`
@@ -781,11 +796,7 @@
           : "";
       })()}
       ${recipe.description ? `<p class="detail-desc">${escapeHTML(recipe.description)}</p>` : ""}
-      ${metaBits.length ? `<p class="card-meta">${escapeHTML(metaBits.join(" · "))}</p>` : ""}
-      ${(() => {
-        const note = plannedNote(recipe);
-        return note ? plannedNoteHTML(note) : "";
-      })()}
+      ${metaLineHTML(metaBits.join(" · "), recipe)}
       ${
         recipe.tags.length
           ? `<div class="card-tags">${recipe.tags
@@ -852,6 +863,7 @@
     // gate is row-level security, and nothing here is asked to be one.
     if (!canPlan()) {
       planMode = false;
+      forgetPendingPortions();
       if (planDialog.open) planDialog.close();
     }
     syncPlanUI();
@@ -1198,15 +1210,72 @@
   // --- Plan mode over the list -----------------------------------------
 
   /**
-   * What a card offers in plan mode: a way in, and the portions of what
-   * it has already put in. The stepper appears with the meal it steps —
-   * before there is one there is nothing to step, and inventing a number
-   * to hold in the meantime would be a second place portions live.
+   * The portions a card's stepper is showing before anything of this
+   * recipe is in the plan — what the next add will use (J12.4).
+   *
+   * It sits in the same UI state as which tag is selected and is written
+   * nowhere else: the plan is the only place portions live for real
+   * (J12.5, J4.3). A number nobody has acted on is not a fact about the
+   * book, so it is neither cached nor synced — two people steering one
+   * stepper neither of them can see is not a feature — and plan mode
+   * going off takes it with it.
+   */
+  let pendingPortions = Object.create(null);
+  const PENDING = "pending";
+
+  function forgetPendingPortions() {
+    pendingPortions = Object.create(null);
+  }
+
+  /**
+   * A meal-shaped thing for a recipe that has no meal yet, so the label,
+   * the factor and the step can all be asked about it in the words they
+   * already use for a real one. Defaults are the recipe's own servings,
+   * exactly as `addMeal` would have set them (J12.5).
+   */
+  function pendingMeal(recipe) {
+    const held = pendingPortions[recipe.id];
+    if (held) return held;
+    const servings = Number(recipe.servings) > 0 ? Number(recipe.servings) : null;
+    return {
+      id: PENDING,
+      recipeId: recipe.id,
+      name: recipe.name,
+      portions: servings,
+      multiplier: servings ? null : 1,
+    };
+  }
+
+  /**
+   * Step that number. It goes through plan.js on a plan of one meal that
+   * is not the plan, so what a step is has one definition and this is not
+   * a second one: one serving where servings are known, half a batch
+   * where they are not (J4.2, J12.5).
+   */
+  function stepPending(recipe, direction) {
+    const meal = pendingMeal(recipe);
+    const stepped = RecipePlan.stepPortions({ meals: [meal] }, PENDING, direction, recipe);
+    pendingPortions[recipe.id] = stepped.meals[0];
+  }
+
+  /** What a card's stepper is showing: the plan's meal, or the pending number. */
+  function showingFor(recipe) {
+    const mine = mealsFor(recipe.id);
+    return mine[mine.length - 1] || pendingMeal(recipe);
+  }
+
+  /**
+   * What a card offers in plan mode: a way in, and a stepper that is
+   * always there. It has one meaning — the portions this recipe is in the
+   * plan at, or is about to go in at — so the row does not change shape
+   * under a thumb that has already reached for it, and the portions can
+   * be chosen before the add rather than corrected after it. The row's
+   * height was being spent either way.
    */
   function planCardRow(recipe) {
     if (!planMode || !canPlan()) return "";
     const mine = mealsFor(recipe.id);
-    const last = mine[mine.length - 1];
+    const showing = showingFor(recipe);
     const id = escapeHTML(recipe.id);
     const name = escapeHTML(recipe.name);
     return `
@@ -1215,15 +1284,13 @@
                   aria-label="${mine.length ? `Add ${name} to the plan again` : `Add ${name} to the plan`}"
                   >${mine.length ? "+ Again" : "+ Plan"}</button>
           ${
-            last
-              ? `<span class="plan-portions" role="group" aria-label="Portions of ${name}">
+            `<span class="plan-portions" role="group" aria-label="Portions of ${name}">
               <button type="button" class="scale-btn" data-plan="down" data-id="${id}"
                       aria-label="Fewer portions of ${name}">−</button>
-              <span class="scale-value">${escapeHTML(portionsLabel(last, recipe))}</span>
+              <span class="scale-value">${escapeHTML(portionsLabel(showing, recipe))}</span>
               <button type="button" class="scale-btn" data-plan="up" data-id="${id}"
                       aria-label="More portions of ${name}">+</button>
             </span>`
-              : ""
           }
           ${
             // The glyph is a count, and "times 2" is not what it says. The
@@ -1236,19 +1303,29 @@
         </div>`;
   }
 
-  /** A tap on a card's plan controls. The stepper steps the latest entry. */
+  /**
+   * A tap on a card's plan controls. The stepper edits the most recent
+   * meal of this recipe once there is one, and the number the next add
+   * will use before there is; adding takes whatever it is showing, so
+   * "+ Again" puts a second night in at the portions on screen rather
+   * than back at the recipe's own servings.
+   */
   function cardPlanAction(action, recipeId) {
     if (!canPlan()) return;
     const recipe = store.getById(recipeId);
     if (!recipe) return;
+    const mine = mealsFor(recipeId);
+    const last = mine[mine.length - 1];
     if (action === "add") {
-      addToPlan(recipe);
+      addToPlan(recipe, RecipePlan.factorFor(showingFor(recipe), recipe));
+      // The plan holds those portions now, and it is the only place they
+      // live: the stepper reads the meal from here on.
+      delete pendingPortions[recipeId];
       toast(`Added “${recipe.name}” to the plan.`);
-    } else {
-      const mine = mealsFor(recipeId);
-      const last = mine[mine.length - 1];
-      if (!last) return;
+    } else if (last) {
       planStore.setPlan(RecipePlan.stepPortions(thePlan(), last.id, action, recipe));
+    } else {
+      stepPending(recipe, action);
     }
     render();
   }
@@ -1281,7 +1358,7 @@
       const left = shopList().toBuy.length;
       barText.textContent =
         meals === 0
-          ? "Nothing in the plan yet — add what you mean to cook."
+          ? "Nothing in the plan yet — add recipes below."
           : `${meals} ${meals === 1 ? "meal" : "meals"} in the plan · ` +
             (left === 0 ? "nothing left to buy" : `${left} ${left === 1 ? "thing" : "things"} to buy`);
     }
@@ -1343,8 +1420,8 @@
       return `
         <section class="plan-section">
           <h3>Meals</h3>
-          <p class="plan-empty">Nothing in the plan yet. Turn on Plan above the recipe
-             list, then add what you mean to cook.</p>
+          <p class="plan-empty">Nothing in the plan yet. Turn on Meal plan above the
+             recipe list, then add recipes from there.</p>
         </section>`;
     }
     return `
@@ -1633,6 +1710,9 @@
   $("#plan-btn").addEventListener("click", () => {
     if (!canPlan()) return;
     planMode = !planMode;
+    // Leaving the mode leaves nothing behind: a portion somebody dialled
+    // up and never added is a thought, not a decision (J12.4).
+    if (!planMode) forgetPendingPortions();
     render();
   });
 

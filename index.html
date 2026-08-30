@@ -58,12 +58,15 @@
       <!--
         Planning is a mode over the list, not a screen of its own (J12.4),
         so its control sits with the other things you can be doing rather
-        than in the overflow menu. The count is an element of its own: the
-        button's own text is never rewritten, so nothing here has to know
-        what the label says to keep the number up to date.
+        than in the overflow menu. It is a toggle and says so — pressed,
+        and wearing the same "on" treatment as cook mode — because
+        entering and leaving a mode is the thing it does, and "Plan" on
+        its own read as a place to go. The count is an element of its own:
+        the button's own text is never rewritten, so nothing here has to
+        know what the label says to keep the number up to date.
       -->
-      <button id="plan-btn" class="btn btn-ghost" aria-pressed="false"
-              title="Plan the week and build a shopping list" hidden>Plan<span
+      <button id="plan-btn" class="btn btn-ghost plan-toggle" aria-pressed="false"
+              title="Plan the week and build a shopping list" hidden>Meal plan<span
               id="plan-count" class="plan-count" hidden></span></button>
       <button id="add-recipe-btn" class="btn btn-primary">
         <span class="label-long">New recipe</span><span class="label-short">New</span>

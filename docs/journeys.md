@@ -469,11 +469,33 @@ so the app can tell them what to buy.
    it on leaves search, tag chips, Favourites and the "chicken, rice"
    ranking (J3) working as they are, and gives every card a way in and a
    portions stepper. Choosing between recipes is what the list is already
-   for.
+   for. **Its control is a toggle and looks like one** — pressed, wearing
+   the same treatment as cook mode (J4.9) — and is named for the thing it
+   turns on: "Plan" on its own read as a place to go, when what it does is
+   put you in a mode you will want to come back out of.
+
+   **The stepper is there before anything is planned**, showing what the
+   next add will use, so portions are chosen up front rather than
+   corrected afterwards. It appeared only once a meal existed, which
+   changed the row's shape under a thumb already reaching for it and spent
+   the row's height either way. Adding takes whatever it shows, so a
+   second night goes in at the portions on screen rather than back at the
+   recipe's own.
+
+   **An empty plan says what to do about it** — "Nothing in the plan yet
+   — add recipes below" — rather than counting nothing. A bar that reads
+   "0 meals" is arithmetic where a sentence was wanted.
 5. Portions default to the recipe's own servings and step the way the
    recipe view steps them (J4.2) — one serving at a time where servings
    are known, half a batch where they are not. The plan holds the
-   portions; **the recipe is never edited** (J4.3).
+   portions; **the recipe is never edited** (J4.3). Once a recipe has a
+   meal the stepper steers the most recent one, so there is one control
+   with one meaning: the portions this recipe is in the plan at, or is
+   about to go in at. **The number it holds before the first add is not
+   kept** — it is not a fact about the book until somebody acts on it, so
+   it is never stored, never synced, and leaving plan mode forgets it.
+   Two people steering one stepper neither of them can see is not a
+   feature.
 6. A recipe can be planned more than once — two nights, two entries, its
    own portions each. The list sums them without caring.
 7. In plan mode the recipe view gains a way to add what is open. Outside
@@ -621,18 +643,36 @@ so the app can tell them what to buy.
    ever used. So the word is always "planned", and the date is the date
    the plan was finished.
 6. A recipe's card and its recipe view say when it was last planned, the
-   ordinary way of saying it — "Planned 3 weeks ago" — because that is the
-   question being asked, not which Tuesday it was.
+   ordinary way of saying it — **"Last planned 3 weeks ago"** — because
+   that is the question being asked, not which Tuesday it was. The word
+   "last" earns its place: on a line of particulars beside "Serves 4" the
+   bare participle reads as a label for the thing rather than an answer
+   about it, and it is what says this is the most recent of several
+   rather than the only one there ever was.
 7. **A recipe that has never been planned says nothing.** "Never planned"
    reads as a reproach on a recipe typed in five minutes ago. It still
    sorts where it matters (J14.9).
 8. A recipe in the live plan says "In the plan" instead, which is more use
    than a date while you are deciding, and stops it being added twice by
-   accident. **It is marked as the live thing it is**, in the accent the
-   Plan count wears in the header, because they are the same fact said in
-   two places. A date is history and stays in the colour of the meta it
-   sits under — set alike, the two read as one more line of particulars
-   and the live one stops announcing itself.
+   accident. **Both sit on the line of particulars** — after "Serves 4 ·
+   45 min" — in italic, rather than taking a row of their own. A card's
+   rows are the scarcest thing it has and three words were spending one
+   of them; and what the plan has to say about a recipe is a particular
+   like the others, so it belongs where they are. Where a recipe has no
+   particulars to give, the note is the line.
+
+   **A card no longer counts its ingredients.** Moving the note onto that
+   line saved nothing while it did: measured on a card, the line simply
+   wrapped, and a wrapped line costs what the separate row cost — 37px
+   against 36px, which is not a saving. Nobody chooses a dinner by how
+   many ingredients it has and it was the longest of the three, so it
+   went rather than the note going back. From 375px up the line now
+   holds, at 20px; at 320 it still wraps, which is no worse than what it
+   replaced.
+
+   **The live one is marked as live**, in the accent the Plan count wears
+   in the header, because they are the same fact said in two places. A
+   date is history and stays in the colour of the line it joins.
 9. **Not planned lately** sits beside Favourites and combines with search
    and tags as the other chips do (J3.2): least recently planned first,
    and never-planned before them. **It orders the list rather than
