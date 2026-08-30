@@ -429,7 +429,7 @@ test("J14.6 · the archive says when a recipe was last planned", () => {
   const now = Date.UTC(2026, 0, 22, 12);
   const index = plannedIndex([week(now - 40 * DAY, [BOLOGNESE]), week(now - 21 * DAY, [BOLOGNESE, CURRY])]);
   assert.equal(index[BOLOGNESE.id].lastPlannedAt, now - 21 * DAY);
-  assert.equal(plannedLabel(index[BOLOGNESE.id].lastPlannedAt, now), "Planned 3 weeks ago");
+  assert.equal(plannedLabel(index[BOLOGNESE.id].lastPlannedAt, now), "Last planned 3 weeks ago");
 });
 
 test("J14.4 · Clear discards a plan without recording it", () => {
@@ -448,7 +448,8 @@ test("J14.11 · nothing about planning is stored on the recipe", () => {
 test("J14.5 · the word is always planned, and the date is the date the plan was finished", () => {
   const now = Date.UTC(2026, 0, 22, 12);
   const label = plannedLabel(now - 2 * DAY, now);
-  assert.match(label, /^Planned /);
+  assert.match(label, /^Last planned /,
+    "the bare participle read as a label for the thing rather than an answer about it");
   assert.doesNotMatch(label, /cook/i);
 });
 

@@ -625,22 +625,28 @@ body {
 
 /*
   When this was last planned, or that it is in the plan now (J14.6,
-  J14.8). Set like the meta line beneath it, because it answers the same
-  kind of question; a recipe that has never been planned says nothing at
-  all and this element is simply not there (J14.7).
+  J14.8). It sits on the end of the meta line rather than taking a row of
+  its own: three words were costing a card a whole line, and this answers
+  the same kind of question the line is already answering. Italic, in the
+  serif the app writes its asides in, so it reads as an aside among the
+  particulars rather than another particular — the small caps stop at the
+  separator. A recipe that has never been planned says nothing at all and
+  this element is simply not there (J14.7).
 */
 .card-planned {
-  margin: 0.15rem 0 0;
-  font-size: 0.68rem;
-  font-weight: 600;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
-  color: var(--ink-faint);
+  font-family: var(--serif);
+  font-style: italic;
+  font-weight: 500;
+  font-size: 0.78rem;
+  letter-spacing: 0;
+  text-transform: none;
+  white-space: nowrap;
 }
 
 /* "In the plan" is the live half of that line, and takes the accent the
-   Plan count wears in the header — the same fact, said in two places. A
-   date is history and stays with the meta it sits under. */
+   Meal plan count wears in the header — the same fact, said in two
+   places. A date is history and stays in the meta's own colour, which is
+   what it inherits by sitting inside it. */
 .card-planned-live {
   color: var(--accent);
 }
@@ -1272,9 +1278,18 @@ body {
   color: var(--accent);
 }
 
+/*
+  A ghost button that is currently on, in the same accent cook mode wears
+  when it is holding the screen awake (.cook-on): the app has one way of
+  saying "this is on now" and this is it. The hairline doubles rather than
+  thickening — an inset shadow sits above the border and changes no box's
+  size, and a toggle that reflows the bar it lives in (J4.19) is worse
+  than a quiet one.
+*/
 .btn.is-on {
-  color: var(--ink);
+  color: var(--accent);
   border-bottom-color: var(--accent);
+  box-shadow: inset 0 -1px var(--accent);
 }
 
 /* What the plan holds so far, over the list you are choosing from. */

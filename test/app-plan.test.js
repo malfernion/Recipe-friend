@@ -228,8 +228,8 @@ test("J12.6 · a recipe can be planned more than once, its own portions each", (
 
   const meals = app.plan().meals;
   assert.equal(meals.length, 2, "two nights, two entries");
-  assert.deepEqual(meals.map((m) => m.portions), [5, 4],
-    "and the second starts from the recipe's own servings rather than the first's");
+  assert.deepEqual(meals.map((m) => m.portions), [5, 5],
+    "and the second goes in at the portions the stepper is showing (J12.4)");
   assert.match(app.el("recipe-list").innerHTML, /×2/, "the card says it is in twice");
 });
 
@@ -737,7 +737,7 @@ function planned(app, recipe, daysAgo) {
 
 /** What a card says about planning, if anything. */
 const noteOnCard = (app) => {
-  const m = /<p class="card-planned[^"]*">([^<]*)<\/p>/.exec(app.el("recipe-list").innerHTML);
+  const m = /<span class="card-planned[^"]*">([^<]*)<\/span>/.exec(app.el("recipe-list").innerHTML);
   return m ? m[1] : "";
 };
 
@@ -745,18 +745,18 @@ test("J14.6 · a recipe's card and its recipe view say when it was last planned"
   const app = planning([BOLOGNESE]);
   planned(app, app.named("Bolognese"), 21);
 
-  assert.equal(noteOnCard(app), "Planned 3 weeks ago",
+  assert.equal(noteOnCard(app), "Last planned 3 weeks ago",
     "the ordinary way of saying it, not which Tuesday it was");
 
   app.openRecipe(app.named("Bolognese").id);
-  assert.match(app.el("detail-content").innerHTML, /Planned 3 weeks ago/);
+  assert.match(app.el("detail-content").innerHTML, /Last planned 3 weeks ago/);
 });
 
 test("J14.6 · the word is always planned, and the date is the date the plan was finished", () => {
   const app = planning([BOLOGNESE]);
   planned(app, app.named("Bolognese"), 1);
 
-  assert.equal(noteOnCard(app), "Planned yesterday");
+  assert.equal(noteOnCard(app), "Last planned yesterday");
   assert.doesNotMatch(app.el("recipe-list").innerHTML, /cook/i,
     "this is a planner, not an oven: nothing here knows whether a pan was used");
 });
@@ -766,7 +766,7 @@ test("J14.6 · the newest of several plans is the one a recipe reports", () => {
   planned(app, app.named("Bolognese"), 40);
   planned(app, app.named("Bolognese"), 3);
 
-  assert.equal(noteOnCard(app), "Planned 3 days ago");
+  assert.equal(noteOnCard(app), "Last planned 3 days ago");
 });
 
 test("J14.7 · a recipe that has never been planned says nothing at all", () => {
@@ -798,7 +798,7 @@ test("J14.8 · a recipe in the live plan says so instead", () => {
     "more use than a date while you are deciding, and it stops it going in twice by accident");
   app.openRecipe(app.named("Bolognese").id);
   assert.match(app.el("detail-content").innerHTML, /In the plan/);
-  assert.doesNotMatch(app.el("detail-content").innerHTML, /Planned 3 weeks ago/);
+  assert.doesNotMatch(app.el("detail-content").innerHTML, /Last planned 3 weeks ago/);
 });
 
 test("J14.9 · Not planned lately sorts least recently planned first, never-planned before them", () => {
@@ -922,4 +922,70 @@ test("J13.7 · a recipe name off a share link reaches the readout as text", () =
     assert.match(html, /&lt;img src=x onerror=alert\(1\)&gt;/);
     assert.doesNotMatch(html, /aria-label="[^"]*"><img/, "including inside a quoted attribute");
   }
+});
+
+/** What a card's portions stepper is showing. */
+const stepperOnCard = (app) => {
+  const m = /<span class="scale-value">([^<]*)<\/span>/.exec(app.el("recipe-list").innerHTML);
+  return m ? m[1] : "";
+};
+
+test("J12.4 · the stepper is there before anything is planned, so portions are chosen up front", () => {
+  const app = planMode([BOLOGNESE]);
+  assert.equal(app.plan().meals.length, 0, "nothing planned yet");
+  assert.match(stepperOnCard(app), /4/, "and the stepper is already showing the recipe's own servings");
+
+  const id = app.named("Bolognese").id;
+  app.card("up", id);
+  app.card("up", id);
+  assert.equal(app.plan().meals.length, 0, "stepping before adding puts nothing in the plan");
+  assert.match(stepperOnCard(app), /6/);
+
+  app.card("add", id);
+  assert.deepEqual(app.plan().meals.map((m) => m.portions), [6],
+    "the meal arrives at the portions that were chosen, not at the recipe's own");
+});
+
+test("J12.5 · once a meal exists the stepper edits it, and the plan is the only place portions live", () => {
+  const app = planMode([BOLOGNESE]);
+  const id = app.named("Bolognese").id;
+  app.card("add", id);
+  app.card("up", id);
+
+  assert.deepEqual(app.plan().meals.map((m) => m.portions), [5],
+    "the stepper is steering the meal now, not a number beside it");
+  assert.match(stepperOnCard(app), /5/);
+});
+
+test("J12.5 · a number nobody has acted on is not kept — leaving plan mode forgets it", () => {
+  const app = planMode([BOLOGNESE]);
+  const id = app.named("Bolognese").id;
+  app.card("up", id);
+  assert.match(stepperOnCard(app), /5/);
+
+  app.planOn(); // off
+  app.planOn(); // and back
+  assert.match(stepperOnCard(app), /4/,
+    "a pending number is not a fact about the book, so it does not outlive the mode");
+  assert.equal(app.plan().meals.length, 0);
+});
+
+test("J12.4 · an empty plan says what to do about it rather than counting nothing", () => {
+  const app = planMode([BOLOGNESE]);
+  const bar = app.el("plan-bar-text").textContent;
+  assert.match(bar, /Nothing in the plan yet/);
+  assert.match(bar, /add recipes below/i, "it says where to go next, in the app's own nouns");
+  assert.doesNotMatch(bar, /\b0\b/, "counting nothing is not the same as saying there is nothing");
+});
+
+test("J14.8 · the note sits on the line of particulars, not in a row of its own", () => {
+  const app = planMode([BOLOGNESE]);
+  planned(app, app.named("Bolognese"), 21);
+  app.app.render();
+
+  const html = app.el("recipe-list").innerHTML;
+  assert.doesNotMatch(html, /<p class="card-planned/,
+    "a card's rows are the scarcest thing it has, and this was spending one on three words");
+  assert.match(html, /<p class="card-meta">[^<]*·\s*<span class="card-planned/,
+    "it reads as one more particular, after the ones already there");
 });
