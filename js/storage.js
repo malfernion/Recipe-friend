@@ -237,6 +237,11 @@
       } catch {
         /* nothing to clear */
       }
+      // A book that has gone takes everything of its own with it (J7.13),
+      // and its recipes are not all of that any more: its plan is the
+      // book's too (J12.2). Announced rather than reached for, so this
+      // file goes on knowing about recipes and nothing else.
+      if (this.onForgetBook) this.onForgetBook(bookId);
     }
 
     /**

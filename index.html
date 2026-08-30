@@ -55,6 +55,16 @@
 
     <nav class="appbar-actions" aria-label="Main">
       <button id="books-btn" class="btn btn-ghost" title="Recipe books and sharing" hidden>Books</button>
+      <!--
+        Planning is a mode over the list, not a screen of its own (J12.4),
+        so its control sits with the other things you can be doing rather
+        than in the overflow menu. The count is an element of its own: the
+        button's own text is never rewritten, so nothing here has to know
+        what the label says to keep the number up to date.
+      -->
+      <button id="plan-btn" class="btn btn-ghost" aria-pressed="false"
+              title="Plan the week and build a shopping list" hidden>Plan<span
+              id="plan-count" class="plan-count" hidden></span></button>
       <button id="add-recipe-btn" class="btn btn-primary">
         <span class="label-long">New recipe</span><span class="label-short">New</span>
       </button>
@@ -97,9 +107,26 @@
              aria-label="Search recipes, or list ingredients separated by commas">
       <div class="filter-row">
         <button id="favorites-filter" class="chip" aria-pressed="false">★ Favourites</button>
+        <!--
+          Least recently planned first, never-planned before them (J14.9).
+          Beside Favourites because it is the same kind of thing: a way of
+          looking at the list you already have, not a screen of its own.
+        -->
+        <button id="not-planned-filter" class="chip" aria-pressed="false">Not planned lately</button>
         <div id="tag-filters" class="tag-filter-list"></div>
       </div>
     </section>
+
+    <!--
+      In plan mode, what the plan holds so far and the way into it. It
+      sits here rather than in the app bar because it is about the list
+      below it: a way into the plan belongs beside the recipes you are
+      choosing between.
+    -->
+    <div id="plan-bar" class="plan-bar" hidden>
+      <p id="plan-bar-text" class="plan-bar-text"></p>
+      <button type="button" class="btn btn-ghost" id="plan-open-btn">Open the plan</button>
+    </div>
 
     <!--
       The count is the live region, not the grid. Announcing the grid
@@ -236,10 +263,43 @@
     <div id="detail-content"></div>
     <div class="dialog-actions detail-actions">
       <span class="dialog-actions-spacer"></span>
+      <!-- In plan mode only: outside it the row is not spent on it (J12.7). -->
+      <button type="button" class="btn btn-ghost" id="detail-plan-btn"
+              aria-label="Add to the plan" hidden>+ Plan</button>
       <button type="button" class="btn btn-ghost" id="detail-cook-btn" aria-pressed="false" hidden>☾ Screen on</button>
       <button type="button" class="btn btn-ghost" id="detail-share-btn">Share</button>
       <button type="button" class="btn btn-ghost" id="detail-copy-btn" hidden>Copy</button>
       <button type="button" class="btn btn-ghost" id="detail-move-btn" hidden>Move</button>
+    </div>
+  </dialog>
+
+  <!--
+    The plan and the shop it comes to (J12.9, J13). Meals sit above the
+    shopping list and the two share one scroll, for the reason J4.16 gives
+    for ingredients above steps: one thread to follow. It takes the whole
+    screen on a phone like the recipe view does, and for the same reason —
+    this is read one-handed in an aisle.
+  -->
+  <dialog id="plan-dialog" class="recipe-dialog detail-dialog plan-dialog">
+    <div class="detail-head">
+      <div class="detail-head-text">
+        <p class="detail-kicker">This week</p>
+        <h2 class="detail-title" id="plan-heading" tabindex="-1">The plan</h2>
+      </div>
+      <button type="button" class="icon-btn" id="plan-close-btn"
+              aria-label="Close the plan">×</button>
+    </div>
+    <div id="plan-content"></div>
+    <!--
+      Done is the filled one and sits at the end of the row, where the
+      thumb is. Clear is destructive and keeps its distance from it.
+    -->
+    <div class="dialog-actions detail-actions plan-actions">
+      <button type="button" class="btn btn-danger" id="plan-clear-btn">Clear</button>
+      <span class="dialog-actions-spacer"></span>
+      <button type="button" class="btn btn-ghost" id="plan-copy-btn">Copy</button>
+      <button type="button" class="btn btn-ghost" id="plan-share-btn" hidden>Share</button>
+      <button type="button" class="btn btn-primary" id="plan-done-btn" hidden>Done</button>
     </div>
   </dialog>
 
@@ -400,13 +460,32 @@ https://malfernion.github.io/Recipe-friend/#paste</pre>
     </form>
   </dialog>
 
-  <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
+  <!--
+    Undo rides beside the toast rather than inside it: the toast's text is
+    written by assignment, which would take any child with it. Finishing a
+    plan is the one thing here that offers a way back (J14.2), and it is
+    offered rather than asked about — somebody who has just said they are
+    finished is not interrogated about it.
+  -->
+  <div class="toast-tray">
+    <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
+    <button type="button" id="toast-action" class="toast-action" hidden></button>
+  </div>
 
   <script src="js/scale.js"></script>
   <!-- units.js before storage.js: sanitize normalizes unit labels with it -->
   <script src="js/html.js"></script>
   <script src="js/units.js"></script>
   <script src="js/storage.js"></script>
+  <!--
+    The planner. plan.js is the arithmetic, planstore.js the cache it is
+    kept in and shoplist.js the shop it turns into; each reaches for the
+    one above it, and app.js reaches for all three, so they go in here
+    rather than after it.
+  -->
+  <script src="js/plan.js"></script>
+  <script src="js/planstore.js"></script>
+  <script src="js/shoplist.js"></script>
   <script src="js/share.js"></script>
   <script src="js/cookmode.js"></script>
   <script src="js/search.js"></script>

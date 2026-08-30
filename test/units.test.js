@@ -8,7 +8,7 @@ const assert = require("node:assert/strict");
 const { loadApp } = require("./helpers/load.js");
 
 const { RecipeUnits } = loadApp("units.js");
-const { normalizeLabel, familyOf, convertIngredient } = RecipeUnits;
+const { normalizeLabel, familyOf, convertIngredient, toBase, fromBase } = RecipeUnits;
 
 const METRIC = { mass: "metric", volume: "metric" };
 const IMPERIAL = { mass: "imperial", volume: "us" };
@@ -61,6 +61,31 @@ test("J8.4 · a converted amount picks its unit by size", () => {
   assert.equal(ml(119).unit, "fl oz");
   assert.equal(ml(120).unit, "cup");
   assert.equal(ml(240).amount, 1);
+});
+
+test("J13.2 · an amount can be had in its base unit exactly, so several can be summed before anything is rounded", () => {
+  // The shopping list adds ingredients up before it formats them once, at
+  // the end; a conversion that rounded on the way in would lose the
+  // difference between a very little and none all over again.
+  assert.equal(toBase(1, "kg"), 1000);
+  assert.equal(toBase(8, "oz"), 226.8);
+  assert.equal(toBase(1, "kg") + toBase(8, "oz"), 1226.8);
+  assert.equal(toBase(0.5, "cup"), 120);
+  // Spoons and unrecognised units have no base to be had — they are never
+  // converted (J4.6), and saying so is what keeps them off a mass line.
+  assert.equal(toBase(3, "tsp"), null);
+  assert.equal(toBase(1, "tin"), null);
+  assert.equal(toBase(1, "constructor"), null);
+});
+
+test("J8.4 · a base amount picks its unit by size, whatever it was written in", () => {
+  assert.deepEqual(fromBase("mass", "metric", 999), { amount: 999, unit: "g" });
+  assert.deepEqual(fromBase("mass", "metric", 1500), { amount: 1.5, unit: "kg" });
+  assert.deepEqual(fromBase("mass", "imperial", 100), { amount: 3.5, unit: "oz" });
+  assert.deepEqual(fromBase("mass", "imperial", 500), { amount: 1.1, unit: "lb" }, "ounces below a pound");
+  assert.deepEqual(fromBase("volume", "metric", 999), { amount: 999, unit: "ml" });
+  assert.deepEqual(fromBase("volume", "us", 119), { amount: 4, unit: "fl oz" });
+  assert.deepEqual(fromBase("volume", "us", 120), { amount: 0.5, unit: "cup" });
 });
 
 test("J8.1 · units can be left exactly as entered", () => {

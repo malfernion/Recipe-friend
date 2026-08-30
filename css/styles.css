@@ -82,7 +82,8 @@ body.dialog-open {
   from here. Row-level security is what actually refuses — this is about
   not offering a control that would fail.
 */
-body.read-only .fav-btn {
+body.read-only .fav-btn,
+body.read-only .plan-card-row {
   display: none;
 }
 
@@ -620,6 +621,28 @@ body {
   letter-spacing: 0.14em;
   text-transform: uppercase;
   color: var(--ink-faint);
+}
+
+/*
+  When this was last planned, or that it is in the plan now (J14.6,
+  J14.8). Set like the meta line beneath it, because it answers the same
+  kind of question; a recipe that has never been planned says nothing at
+  all and this element is simply not there (J14.7).
+*/
+.card-planned {
+  margin: 0.15rem 0 0;
+  font-size: 0.68rem;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+}
+
+/* "In the plan" is the live half of that line, and takes the accent the
+   Plan count wears in the header — the same fact, said in two places. A
+   date is history and stays with the meta it sits under. */
+.card-planned-live {
+  color: var(--accent);
 }
 
 .card-tags {
@@ -1233,20 +1256,381 @@ body {
   color: var(--ink-faint);
 }
 
-/* ---------- Toast ---------- */
-.toast {
+/* ---------- Planning a week, and shopping for it ----------
+   J12 is a mode over the list rather than a screen of its own, so almost
+   nothing here is a layout: it is one row added to a card, one bar over
+   the list, and the readout the two lead to. The readout borrows the
+   recipe view's dialog wholesale — full screen on a phone, one scroll,
+   the same headings — because it is read the same way and in worse
+   conditions: one hand, in an aisle. */
+
+/* The count on the header toggle. A number, not a badge: the app has no
+   other pill, and one here would be the loudest thing in the bar. */
+.plan-count {
+  margin-left: 0.4rem;
+  font-variant-numeric: tabular-nums;
+  color: var(--accent);
+}
+
+.btn.is-on {
+  color: var(--ink);
+  border-bottom-color: var(--accent);
+}
+
+/* What the plan holds so far, over the list you are choosing from. */
+.plan-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 0.5rem 1rem;
+  margin: 0 0 1.9rem;
+  padding: 0.6rem 0.9rem;
+  border: 1px solid var(--rule);
+  background: var(--paper-raised);
+}
+
+.plan-bar-text {
+  margin: 0;
+  font-family: var(--serif);
+  font-style: italic;
+  font-size: 0.95rem;
+  color: var(--ink-soft);
+}
+
+/* The card's way in, and the portions of what it has already put in. */
+.plan-card-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.4rem 0.6rem;
+  /*
+    The card's last line, so it is what takes the card's slack and lines
+    up across a row of cards. The auto margin used to sit on .card-tags,
+    which is the bottom of a card only until a recipe has no tags —
+    nothing says one must — and then its buttons sat 30px above its
+    neighbours' (measured at 1440px, three cards across, one untagged).
+    The hairline is the giveaway: it is a rule across the foot of every
+    card, and one of them was drawn short of the foot.
+  */
+  margin-top: auto;
+  padding-top: 0.75rem;
+  border-top: 1px solid var(--rule);
+}
+
+.recipe-card:has(.plan-card-row) .card-tags {
+  margin-top: 0;
+}
+
+.plan-add {
+  border: 1px solid var(--rule-strong);
+  padding: 0.5rem 0.7rem;
+  min-height: 2.75rem;
+}
+
+.plan-add:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.plan-portions {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+}
+
+/* Narrower than the recipe view's, which has a dialog's width to spend;
+   a card is 280px and holds a stepper and a button on one row. */
+.plan-portions .scale-value {
+  min-width: 4.6rem;
+  font-size: 0.95rem;
+}
+
+.plan-times {
+  font-size: 0.7rem;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  color: var(--ink-faint);
+}
+
+/*
+  The plan's bar carries four controls where the recipe's carries three,
+  and Done is a filled button among them. Down to 400px the spacer is
+  what holds Clear away from it; below that the spacer is what would
+  push Done onto a second row, so it goes and the ends of the row do the
+  same job. Neither bar wraps: in this view a wrapped bar is a row of
+  the list nobody can see.
+*/
+@media (max-width: 400px) {
+  .detail-actions.plan-actions {
+    justify-content: space-between;
+  }
+
+  .detail-actions.plan-actions .dialog-actions-spacer {
+    display: none;
+  }
+}
+
+/* ---------- The plan readout ---------- */
+.plan-section {
+  margin-bottom: 2.2rem;
+}
+
+.plan-empty {
+  margin: 0;
+  font-family: var(--serif);
+  font-style: italic;
+  color: var(--ink-faint);
+}
+
+.plan-meals,
+.shop-lines {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.plan-meal,
+.shop-line {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.4rem 0;
+  border-bottom: 1px solid var(--rule);
+}
+
+.plan-meal:last-child,
+.shop-line:last-child {
+  border-bottom: none;
+}
+
+/* Both lists hold names somebody typed, so both have to be able to break
+   one: a long ingredient must widen nothing and scroll nothing sideways. */
+.plan-meal-name,
+.shop-line-text {
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.plan-meal-name {
+  font-family: var(--serif);
+  font-size: 1.02rem;
+}
+
+.plan-meal-remove {
+  flex: none;
+}
+
+/*
+  A name and its controls on one line is more than a phone has. The
+  stepper and the × come to 215px whatever the screen is, so at 375px the
+  name was left 104px and "Slow-roasted shoulder of lamb…" came down the
+  side of the stepper seven lines deep; at 320px there was not room for
+  its words either and it broke inside them — "Bolog / nese".
+
+  So on a phone a meal reads the way a card does in plan mode: the name
+  across the row, its controls under it, against the edge the thumb is
+  already at. It costs a line on the short names and saves six on the
+  long ones, and it is the same shape twice rather than two shapes.
+*/
+@media (max-width: 480px) {
+  .plan-meal {
+    flex-wrap: wrap;
+    row-gap: 0.35rem;
+  }
+
+  .plan-meal-name {
+    flex: 1 0 100%;
+  }
+
+  .plan-meal .plan-portions {
+    margin-left: auto;
+  }
+}
+
+/* ---------- The shopping list ---------- */
+.shop-line {
+  align-items: flex-start;
+}
+
+.shop-what {
+  margin: 0;
+  font-family: var(--serif);
+  font-size: 1.02rem;
+  line-height: 1.45;
+  padding-top: 0.5rem;
+}
+
+.shop-amount {
+  font-weight: 600;
+}
+
+.shop-taste {
+  font-family: var(--sans);
+  font-size: 0.66rem;
+  font-weight: 600;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+}
+
+/*
+  Both numbers on a part-settled line (J13.10) — "4 onions · 3 sorted, 1
+  to get". Quieter than the total it follows: the total is the line, and
+  this says how far through it you are.
+*/
+.shop-part {
+  font-size: 0.8rem;
+  color: var(--ink-faint);
+}
+
+/* What the line is made of (J13.7). Quiet, and under the thing it
+   explains — it is read when a total looks wrong, not before. */
+.shop-from {
+  margin: 0.1rem 0 0.35rem;
+  font-size: 0.76rem;
+  color: var(--ink-faint);
+}
+
+.shop-line-btns {
+  display: flex;
+  align-items: center;
+  gap: 0.15rem;
+  flex: none;
+}
+
+.shop-btn {
+  font-size: 1.05rem;
+}
+
+.shop-btn.is-on {
+  color: var(--accent);
+}
+
+.shop-line-got .shop-what {
+  text-decoration: line-through;
+  color: var(--ink-faint);
+}
+
+/* Removed lines are not gone: they collapse into a group that says how
+   many, and one tap puts one back (J13.13). */
+.shop-have {
+  margin-top: 1rem;
+  border-top: 1px solid var(--rule);
+}
+
+.shop-have > summary {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  list-style: none;
+  min-height: 2.75rem;
+  font-size: 0.7rem;
+  font-weight: 600;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+  cursor: pointer;
+  touch-action: manipulation;
+}
+
+/*
+  A mark saying it opens. `display: flex` takes the browser's own
+  disclosure triangle away, which left "3 THINGS YOU ALREADY HAVE" set
+  exactly like the section labels above it and reading as one — a
+  heading, not a way back. J13.14 is the whole reason this group exists:
+  ✗ is a fast gesture and fast gestures are mistyped, and a way back
+  nobody can see is not one. The caret is the ▸ the current book already
+  uses, and it turns rather than being swapped for a second glyph.
+*/
+.shop-have > summary::-webkit-details-marker {
+  display: none;
+}
+
+.shop-have > summary::before {
+  content: "▸";
+  flex: none;
+  color: var(--accent);
+  transition: transform 0.15s ease;
+}
+
+.shop-have[open] > summary::before {
+  transform: rotate(90deg);
+}
+
+.shop-have > summary:hover {
+  color: var(--ink);
+}
+
+.shop-lines-have .shop-what {
+  color: var(--ink-faint);
+}
+
+.shop-restore {
+  min-height: 2.75rem;
+  white-space: nowrap;
+}
+
+/* ---------- Toast ----------
+   The message and its one action are siblings in a tray rather than
+   parent and child: the message is written by assigning textContent,
+   which would take a child button with it. The tray is not a target —
+   only the two things inside it are, so an empty one never swallows a
+   tap meant for the page. */
+.toast-tray {
   position: fixed;
   bottom: 1.5rem;
   left: 50%;
   transform: translateX(-50%);
+  display: flex;
+  align-items: stretch;
+  z-index: 100;
+  max-width: calc(100vw - 2rem);
+  pointer-events: none;
+}
+
+.toast-tray > * {
+  pointer-events: auto;
+}
+
+.toast {
   background: var(--ink);
   color: var(--paper);
   padding: 0.6rem 1.4rem;
   font-size: 0.8rem;
   letter-spacing: 0.06em;
-  z-index: 100;
-  max-width: calc(100vw - 2rem);
   box-shadow: 0 8px 24px rgba(20, 15, 8, 0.3);
+}
+
+/* Attached to the message rather than floating near it, and sized to the
+   44px floor: this is Undo on a plan somebody has just finished. */
+.toast-action {
+  display: inline-flex;
+  align-items: center;
+  min-height: 2.75rem;
+  padding: 0 1.1rem;
+  font-family: var(--sans);
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  background: var(--accent);
+  color: #fdf9f2;
+  border: none;
+  border-radius: 0;
+  cursor: pointer;
+  touch-action: manipulation;
+  box-shadow: 0 8px 24px rgba(20, 15, 8, 0.3);
+}
+
+.toast-action:hover {
+  background: var(--accent-ink);
+}
+
+.toast-action:focus-visible {
+  outline: 2px solid var(--paper);
+  outline-offset: -4px;
 }
 
 /* ---------- Footer ---------- */
@@ -1383,6 +1767,24 @@ body {
   }
 
   /*
+    "Not planned lately" is the longest label in the app and it sits
+    beside Favourites (J14.9). Measured at 320px the two came to 313px of
+    a 280px row, so Favourites took a line on its own, "Not planned
+    lately" started the next one with a tag beside it, and the filter row
+    went from four rows to six — 300px of chips above the first recipe.
+
+    The pixels come out of the tracking and the padding, the same place
+    the bars below take theirs, rather than out of either label: the
+    chips are already the smallest type on the screen, and a name people
+    read as a name is worth more than a sixth of an em. At 320px the pair
+    now measure 271px and share their row again.
+  */
+  .chip {
+    letter-spacing: 0.08em;
+    padding-inline: 0.4rem;
+  }
+
+  /*
     At 320px the one-row bar is about a dozen pixels too wide, and it may
     not wrap — the spacer would put every control after it on a second
     line. The tracking and the padding give up those pixels instead; the
@@ -1462,7 +1864,8 @@ body {
      to find your place in, which is the one thing a recipe must not be.
      The bars keep the full width — their backgrounds have to reach the
      edges, or content scrolls visibly past them. */
-  .detail-dialog > #detail-content {
+  .detail-dialog > #detail-content,
+  .plan-dialog > #plan-content {
     max-width: 46rem;
     margin-inline: auto;
   }
@@ -1478,6 +1881,20 @@ body {
 @media (min-width: 820px) and (min-height: 561px) {
   .detail-dialog {
     width: min(1100px, calc(100vw - 2rem));
+  }
+
+  /*
+    The plan's sheet is narrower than the recipe's. A recipe earns 1100px
+    by spending it on two columns (J4.16); the plan is one list and has
+    nothing to spend it on, so at 1440px it ran a shopping line the whole
+    1026px of the sheet and left a thousand pixels of paper between "6
+    onions" and the ✓ that settles it. Narrowing the sheet rather than the
+    list inside it is what keeps the heading, the list and the action bar
+    on one left edge: capping the content alone moved the list into a
+    column and left the title and Done outside it.
+  */
+  .plan-dialog {
+    width: min(51rem, calc(100vw - 2rem));
   }
 }
 
@@ -1495,7 +1912,8 @@ body {
   instead of down a long thin one.
 */
 @media (min-width: 820px) {
-  .detail-dialog > #detail-content {
+  .detail-dialog > #detail-content,
+  .plan-dialog > #plan-content {
     max-width: none;
   }
 

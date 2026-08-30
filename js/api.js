@@ -104,6 +104,103 @@
       if (error) throw error;
     }
 
+    // --- plans: the live one, and the ones that were finished ----------
+    //
+    // Two tables, because they are two different things (007). The live
+    // plan is one row per book, so there is one live plan per book by
+    // construction (J12.2); the archive is insert-only, so an archived
+    // plan is a fact rather than a row two devices can disagree about.
+
+    /** The plan this book is shopping for, or null if it has never had one. */
+    async fetchLivePlan(bookId) {
+      const { data, error } = await this.client
+        .from("live_plans")
+        .select("book_id, data, updated_at")
+        .eq("book_id", bookId)
+        .maybeSingle();
+      if (error) throw error;
+      return data || null;
+    }
+
+    /**
+     * Write the live plan. An upsert on book_id, which is the primary
+     * key, so this is the same call whether the book has ever had a plan
+     * before — and so clearing a plan is a write rather than a delete,
+     * which is why it needs no tombstone.
+     */
+    async pushLivePlan(bookId, plan) {
+      // No `updated_at`: the row's is the server's own note of when it was
+      // last written, kept by a trigger (007). The moment the merge cares
+      // about is inside the plan, because a settlement carries its own
+      // (J12.11), and a column pretending to be that would be believed.
+      const { error } = await this.client.from("live_plans").upsert({ book_id: bookId, data: plan });
+      if (error) throw error;
+    }
+
+    /**
+     * The ids of every plan this book has finished — one small column, so
+     * asking on every sync is cheap. An archived plan never changes, so
+     * comparing ids is the whole of reconciling them: what the server has
+     * and we lack is pulled, what we have and it lacks is pushed, and
+     * neither side can be out of date about a row that cannot be edited.
+     */
+    async fetchArchivedPlanIds(bookId) {
+      const { data, error } = await this.client
+        .from("plans")
+        .select("id")
+        .eq("book_id", bookId);
+      if (error) throw error;
+      return (data || []).map((row) => row.id);
+    }
+
+    /** The plans behind some of those ids. */
+    async fetchArchivedPlans(bookId, ids) {
+      if (!ids || ids.length === 0) return [];
+      const { data, error } = await this.client
+        .from("plans")
+        .select("id, data, completed_at")
+        .eq("book_id", bookId)
+        .in("id", ids);
+      if (error) throw error;
+      return data || [];
+    }
+
+    /**
+     * Record a finished plan (J14.1). The row is keyed on the book and
+     * the plan's own id, so recording the same plan twice is a duplicate
+     * key rather than a second row — which is what makes a retried Done
+     * safe, and what keeps J14.10's count of how often a recipe was
+     * planned honest.
+     * Returns false where the plan was already recorded.
+     */
+    async insertArchivedPlan(bookId, plan) {
+      const { error } = await this.client.from("plans").insert({
+        id: plan.id,
+        book_id: bookId,
+        data: plan,
+        completed_at: new Date(plan.completedAt || Date.now()).toISOString(),
+      });
+      if (!error) return true;
+      if (error.code === "23505" || /duplicate key/i.test(error.message || "")) return false;
+      throw error;
+    }
+
+    /**
+     * Take a finished plan off the record — Undo, and nothing else
+     * (J14.2). Named by book and plan, because that pair is the key
+     * (007): row-level security would refuse another book's row anyway,
+     * but somebody who edits two books could otherwise delete a plan out
+     * of the wrong one by id alone.
+     */
+    async deleteArchivedPlan(bookId, planId) {
+      const { error } = await this.client
+        .from("plans")
+        .delete()
+        .eq("book_id", bookId)
+        .eq("id", planId);
+      if (error) throw error;
+    }
+
     // --- books and membership ------------------------------------------
 
     /**

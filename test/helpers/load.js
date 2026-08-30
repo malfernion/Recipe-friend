@@ -83,9 +83,24 @@ function loadUI(options = {}) {
   // set here rather than after, because app.js reads them on the way in.
   if (options.hash) win.location.hash = options.hash;
   if (options.gated) win.document.body.classList.add("gated");
-  const base = loadApp("api.js", "units.js", "scale.js", "storage.js", "share.js", "cookmode.js");
+  // The planner goes in with the rest: app.js makes a plan store as it
+  // loads, and reaches for plan.js and shoplist.js as bare globals, the
+  // same way a browser hands them over from index.html.
+  //
+  // `planner: false` leaves all three out, which is the page a browser
+  // gets when one of those scripts does not arrive. index.html always
+  // asks for them, so this is not a supported configuration — it is the
+  // one a failed fetch produces, and the list still has to draw in it.
+  const planner = options.planner === false ? [] : ["plan.js", "planstore.js", "shoplist.js"];
+  const base = loadApp(
+    "api.js", "units.js", "scale.js", "storage.js", ...planner,
+    "share.js", "cookmode.js"
+  );
 
-  for (const key of ["RecipeHTML", "RecipeApi", "RecipeUnits", "RecipeScale", "RecipeStore", "RecipeShare", "RecipeCookMode"]) {
+  for (const key of ["RecipeHTML", "RecipeApi", "RecipeUnits", "RecipeScale", "RecipeStore",
+                     "RecipePlan", "RecipePlanStore", "RecipeShopList", "RecipeShare", "RecipeCookMode"]) {
+    // A module that was left out leaves its global unset here too, rather
+    // than carrying the last test's copy over on globalThis.
     win[key] = base[key];
     globalThis[key] = base[key];
   }
@@ -118,7 +133,14 @@ function loadUI(options = {}) {
     if (name === "ask.js") globalThis.RecipeAsk = win.RecipeAsk;
   }
 
-  return { win, el: win.document.el, app: win.RecipeApp, store: win.RecipeApp.store, restore };
+  return {
+    win,
+    el: win.document.el,
+    app: win.RecipeApp,
+    store: win.RecipeApp.store,
+    planStore: win.RecipeApp.planStore,
+    restore,
+  };
 }
 
 function swapGlobals(values) {
