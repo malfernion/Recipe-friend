@@ -81,13 +81,17 @@ Someone types in a recipe from their head or a book.
    keeps search aligned with the screen now that units are converted for
    display (J4.4) rather than stored; it does mean two people in one book
    can get different results for the same query.
-2. Tag chips and the Favourites filter narrow the list, and combine with
-   search.
+2. Tags and the Favourites filter narrow the list, and combine with
+   search. **Tags are chosen from a menu and combine as "both"** (J15.1,
+   J15.3); Favourites stays a chip in the toolbar (J15.9). What is
+   currently on shows beneath, and only that (J15.2).
 3. A search can be a list: separate terms with commas and recipes are
    ranked by how many they match, best first, each card naming which ones
    matched. A recipe matching none of the terms is not shown. One term
    ranks nothing — everything shown matches it — so the collection keeps
-   its own order.
+   its own order. **A sort chosen by name takes precedence over this
+   ranking** (J15.7), which then decides only between recipes the sort
+   has tied.
 4. Matching tolerates simple plurals, so "tomatoes" finds "tomato purée".
 5. **Search covers the current book only.** Switching books changes what is
    searchable. This is deliberate: each book keeps its own cache, and a
@@ -673,23 +677,21 @@ so the app can tell them what to buy.
    **The live one is marked as live**, in the accent the Plan count wears
    in the header, because they are the same fact said in two places. A
    date is history and stays in the colour of the line it joins.
-9. **Not planned lately** sits beside Favourites and combines with search
-   and tags as the other chips do (J3.2): least recently planned first,
-   and never-planned before them. **It orders the list rather than
-   narrowing it.** There is no honest threshold for "lately" — a
+9. **Least recently planned is one of the sorts** (J15.6): least recently
+   planned first, never-planned before them. **It orders the list rather
+   than narrowing it.** There is no honest threshold for "lately" — a
    fortnight is a lot for a weeknight supper and nothing at all for a
    Sunday roast — and while you are deciding what to cook, hiding the
    recipes you have had recently takes away the comparison you are trying
    to make. It puts the neglected ones under your thumb and leaves
    everything else where it was.
 
-   **Where a listed search is also on, the search wins and this orders
-   within it** (J3.3). Two chips asking for two orders is one order, and
-   a card that names the terms it matched cannot sit above a card that
-   matched more of them without making its own caption look like a lie.
-   With fewer than two terms there is no ranking to lose to, so the chip
-   orders the whole list — which is the case somebody planning a week is
-   actually in.
+   It was a chip beside Favourites first, which is why this criterion
+   once had to say in a paragraph that it sorted rather than filtered:
+   there was nothing on the screen to say so. In a menu called Sort there
+   is, and the rule about what happens when a listed search is also on
+   goes the other way now — the sort wins, and the ranking breaks its
+   ties (J15.7).
 10. How often a recipe has been planned is counted from the same archive,
     so "most often planned" needs nothing else stored. **Every appearance
     counts**: a recipe planned twice in one plan (J12.6) was planned
@@ -703,6 +705,64 @@ so the app can tell them what to buy.
     archive is the record, and the recipe is left alone.
 12. An archived plan keeps the names of the recipes it held, so a recipe
     deleted afterwards does not leave a blank line in what was planned.
+
+## J15 · Choosing what to look at
+
+Someone with a lot of recipes, and a lot of tags on them, wants a shorter
+list in an order that answers a question — "which curry have I not had in
+ages" being the one this journey is named for.
+
+1. **Filtering and sorting are two different things, and are chosen in two
+   menus.** They were one row of chips, which made a sort look like a
+   filter and left J14.9 explaining in a paragraph what the screen should
+   have shown. A menu each says which is which without a sentence, and
+   makes the two combine into one question rather than competing to be
+   the answer.
+2. **The row beneath them says what is on, not what could be.** Every tag
+   in the book was drawn as a chip, so the row grew with the book and
+   became a wall before it was a control — it was the menu and the answer
+   at the same time, and had to show everything. Choosing moves into the
+   menus; the row keeps only what is active, each with a way to take that
+   one off, and a way to clear the lot. Nothing on, nothing there, and a
+   toolbar quieter than the one it replaces.
+3. **Tags combine, and combining them narrows.** Two tags mean both and
+   not either: "curry" and "quick" is a shorter list than either alone,
+   which is what somebody deciding what to cook means by saying both.
+4. **Each tag says how many recipes it would leave**, which is the thing
+   the old row could not say at all. The count is taken against what the
+   other filters have already left, not against the whole book, so it is
+   the size of the list you would actually get rather than a promise the
+   rest of the toolbar has already broken.
+5. **A tag that would leave nothing is shown and cannot be chosen**,
+   rather than being taken out of the menu. A tag vanishing as you filter
+   reads as a book losing things; a tag greyed with a nought beside it
+   reads as an answer.
+6. The sorts are **recently added, name A to Z, least recently planned,
+   most often planned, and quickest first** — a small closed set, because
+   a list of every order a collection could be put in is another wall.
+   Recently added is what the list has always done and stays the default.
+7. **A sort chosen by name outranks the search's own ranking** (J3.3), and
+   the ranking becomes the tiebreak within it. This reverses what J14.9
+   settled, and the reversal is the point: a chip reading "not planned
+   lately" beside a search box is ambiguous about which of them decides
+   the order, and picking an order out of a menu called Sort is not.
+   Where no sort is chosen, a listed search ranks as it always has.
+8. **None of it is remembered.** Search, filters and sort are forgotten on
+   reload, and switching books clears them too — a book you have just
+   opened showing you a third of itself, for reasons set on a different
+   book last week, is a bug that looks like missing recipes. Measurement
+   preferences follow the person (J8.2) because they are about how you
+   read; these are about what you are doing this minute.
+9. **Favourites stays pinned** in the toolbar rather than folding into the
+   menu with the tags. It is used more than any tag and is one tap where
+   the others are two, and a shortlist you keep on purpose is not the
+   same kind of thing as a word you happened to type on a recipe.
+10. Where the filters leave nothing, the list says so **and offers to
+    clear them**, because the way out of an empty list is the thing you
+    cannot see when the list is empty.
+11. The menus are used one-handed on a phone like everything else here
+    (J4.19): they open to something big enough to hit, and they do not
+    push the recipes off the screen while they are open.
 
 ---
 
@@ -728,6 +788,16 @@ accident:
 - A recipe's address (J4.17) carries an id and no recipe data. It opens
   something only for someone who already has that recipe, so it is a
   bookmark, not a second kind of share link (J6.6 still holds).
+- **Two tags mean both, never either** (J15.3). An "any of these" filter
+  is a different question and answering both from one control would make
+  neither legible.
+- **What the toolbar is doing is not remembered** (J15.8): no saved
+  views, no last-used sort, nothing carried between books. The list you
+  open is your whole book.
+- **Tag counts are what the other filters have left**, not what the book
+  holds (J15.4), so the same tag reads differently depending on what else
+  is on. That is the number worth having: it is the size of the list the
+  tap would give you.
 - A plan is a bag of meals, not a calendar: nothing in it is assigned to
   a day or a date (J12.1).
 - Plans are shared with the book, so a read-only member cannot plan or
