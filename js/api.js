@@ -166,10 +166,11 @@
     }
 
     /**
-     * Record a finished plan (J14.1). The row's id is the plan's own, so
-     * recording the same plan twice is a duplicate key rather than a
-     * second row — which is what makes a retried Done safe, and what
-     * keeps J14.10's count of how often a recipe was planned honest.
+     * Record a finished plan (J14.1). The row is keyed on the book and
+     * the plan's own id, so recording the same plan twice is a duplicate
+     * key rather than a second row — which is what makes a retried Done
+     * safe, and what keeps J14.10's count of how often a recipe was
+     * planned honest.
      * Returns false where the plan was already recorded.
      */
     async insertArchivedPlan(bookId, plan) {
@@ -184,9 +185,19 @@
       throw error;
     }
 
-    /** Take a finished plan off the record — Undo, and nothing else (J14.2). */
-    async deleteArchivedPlan(planId) {
-      const { error } = await this.client.from("plans").delete().eq("id", planId);
+    /**
+     * Take a finished plan off the record — Undo, and nothing else
+     * (J14.2). Named by book and plan, because that pair is the key
+     * (007): row-level security would refuse another book's row anyway,
+     * but somebody who edits two books could otherwise delete a plan out
+     * of the wrong one by id alone.
+     */
+    async deleteArchivedPlan(bookId, planId) {
+      const { error } = await this.client
+        .from("plans")
+        .delete()
+        .eq("book_id", bookId)
+        .eq("id", planId);
       if (error) throw error;
     }
 

@@ -28,6 +28,15 @@
   const toIso = (ms) => new Date(ms || Date.now()).toISOString();
 
   /**
+   * May we write to this book? The same question `BooksUI.canEdit` asks,
+   * asked here because `resolveBook` has the answer in its hands one
+   * whole sync before the books UI gets round to it (J7.17).
+   */
+  function canWrite(book) {
+    return Boolean(book && (book.isOwner || book.role === "owner" || book.role === "editor"));
+  }
+
+  /**
    * Is the plan we ended up with the one the server already holds?
    *
    * Compared in full rather than on a timestamp. A merge can produce
@@ -51,7 +60,18 @@
           .map((f) => (entry[f] ? `${f}=${entry[f].amount}@${entry[f].at}` : ""))
           .join(",");
       });
-    return JSON.stringify([plan.id, plan.updatedAt, plan.completedAt, meals, settled]);
+    // `createdAt` is in here because it is the generation the merge
+    // decides on, not decoration: two copies of one id that disagree
+    // about when it began are not the same plan to `mergePlans`, and
+    // leaving it out would call them identical and never push the fix up.
+    return JSON.stringify([
+      plan.id,
+      plan.createdAt,
+      plan.updatedAt,
+      plan.completedAt,
+      meals,
+      settled,
+    ]);
   }
 
   class RecipeSync {
@@ -127,11 +147,23 @@
         // The signup trigger normally creates one; make our own if not.
         const book = await this.api.createBook(global.RecipeApi.ownBookName(displayName));
         this.bookId = book.id;
+        this.readOnly = false; // our own, so ours to write in
         return this.bookId;
       }
       const preferred = preferredId && books.find((b) => b.id === preferredId);
       const owned = books.find((b) => b.isOwner);
-      this.bookId = (preferred || owned || books[0]).id;
+      const chosen = preferred || owned || books[0];
+      this.bookId = chosen.id;
+      // Whether we may write to this book is settled here rather than
+      // left to `BooksUI.applyRole`, which runs on a refresh that comes
+      // *after* the first sync. A device whose role was taken down to
+      // viewer since it last ran holds a plan of its own and pushes it on
+      // that first trip, row-level security refuses it, and the status
+      // line parks on "Sync paused — will retry": read-only looking
+      // broken rather than restricted, which is the one thing J7.17 says
+      // not to do (J12.10). The book list is already in hand here, and it
+      // carries the answer.
+      this.readOnly = !canWrite(chosen);
       return this.bookId;
     }
 
@@ -409,22 +441,44 @@
 
       // A live plan carrying `completedAt` is a completion that got half
       // way: the plan was recorded, and the empty one that should have
-      // replaced it never landed. Anybody who can write may finish the
+      // replaced it never landed. Anybody who *can write* may finish the
       // job, and doing so is safe from any number of devices at once,
-      // because recording a plan is keyed by the plan's own id (007) and
-      // the plan that replaces it is a later generation than the one it
-      // replaces. Left alone it would be a finished plan that the book
-      // goes on shopping for.
-      if (plan && plan.completedAt) {
+      // because recording a plan is keyed by the book and the plan's own
+      // id (007) and the plan that replaces it is a later generation than
+      // the one it replaces. Left alone it would be a finished plan that
+      // the book goes on shopping for.
+      //
+      // A viewer leaves it exactly as it is (J12.10). Finishing the job
+      // is two writes they are not allowed to make, and doing the local
+      // half alone would put them on a fresh generation of their own
+      // that they can never push — an empty list on their phone while
+      // the household is still shopping from the one the book holds.
+      if (plan && plan.completedAt && !this.readOnly) {
         archived = plan;
-        plan = global.RecipePlan.emptyPlan(Math.max(Date.now(), plan.createdAt + 1));
+        plan = global.RecipePlan.emptyPlan(global.RecipePlan.generationAfter(plan));
       }
 
       // Archived plans: what each side has that the other has not.
       const serverIds = await this.api.fetchArchivedPlanIds(this.bookId);
       const onServer = new Set(serverIds);
-      const here = new Map(this.planStore.archive.map((p) => [p.id, p]));
-      if (archived) here.set(archived.id, archived);
+
+      // The server is the shared record of what this book has finished,
+      // and the only local additions to it are plans this device has
+      // recorded and not yet got up. A plan held here that the server
+      // does not have and that this device does not owe is one somebody
+      // took back with Undo (J14.2): keeping it would put it on the next
+      // push and hand their Undo straight back to them, because an
+      // insert-only archive has no tombstone to argue with. That was the
+      // whole hole in "Undo needs the network" — reaching the server is
+      // not enough if the other phone had already pulled the record.
+      const here = new Map();
+      for (const mine of this.planStore.archive) {
+        if (onServer.has(mine.id) || this.planStore.owes(mine.id)) here.set(mine.id, mine);
+      }
+      if (archived) {
+        here.set(archived.id, archived);
+        this.planStore.owe(archived.id);
+      }
 
       const missingHere = serverIds.filter((id) => !here.has(id));
       for (const fetched of await this.api.fetchArchivedPlans(this.bookId, missingHere)) {
@@ -449,8 +503,15 @@
       // against J14.4).
       let pushed = 0;
       for (const mine of this.planStore.archive) {
-        if (onServer.has(mine.id)) continue;
+        if (onServer.has(mine.id)) {
+          this.planStore.settleOwed(mine.id);
+          continue;
+        }
+        if (!this.planStore.owes(mine.id)) continue;
         if (await this.api.insertArchivedPlan(this.bookId, mine)) pushed++;
+        // Either it went up or the book already had it. A throw leaves
+        // the debt standing, so an offline Done is retried (J9.5).
+        this.planStore.settleOwed(mine.id);
       }
 
       // A book nobody has planned in yet needs no row saying so.
@@ -490,7 +551,7 @@
 
       // Strictly later than the plan it replaces, so the two are ordered
       // as generations on every device that meets them (see mergePlans).
-      const fresh = global.RecipePlan.emptyPlan(Math.max(now, finished.createdAt + 1));
+      const fresh = global.RecipePlan.emptyPlan(global.RecipePlan.generationAfter(finished, now));
       this.planStore.archivePlan(finished);
       this.planStore.setPlan(fresh);
       await this.syncNow();
@@ -521,13 +582,17 @@
       if (!archived) return null;
       if (this.readOnly) throw new Error("this is a book you read, not one you plan");
 
-      await this.api.deleteArchivedPlan(planId);
+      await this.api.deleteArchivedPlan(this.bookId, planId);
       this.planStore.removeArchived(planId);
+      const createdAt = global.RecipePlan.generationAfter(this.planStore.plan, now);
       const restored = {
         ...archived,
         id: global.RecipeStore.newId(),
-        createdAt: Math.max(now, this.planStore.plan.createdAt + 1),
-        updatedAt: now,
+        createdAt,
+        // Never before the plan began: a clock behind the one that
+        // finished this week would otherwise date the restored plan's
+        // last edit before its own birthday, and `touchedAt` reads it.
+        updatedAt: Math.max(now, createdAt),
         completedAt: null,
       };
       this.planStore.setPlan(restored);

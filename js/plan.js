@@ -40,6 +40,14 @@
     return global.RecipeStore.newId();
   }
 
+  /**
+   * A plan, empty. `now` is its generation as much as its birthday: two
+   * plan ids are two plans and the later `createdAt` wins whole
+   * (mergePlans), so a plan that replaces another has to be stamped
+   * strictly after it — `generationAfter` is where that is worked out,
+   * and every replacement goes through it. The bare default is for the
+   * first plan a book ever has, which replaces nothing.
+   */
   function emptyPlan(now = Date.now(), id) {
     return {
       id: id || newId(),
@@ -49,6 +57,22 @@
       meals: [],
       settled: Object.create(null),
     };
+  }
+
+  /**
+   * When a plan that replaces `previous` began.
+   *
+   * Done, Clear and Undo all put a different plan in the live row, and
+   * the merge decides between two plans on `createdAt` alone. A clock
+   * that is behind — another device's, or this one's — would otherwise
+   * mint a replacement older than the plan it replaces, and the merge
+   * would hand the old one straight back: Clear would appear to do
+   * nothing, for ever. One millisecond past is enough, and is what keeps
+   * generations ordered on every device that meets them whatever their
+   * clocks say.
+   */
+  function generationAfter(previous, now = Date.now()) {
+    return Math.max(Number(now) || 0, (Number(previous && previous.createdAt) || 0) + 1);
   }
 
   /**
@@ -434,6 +458,7 @@
     isPlanned,
     complete,
     mergePlans,
+    generationAfter,
     plannedIndex,
     byLeastRecentlyPlanned,
     relativeWhen,

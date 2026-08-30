@@ -16,7 +16,8 @@
  * the two it meant.
  *
  * State:
- *   { version: 1, plan: <the live plan>, archive: [<finished plans>] }
+ *   { version: 1, plan: <the live plan>, archive: [<finished plans>],
+ *     owed: [<ids of finished plans the server is not known to hold>] }
  */
 (function (global) {
   "use strict";
@@ -164,8 +165,16 @@
       .filter(Boolean)
       .sort((a, b) => b.completedAt - a.completedAt)
       .slice(0, MAX_ARCHIVE);
+    const owed = (Array.isArray(parsed && parsed.owed) ? parsed.owed : [])
+      .filter(isUuid)
+      .slice(0, MAX_ARCHIVE);
     return {
       version: 1,
+      // Which of those the server is not yet known to hold. It survives
+      // being closed and reopened because a Done pressed with no signal
+      // does: the plan is recorded here and owed to the book until a sync
+      // gets it up (J14.1, J12.12).
+      owed,
       // A device that has never seen this book's plan holds a placeholder,
       // and a placeholder is stamped zero because it has not begun. Two
       // plan ids are two plans and the later one is the one the book is on
@@ -199,6 +208,15 @@
       this._applying = false;
     }
 
+    /** Persist without telling sync: this is bookkeeping, not an edit. */
+    _quietly(change) {
+      const was = this._applying;
+      this._applying = true;
+      change();
+      this._persist();
+      this._applying = was;
+    }
+
     _persist() {
       this.persistOk = persist(this.state, this.key);
       if (this.onChange && !this._applying) this.onChange();
@@ -212,6 +230,36 @@
     /** Every finished plan this device knows about, newest first. */
     get archive() {
       return this.state.archive;
+    }
+
+    /**
+     * Is this a plan this device recorded and still owes the book?
+     *
+     * Sync asks before pushing an archived plan the server does not have,
+     * because there are two reasons it might not have one and they want
+     * opposite things. A plan recorded here offline is owed and must go
+     * up. A plan pulled from the server and since deleted there was taken
+     * back with Undo (J14.2) — pushing it would undo somebody's Undo, and
+     * an insert-only archive has no tombstone to argue with.
+     */
+    owes(id) {
+      return this.state.owed.includes(id);
+    }
+
+    /** This device has a finished plan the book has not been told about. */
+    owe(id) {
+      if (!isUuid(id) || this.state.owed.includes(id)) return;
+      this._quietly(() => {
+        this.state.owed = [id, ...this.state.owed].slice(0, MAX_ARCHIVE);
+      });
+    }
+
+    /** The book has it now — by our push, or by somebody else's. */
+    settleOwed(id) {
+      if (!this.state.owed.includes(id)) return;
+      this._quietly(() => {
+        this.state.owed = this.state.owed.filter((p) => p !== id);
+      });
     }
 
     /**
@@ -266,6 +314,10 @@
       this.state.archive = [clean, ...this.state.archive]
         .sort((a, b) => b.completedAt - a.completedAt)
         .slice(0, MAX_ARCHIVE);
+      // Recorded here; the book has not been told yet.
+      if (!this.state.owed.includes(clean.id)) {
+        this.state.owed = [clean.id, ...this.state.owed].slice(0, MAX_ARCHIVE);
+      }
       this._persist();
       return clean;
     }
@@ -275,6 +327,10 @@
       const before = this.state.archive.length;
       this.state.archive = this.state.archive.filter((p) => p.id !== id);
       if (this.state.archive.length === before) return false;
+      // Nothing is owed on a record that has been taken back, even one
+      // that never reached the server: a debt left here would push it
+      // straight back up on the next sync.
+      this.state.owed = this.state.owed.filter((p) => p !== id);
       this._persist();
       return true;
     }
@@ -296,6 +352,12 @@
           .slice()
           .sort((a, b) => b.completedAt - a.completedAt)
           .slice(0, MAX_ARCHIVE);
+        // A debt on a plan this device no longer holds can never be paid:
+        // the push reads the archive, and the slice above is what drops
+        // the oldest of them. Owing something unreachable for ever would
+        // only fill the list up.
+        const held = new Set(this.state.archive.map((p) => p.id));
+        this.state.owed = this.state.owed.filter((id) => held.has(id));
       }
       this._persist();
       this._applying = false;

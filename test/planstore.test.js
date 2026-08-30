@@ -23,7 +23,7 @@ const OTHER = "22222222-2222-4222-8222-222222222222";
 // ---------------------------------------------------------------------
 
 function fakeCloud() {
-  const db = { recipes: [], live_plans: [], plans: [] };
+  const db = { recipes: [], live_plans: [], plans: [], book_members: [] };
   const calls = [];
   const failures = new Map(); // "table.op" -> Error
 
@@ -46,10 +46,16 @@ function fakeCloud() {
 
     if (q.op === "insert") {
       const row = { ...q.payload };
-      // `plans.id` is a primary key, and the client leans on that: two
-      // devices recording the same plan is a duplicate key, not a plan
-      // counted twice (J14.10).
-      if (rows.some((r) => r.id === row.id)) {
+      // The key on `plans` is the book *and* the plan's own id (007), and
+      // the client leans on both halves: two devices recording the same
+      // plan is a duplicate key, not a plan counted twice (J14.10), while
+      // the same id under another book is another book's business and
+      // must not collide with this one's.
+      const clashes =
+        q.table === "plans"
+          ? (r) => r.id === row.id && r.book_id === row.book_id
+          : (r) => r.id === row.id;
+      if (rows.some(clashes)) {
         return {
           data: null,
           error: Object.assign(new Error("duplicate key value violates unique constraint"), {
@@ -116,6 +122,16 @@ function device(cloud, { bookId = BOOK, readOnly = false } = {}) {
   store.useBook(bookId);
   planStore.onChange = () => sync.schedulePush();
   return { win, store, planStore, sync, statuses, plan: win.RecipePlan };
+}
+
+/** What `listBooks` reads, so a device can resolve its own book (J7.17). */
+function joinBook(cloud, { bookId = BOOK, role = "editor", owner = "someone-else" } = {}) {
+  cloud.db.book_members.push({
+    book_id: bookId,
+    user_id: "u1",
+    role,
+    books: { name: "Ours", owner },
+  });
 }
 
 /** A recipe both devices already have, so a meal has something to name. */
@@ -212,6 +228,44 @@ test("a hostile plan from the server is sanitised, not trusted", () => {
   assert.equal(plan.settled.nonsense, undefined, "a settlement with no readable moment cannot merge");
   assert.equal(plan.settled.negative.have.amount, 0, "and nothing settles a negative amount");
   assert.ok(Number.isFinite(plan.createdAt));
+});
+
+test("J13.9 · a settlement off the server cannot make the list ask for more than it needs", () => {
+  const cloud = fakeCloud();
+  const d = device(cloud);
+  const sanitize = d.win.RecipePlanStore.sanitizePlan;
+  const plan = sanitize({
+    settled: JSON.parse(
+      '{"onion|unit:":{"have":{"amount":-40,"at":1}},' +
+      '"tomato|mass":{"got":{"amount":1e999,"at":1}},' +
+      '"flour|mass":{"have":{"amount":"lots","at":1}}}'
+    ),
+  });
+  // What is left to buy is the requirement less what was settled (J13.9),
+  // so a negative would ask for more than the recipes did and an infinity
+  // would answer NaN for ever.
+  assert.equal(d.plan.outstandingFor(plan, "onion|unit:", 6), 6);
+  assert.equal(d.plan.outstandingFor(plan, "tomato|mass", 400), 400);
+  assert.equal(d.plan.outstandingFor(plan, "flour|mass", 500), 500);
+});
+
+test("a hostile plan cannot reach Object.prototype through the settled map", () => {
+  const cloud = fakeCloud();
+  const d = device(cloud);
+  const sanitize = d.win.RecipePlanStore.sanitizePlan;
+  // `settled` is keyed on the item as written, so its keys are whatever
+  // somebody typed into a recipe — and it arrives off the server, where
+  // another member of the book wrote it.
+  const plan = sanitize(JSON.parse(
+    '{"meals":[],"settled":{"__proto__":{"have":{"amount":1,"at":1}},' +
+    '"constructor":{"got":{"amount":2,"at":2}},"polluted":{"got":{"amount":3,"at":3}}}}'
+  ));
+  assert.equal({}.have, undefined);
+  assert.equal({}.polluted, undefined);
+  assert.equal(Object.getPrototypeOf(plan.settled), null);
+  assert.deepEqual(d.plan.settledFor(plan, "__proto__"), { have: 1, got: 0 },
+    "the key is an item somebody wrote, and is kept as one");
+  assert.deepEqual(d.plan.settledFor(plan, "constructor"), { have: 0, got: 2 });
 });
 
 test("J14.4 · an archived plan is one that was finished, and nothing else is", () => {
@@ -531,6 +585,105 @@ test("J14.2 · Undo takes the record back and puts the plan back", async () => {
   assert.deepEqual(cloud.db.plans, [], "and the week no longer claims to have been planned");
   assert.deepEqual(cloud.db.live_plans[0].data.meals.map((m) => m.name), ["Bolognese"]);
   assert.deepEqual(d.planStore.archive, []);
+});
+
+test("J14.2 · Undo is not handed back by a phone that had already pulled the record", async () => {
+  const cloud = fakeCloud();
+  const recipe = shareRecipe(cloud);
+  const a = device(cloud);
+  const b = device(cloud);
+  a.planStore.setPlan(a.plan.addMeal(a.planStore.plan, recipe, 1000));
+  await a.sync.syncNow();
+
+  const { archived } = await a.sync.completePlan(7000);
+  // The other phone syncs in the seconds between Done and Undo, so it is
+  // holding the record when the record is taken back.
+  await b.sync.syncNow();
+  assert.deepEqual(b.planStore.archive.map((p) => p.id), [archived.id]);
+
+  await a.sync.undoComplete(archived.id, 8000);
+  await b.sync.syncNow();
+
+  assert.deepEqual(cloud.db.plans, [],
+    "the week no longer claims to have been planned, on either phone's next sync");
+  assert.deepEqual(b.planStore.archive, [],
+    "and the phone that had it lets it go rather than pushing it back");
+  assert.equal(b.planStore.plannedIndex()[recipe.id], undefined,
+    "so nobody is told the recipe was planned in a week that was un-finished");
+
+  await a.sync.syncNow();
+  assert.deepEqual(cloud.db.plans, [], "and it does not come back on the next trip either");
+});
+
+test("J14.1 · a Done pressed with no signal is still owed to the book when the signal returns", async () => {
+  const cloud = fakeCloud();
+  const recipe = shareRecipe(cloud);
+  const d = device(cloud);
+  d.planStore.setPlan(d.plan.addMeal(d.planStore.plan, recipe, 1000));
+
+  cloud.breakWrite("plans.insert");
+  cloud.breakWrite("live_plans.upsert");
+  await d.sync.completePlan(7000);
+  assert.deepEqual(cloud.db.plans, [], "nothing reached the book");
+
+  cloud.mend("plans.insert");
+  cloud.mend("live_plans.upsert");
+  await d.sync.syncNow();
+  assert.deepEqual(cloud.db.plans.map((r) => r.id), [d.planStore.archive[0].id],
+    "and the record goes up as soon as there is somewhere to put it");
+});
+
+test("J12.10 · a viewer does not finish somebody else's half-finished Done", async () => {
+  const cloud = fakeCloud();
+  const recipe = shareRecipe(cloud);
+  const editor = device(cloud);
+  editor.planStore.setPlan(editor.plan.addMeal(editor.planStore.plan, recipe, 1000));
+  await editor.sync.syncNow();
+  // The state a completion leaves behind when it stops half way.
+  cloud.db.live_plans[0].data = editor.plan.complete(editor.planStore.plan, 7000);
+
+  const viewer = device(cloud, { readOnly: true });
+  await viewer.sync.syncNow();
+
+  assert.deepEqual(cloud.db.plans, [], "a viewer records nothing");
+  assert.deepEqual(cloud.db.live_plans[0].data.meals.map((m) => m.name), ["Bolognese"],
+    "and leaves the live plan for somebody who may write it");
+  assert.deepEqual(viewer.planStore.plan.meals.map((m) => m.name), ["Bolognese"],
+    "so their list is the one the household is shopping from, not an empty one");
+  assert.deepEqual(viewer.statuses, ["syncing", "synced"], "and nothing is refused");
+});
+
+test("J7.17 · a book you may only read is known to be one before the first sync, not after it", async () => {
+  const cloud = fakeCloud();
+  const recipe = shareRecipe(cloud);
+  joinBook(cloud, { role: "viewer" });
+  const d = device(cloud);
+  // A device demoted to viewer since it last ran still holds a plan of
+  // its own. The books UI settles the role on a refresh that comes after
+  // this, so it is `resolveBook` that has to know.
+  d.planStore.setPlan(d.plan.addMeal(d.planStore.plan, recipe, 1000));
+
+  await d.sync.resolveBook("u1", BOOK, "Dave");
+  assert.equal(d.sync.readOnly, true);
+
+  await d.sync.syncNow();
+  assert.deepEqual(cloud.wrote("live_plans"), [],
+    "nothing of theirs is pushed, so the status line never parks on Sync paused");
+  assert.equal(d.statuses.includes("error"), false);
+  assert.equal(d.statuses[d.statuses.length - 1], "synced");
+});
+
+test("J7.17 · a book you may write is not mistaken for one you may only read", async () => {
+  const cloud = fakeCloud();
+  const recipe = shareRecipe(cloud);
+  joinBook(cloud, { role: "editor" });
+  const d = device(cloud);
+  d.planStore.setPlan(d.plan.addMeal(d.planStore.plan, recipe, 1000));
+
+  await d.sync.resolveBook("u1", BOOK, "Dave");
+  assert.equal(d.sync.readOnly, false);
+  await d.sync.syncNow();
+  assert.deepEqual(cloud.db.live_plans[0].data.meals.map((m) => m.name), ["Bolognese"]);
 });
 
 test("J14.2 · an Undo that does not reach the server changes nothing here either", async () => {

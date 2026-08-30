@@ -20,10 +20,11 @@
 --    reconciliation to get wrong and no such thing as a conflicting
 --    archive row. The client reconciles it by comparing ids: the server
 --    has some it lacks, it has some the server lacks, and both sides are
---    right. The row's id is the plan's own id, which is what makes
---    pressing Done twice — two devices, or a retry after a half-failed
---    completion — a duplicate key rather than a plan counted twice
---    (J14.10 counts every appearance, so a double insert would be a lie).
+--    right. The row is keyed on the book and the plan's own id, which is
+--    what makes pressing Done twice — two devices, or a retry after a
+--    half-failed completion — a duplicate key rather than a plan counted
+--    twice (J14.10 counts every appearance, so a double insert would be a
+--    lie). Why the book is half of that key is written where the key is.
 --
 -- Clearing a plan (J14.4) needs no tombstone, and that is worth spelling
 -- out against J9.4, which is emphatic that deletes must travel as
@@ -66,14 +67,29 @@
 --      This is J12.10 and J7.17, and it is the same gate 006 put on
 --      recipes: is_book_editor, not is_book_member.
 --   c. As an **editor**: all four succeed for their own book, and none of
---      them succeed against a book they are not in.
+--      them succeed against a book they are not in. Selecting from either
+--      table for a book you are not in returns nothing — no error, no
+--      rows, which is what a policy that does not match looks like.
 --   d. Signed out (anon): both tables return nothing at all.
---   e. Insert the same plan id into `plans` twice — the second is a
+--   e. Insert the same (book_id, id) into `plans` twice — the second is a
 --      duplicate key error, not a second row. The client depends on this
 --      to make a retried Done idempotent.
---   f. Try `update live_plans set book_id = <another book you edit>` —
+--   f. Insert that **same plan id under a second book you edit** — this
+--      one has to *succeed*, because the key is the pair. If it collides,
+--      the key is still `id` alone and a member of any book can quietly
+--      stop another book from ever recording the week it is shopping for.
+--      See the note on the key below.
+--   g. Try `update live_plans set book_id = <another book you edit>` —
 --      refused by the trigger below, the same way a recipe cannot change
 --      book (006).
+--   h. Upsert the live plan twice as an editor (`insert … on conflict
+--      (book_id) do update`, which is what PostgREST sends) — both
+--      succeed. INSERT and UPDATE are separate policies and an upsert
+--      needs both, so a missing one would make the first save of a book's
+--      plan work and every save after it fail.
+--   i. `select updated_at from live_plans` after an update you made with
+--      an `updated_at` of your own in the payload — it says now, not what
+--      you sent. The trigger below is what keeps that true.
 --
 -- ---------------------------------------------------------------------
 -- 1. The plan being built: one row per book
@@ -106,9 +122,13 @@ begin
 end;
 $$;
 
+-- Insert as well as update: a row's first write is a write like any
+-- other, and `default now()` only applies to a client that leaves the
+-- column out. Taking the client's word on one path and not the other
+-- would make the paragraph above true of half the table.
 drop trigger if exists live_plans_touched on public.live_plans;
 create trigger live_plans_touched
-  before update on public.live_plans
+  before insert or update on public.live_plans
   for each row execute function public.live_plans_touch();
 
 -- ---------------------------------------------------------------------
@@ -118,13 +138,32 @@ create trigger live_plans_touched
 create table if not exists public.plans (
   -- The plan's own id, so completing the same plan twice collides here
   -- instead of being counted twice (J14.10).
-  id uuid primary key,
+  id uuid not null,
   book_id uuid not null references public.books (id) on delete cascade,
   data jsonb not null check (pg_column_size(data) <= 200000),
   -- The date the plan was finished, which is what "Planned 3 weeks ago"
   -- says (J14.5) — never a date anything was cooked.
   completed_at timestamptz not null,
-  created_at timestamptz not null default now()
+  created_at timestamptz not null default now(),
+  -- The key is the book and the plan, not the plan alone. Both halves of
+  -- that matter.
+  --
+  -- The plan is what makes pressing Done twice a duplicate key rather
+  -- than a week counted twice, which is what the client leans on to make
+  -- a retried or raced Done idempotent (J14.1, J14.10).
+  --
+  -- The book is what stops one book's row deciding another book's fate.
+  -- A plan's id is readable by every member of its book — "member live
+  -- plan read" below is what J12.10 grants a viewer — and `id` alone as
+  -- the key would let anybody holding it insert a row under that id into
+  -- a book of their own. The victim's next Done would then come back a
+  -- duplicate key, which the client honestly reads as "already
+  -- recorded", and it would clear the live plan without the week ever
+  -- reaching the record. Nothing else in the schema keys across books
+  -- either: a recipe id is a primary key across every book only because
+  -- 006 made a recipe's book immutable, and a plan's book is fixed the
+  -- same way below.
+  primary key (book_id, id)
 );
 
 create index if not exists plans_book_idx on public.plans (book_id, completed_at desc);
@@ -213,6 +252,14 @@ revoke all on public.plans from anon;
 -- The same guardrail schema.sql put on recipes, for the same reason: no
 -- single account should be able to soak the free tier. 2000 archived
 -- plans is roughly forty years of weekly shopping.
+--
+-- What it cannot do is lock the owner out on its own: it is per book, and
+-- the count it reads is the count an editor of that book could already
+-- change. It is worth saying plainly that a hostile editor *can* fill it
+-- — the same way one can fill the 2000-recipe cap — and that the remedy
+-- is the same, remove them and delete the rows. The gate on both is
+-- membership, not this trigger; a quota that tried to be a permission
+-- would only be a worse one.
 
 create or replace function public.check_plan_quota()
 returns trigger
@@ -231,3 +278,15 @@ drop trigger if exists plans_quota on public.plans;
 create trigger plans_quota
   before insert on public.plans
   for each row execute function public.check_plan_quota();
+
+-- ---------------------------------------------------------------------
+-- 6. One line 006 owed 005
+-- ---------------------------------------------------------------------
+--
+-- `is_book_editor` is the gate on every write above, and 006 created it
+-- pinning `search_path` to "public" alone — which is what 005 §5 had just
+-- finished fixing everywhere else, because Postgres searches pg_temp
+-- first for table lookups and a temp table could otherwise shadow
+-- `books` or `book_members` inside a definer function. Not reachable
+-- through PostgREST, and it costs one line.
+alter function public.is_book_editor(uuid) set search_path = public, pg_temp;

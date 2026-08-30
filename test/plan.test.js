@@ -12,7 +12,8 @@ const win = loadApp("units.js", "scale.js", "storage.js", "plan.js");
 const {
   emptyPlan, addMeal, removeMeal, stepPortions, factorFor, prune,
   settledFor, outstandingFor, settle, unsettle, touchedAt, isPlanned, complete,
-  mergePlans, plannedIndex, byLeastRecentlyPlanned, relativeWhen, plannedLabel,
+  mergePlans, generationAfter, plannedIndex, byLeastRecentlyPlanned, relativeWhen,
+  plannedLabel,
 } = win.RecipePlan;
 const sanitize = win.RecipeStore.sanitizeRecipe;
 
@@ -291,6 +292,82 @@ test("J12.11 · merging is symmetric, and merging twice changes nothing", () => 
   assert.deepEqual(ab.meals, ba.meals);
   assert.deepEqual(mergePlans(ab, b), ab);
   assert.deepEqual(mergePlans(ab, a), ab);
+});
+
+test("J12.11 · however many copies of a plan meet, and in whatever order, they agree", () => {
+  // The three laws the merge has to obey to be safe on a network where
+  // devices meet each other in any order and more than once. Generations
+  // are the thing this fuzz is here for: a plan id decides the whole
+  // merge now, so a rule that was commutative per item has to still be
+  // commutative per plan.
+  let seed = 20260830;
+  const rnd = () => ((seed = (seed * 1103515245 + 12345) & 0x7fffffff) / 0x7fffffff);
+  const pick = (xs) => xs[Math.floor(rnd() * xs.length)];
+
+  // A plan id and the moment it began are one fact, exactly as they are
+  // in life: an id is minted with its `createdAt` and neither changes.
+  const generations = [emptyPlan(0), emptyPlan(1000), emptyPlan(2000)];
+  const keys = ["onion|unit:", "tomato|mass", "flour|mass"];
+
+  function aPlan() {
+    let plan = pick(generations);
+    for (let i = Math.floor(rnd() * 3); i > 0; i--) {
+      plan = addMeal(plan, pick([BOLOGNESE, CURRY]), plan.createdAt + Math.floor(rnd() * 400));
+    }
+    for (let i = Math.floor(rnd() * 4); i > 0; i--) {
+      plan = settle(plan, pick(keys), pick(["have", "got"]), Math.floor(rnd() * 5),
+        Math.floor(rnd() * 8) * 100);
+    }
+    return rnd() < 0.15 ? complete(plan, plan.createdAt + 500) : plan;
+  }
+
+  const shape = (p) => JSON.stringify({
+    id: p.id,
+    createdAt: p.createdAt,
+    updatedAt: p.updatedAt,
+    completedAt: p.completedAt || null,
+    meals: p.meals.map((m) => `${m.id}:${m.recipeId}:${m.portions}:${m.multiplier}`).sort(),
+    settled: Object.keys(p.settled).sort().map((k) => [k, settledFor(p, k)]),
+  });
+
+  for (let i = 0; i < 3000; i++) {
+    const [a, b, c] = [aPlan(), aPlan(), aPlan()];
+    assert.equal(shape(mergePlans(a, b)), shape(mergePlans(b, a)),
+      "two phones reach the same plan whichever of them syncs first");
+    const ab = mergePlans(a, b);
+    assert.equal(shape(mergePlans(ab, ab)), shape(ab), "and merging twice changes nothing");
+    assert.equal(shape(mergePlans(ab, a)), shape(ab), "nor does meeting a copy already folded in");
+    assert.equal(
+      shape(mergePlans(mergePlans(a, b), c)),
+      shape(mergePlans(a, mergePlans(b, c))),
+      "and three phones agree however they pair off"
+    );
+  }
+});
+
+test("J14.4 · a plan cleared by a phone whose clock is behind still clears", () => {
+  // Done stamped the fresh plan from the clock that pressed it. A second
+  // phone, minutes behind, clears that plan: a replacement dated before
+  // the plan it replaces would lose the merge and hand the old week
+  // straight back, for ever.
+  const live = emptyPlan(9_000_000);
+  const cleared = emptyPlan(generationAfter(live, 8_000_000));
+  assert.equal(mergePlans(cleared, live).id, cleared.id,
+    "the week that never happened is the one that goes");
+});
+
+test("J13.9 · a settled amount named __proto__ settles onions and nothing else", () => {
+  // "__proto__" is a thing somebody can write in an ingredient, and an
+  // item as written is what a settlement is keyed on (J13.4).
+  const plan = settle(emptyPlan(1000), "__proto__", "have", 3, 2000);
+  assert.deepEqual(settledFor(plan, "__proto__"), { have: 3, got: 0 });
+  assert.equal({}.have, undefined, "and Object.prototype is untouched");
+  assert.equal(Object.getPrototypeOf(plan.settled), null);
+
+  const merged = mergePlans(plan, settle(emptyPlan(1000, plan.id), "constructor", "got", 1, 3000));
+  assert.deepEqual(settledFor(merged, "__proto__"), { have: 3, got: 0 });
+  assert.deepEqual(settledFor(merged, "constructor"), { have: 0, got: 1 });
+  assert.equal(Object.getPrototypeOf(merged.settled), null);
 });
 
 test("J9.3 · the meals in a plan merge whole, most recent edit winning", () => {
