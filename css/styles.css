@@ -119,6 +119,19 @@ body {
   position: sticky;
   top: 0;
   z-index: 30;
+  /*
+    The bar's right alignment comes from the auto margin on .brand below,
+    and an auto margin only reaches the items sharing a line with it. Once
+    the actions wrapped to a line of their own they had nothing holding
+    them, fell back to flex-start, and left a hole against the right edge
+    that grew with the window — 165px by 500px wide, and 405px in the band
+    between 640 and 820 where the labels spell out in full and the account
+    and book go back inline. This is the backstop for any wrap we have not
+    anticipated, such as a long enough book name: the line ends where the
+    bar ends. Auto margins are settled before this, so the brand cannot
+    drift off the left.
+  */
+  justify-content: flex-end;
 }
 
 .brand {
@@ -197,9 +210,19 @@ body {
   position: relative;
 }
 
+/*
+  A summary is a list-item, so a min-height taller than its text (the 44px
+  floor on a touch device, J4.19) left the ··· sitting at the top of the
+  box — 14.6px of space above it and 26.4px below. Centring the glyph is
+  the same treatment .toolbar-summary already gives the Filter and Sort
+  chips, which is why those two were never crooked and this one was.
+*/
 .more-summary {
   list-style: none;
   cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   padding: 0.35rem 0.6rem;
   font-size: 1.1rem;
   line-height: 1;
@@ -254,6 +277,26 @@ body {
 
 .label-short {
   display: none;
+}
+
+/*
+  Below this the bar is two or three lines rather than one, and the action
+  row is the line that has room to spare. Letting it grow into that room
+  gives the row two ends to work with: writing a recipe at the left, where
+  it lines up under the wordmark, and the overflow menu at the right. The
+  span is deliberately not applied above this width — up there the actions
+  share a line with the account and book, and a row that grows would eat
+  the free space the brand's auto margin is using and drag those two left
+  against the logo.
+*/
+@media (max-width: 860px) {
+  .appbar-actions {
+    flex: 1 1 auto;
+  }
+
+  .appbar-actions .more-menu {
+    margin-left: auto;
+  }
 }
 
 @media (max-width: 620px) {
@@ -388,6 +431,42 @@ body {
   background: var(--accent-ink);
   border-color: var(--accent-ink);
   color: #fdf9f2;
+}
+
+/*
+  In the bar, the primary action is drawn rather than filled. A solid block
+  of --ink was the only mass of pure black on a page made of hairlines and
+  letterspaced small caps, and in dark mode it inverted to a slab of cream
+  brighter than anything else on the screen — including the logo. It also
+  was not the brand's own colour, so the loudest thing in the app was the
+  one thing not wearing the rust.
+
+  A hairline box in the accent puts it in the same language as the chips
+  underneath it — Favourites, Filter, Sort are all bordered and unfilled —
+  while the colour keeps it the one to reach for, and hovering fills it in.
+  The fill is kept for .btn-primary elsewhere, where a dialog's Save is
+  answering a question and wants the weight.
+
+  Both states clear 4.5:1 in both schemes: 5.6:1 for the resting label,
+  and the hover inverts to the page colour on the accent rather than to
+  near-white, which in dark mode would have been a light-on-light fill.
+*/
+.appbar-actions .btn-primary {
+  background: none;
+  border: 1px solid var(--accent);
+  color: var(--accent);
+  padding: 0.5rem 0.9rem;
+}
+
+.appbar-actions .btn-primary:hover {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--paper);
+}
+
+/* Drawn, not said — the words next to it carry the meaning. */
+.btn-glyph {
+  margin-right: 0.1em;
 }
 
 .btn-danger {
@@ -2228,6 +2307,11 @@ body {
   .more-item,
   .more-summary {
     min-height: 44px;
+  }
+
+  /* The ··· met the floor in height and missed it by 3px in width. */
+  #more-menu .more-summary {
+    min-width: 44px;
   }
 
   .btn-primary {
