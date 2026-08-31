@@ -2287,43 +2287,6 @@ body {
   }
 }
 
-/*
-  A photo, and something to cook, on the same screen.
-
-  J4.15 was measured on a 375x667 phone and fixed for a recipe with no
-  photo; with one it was never fixed at all. The picture is 3:2 across the
-  full width, which is 223px, and it sits above a three-line title, a
-  description, the particulars and the tags — so the first ingredient
-  landed at 793px, past the bottom of a 667px screen, and the recipe view
-  showed the Ingredients heading and nothing under it.
-
-  Capping the picture's height was tried and does not reach: even a band
-  of 133px leaves the first ingredient behind the action bar, because the
-  band still owns a whole line of the page. What buys the room is giving
-  it a column instead — the photo beside the description rather than above
-  it, which is how the same two things sit on a card in a magazine. The
-  preamble stops being six stacked blocks and becomes two, the first
-  ingredient comes up to 512px, and nothing is hidden or clipped to get
-  there: the description keeps all of its words and the photo keeps its
-  ratio.
-
-  Only where the height is actually scarce — a phone, or any screen short
-  enough that the recipe is already full-bleed. A tablet held upright has
-  1133px to spend and keeps the full-width photograph.
-*/
-@media (max-width: 560px), (max-height: 560px) {
-  .detail-img {
-    float: left;
-    width: 40%;
-    max-width: 12rem;
-    margin: 0.35rem 1rem 0.7rem 0;
-  }
-
-  /* The lists start below the picture, whatever flowed beside it. */
-  .detail-body {
-    clear: both;
-  }
-}
 
 /* The wider sheet is for screens with the height to keep a margin. A short
    one is full-bleed above, and must not have its width put back here —
