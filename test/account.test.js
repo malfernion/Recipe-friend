@@ -766,6 +766,25 @@ test("J1.1 · signing out stops sync and puts the gate back", async () => {
   assert.equal(a.el("sync-status").hidden, true);
 });
 
+test("J4.24 · signing out takes an open recipe off the screen with it", async () => {
+  const a = arrive({ session: aSession() });
+  await flush();
+
+  const recipe = a.store.add(aRecipe({ name: "Weeknight Ramen" }));
+  a.app.render();
+  a.el("recipe-list").fire("click", {
+    target: { closest: (sel) => (sel === ".recipe-card" ? { dataset: { id: recipe.id } } : null) },
+  });
+  assert.equal(a.el("detail-view").open, true, "reading a recipe when the session ends");
+
+  await a.el("account-btn").fire("click");
+  await flush();
+
+  assert.equal(a.el("detail-view").open, false,
+    "or it would be left over the sign-in form, with nothing behind it");
+  assert.equal(a.win.location.hash, "", "and the address stops naming it");
+});
+
 test("J1.1 · a session arriving later lifts the gate and starts sync", async () => {
   const a = arrive({ session: null });
   await flush();

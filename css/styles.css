@@ -1025,8 +1025,17 @@ body {
   --pad-x: 2.25rem;
   --pad-b: 1.75rem;
   padding: var(--pad-t) var(--pad-x) var(--pad-b);
+  /*
+    The body is a column flex container, and an auto inline margin on a
+    flex item beats the default stretch: without a width to hold it open
+    the view collapses onto its own content, so a recipe of short lines
+    drew a narrow column down the middle of a wide screen. The width is
+    what fills the row; the margins only centre what the cap leaves over.
+  */
+  width: 100%;
   max-width: 74rem;
   margin-inline: auto;
+  box-sizing: border-box;
 }
 
 .recipe-dialog h2,
@@ -1429,6 +1438,18 @@ button.crumb:hover {
 */
 .detail-col:first-child > h3:first-child {
   margin-top: 0.85rem;
+}
+
+/*
+  The heading takes focus when a view opens, so that what has just filled
+  the screen is what gets announced (J4.21) — but it is focused to be
+  read out, not to be operated, and a ring around a heading reads as a
+  text box you could type in. Nothing is lost by not drawing one: the
+  tabindex is -1, so it is not somewhere anyone can tab to and wonder
+  where they are.
+*/
+.detail-title:focus {
+  outline: none;
 }
 
 .detail-title {
@@ -2287,6 +2308,16 @@ button.crumb:hover {
     max-width: 46rem;
     margin-inline: auto;
   }
+}
+
+/*
+  The editor keeps the measure it had as a dialog. A form is neither
+  prose nor two columns of it: what a wide screen buys a recipe (J4.16)
+  it does not buy a column of fields, which only gets harder to run your
+  eye down as it gets wider.
+*/
+.editor-view {
+  max-width: 42rem;
 }
 
 /* The wider measure is for screens with room to spend on it. A phone held
