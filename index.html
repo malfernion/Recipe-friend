@@ -16,8 +16,9 @@
     Two notes on what is missing. frame-ancestors is ignored in a meta tag,
     so clickjacking cover would need a response header, which GitHub Pages
     cannot send. And form-action is 'self' rather than 'none' because the
-    recipe dialog is a method="dialog" form, which some browsers have
-    treated as a navigation to be blocked.
+    confirm dialog is a method="dialog" form, which some browsers have
+    treated as a navigation to be blocked. The editor is a plain form on a
+    plain page now, but the confirm dialog is still one of those.
   -->
   <meta http-equiv="Content-Security-Policy" content="
     default-src 'none';
@@ -194,9 +195,10 @@
   </footer>
 
   <!-- Add / edit recipe -->
-  <dialog id="recipe-dialog" class="recipe-dialog">
-    <form id="recipe-form" method="dialog" novalidate>
-      <h2 id="dialog-title">New recipe</h2>
+  <section id="editor-view" class="view editor-view" hidden>
+    <nav class="crumbs" id="editor-crumbs" aria-label="Breadcrumb"></nav>
+    <form id="recipe-form" novalidate>
+      <h2 id="editor-title">New recipe</h2>
       <p id="review-warning" class="review-warning" role="status" hidden></p>
 
       <label class="field">
@@ -271,25 +273,25 @@
         being read from with wet hands. Hidden until there is something
         saved to delete.
       -->
-      <div class="dialog-actions">
+      <div class="action-bar">
         <button type="button" class="btn btn-danger" id="edit-delete-btn" hidden>Delete</button>
-        <span class="dialog-actions-spacer"></span>
-        <button type="button" class="btn btn-ghost" id="cancel-dialog-btn">Cancel</button>
+        <span class="action-bar-spacer"></span>
+        <button type="button" class="btn btn-ghost" id="cancel-edit-btn">Cancel</button>
         <button type="submit" class="btn btn-primary" id="save-recipe-btn">Save recipe</button>
       </div>
     </form>
-  </dialog>
+  </section>
 
   <!--
-    Recipe detail. Favourite and Close sit in a bar above the recipe rather
-    than below it: they are about this screen, not about the recipe, and on
-    a phone every row of the bottom bar is a row of ingredients you cannot
-    see. What is left below is what you reach for mid-cook.
+    Recipe detail. Favourite and Edit are about this recipe, so they run on
+    from its title; the way back out is the breadcrumb above, which is the
+    only navigation a view carries — the app bar is hidden behind one, since
+    on a phone every row of chrome is a row of ingredients you cannot see.
   -->
-  <dialog id="detail-dialog" class="recipe-dialog detail-dialog">
+  <section id="detail-view" class="view detail-view" hidden>
+    <nav class="crumbs" id="detail-crumbs" aria-label="Breadcrumb"></nav>
     <div class="detail-head">
       <div class="detail-head-text">
-        <p class="detail-kicker" id="detail-kicker"></p>
         <h2 class="detail-title" id="detail-heading" tabindex="-1"><span
           id="detail-title-text"></span><span
           class="detail-title-btns"><button
@@ -298,12 +300,10 @@
           type="button" class="icon-btn detail-title-btn" id="detail-edit-btn"
           aria-label="Edit recipe">&#x270E;&#xFE0E;</button></span></h2>
       </div>
-      <button type="button" class="icon-btn" id="detail-close-btn"
-              aria-label="Close recipe">×</button>
     </div>
     <div id="detail-content"></div>
-    <div class="dialog-actions detail-actions">
-      <span class="dialog-actions-spacer"></span>
+    <div class="action-bar detail-actions">
+      <span class="action-bar-spacer"></span>
       <!-- In plan mode only: outside it the row is not spent on it (J12.7). -->
       <button type="button" class="btn btn-ghost" id="detail-plan-btn"
               aria-label="Add to the plan" hidden>+ Plan</button>
@@ -312,7 +312,7 @@
       <button type="button" class="btn btn-ghost" id="detail-copy-btn" hidden>Copy</button>
       <button type="button" class="btn btn-ghost" id="detail-move-btn" hidden>Move</button>
     </div>
-  </dialog>
+  </section>
 
   <!--
     The plan and the shop it comes to (J12.9, J13). Meals sit above the
@@ -321,35 +321,33 @@
     screen on a phone like the recipe view does, and for the same reason —
     this is read one-handed in an aisle.
   -->
-  <dialog id="plan-dialog" class="recipe-dialog detail-dialog plan-dialog">
+  <section id="plan-view" class="view detail-view plan-view" hidden>
+    <nav class="crumbs" id="plan-crumbs" aria-label="Breadcrumb"></nav>
     <div class="detail-head">
       <div class="detail-head-text">
-        <p class="detail-kicker">This week</p>
         <h2 class="detail-title" id="plan-heading" tabindex="-1">The plan</h2>
       </div>
-      <button type="button" class="icon-btn" id="plan-close-btn"
-              aria-label="Close the plan">×</button>
     </div>
     <div id="plan-content"></div>
     <!--
       Done is the filled one and sits at the end of the row, where the
       thumb is. Clear is destructive and keeps its distance from it.
     -->
-    <div class="dialog-actions detail-actions plan-actions">
+    <div class="action-bar detail-actions plan-actions">
       <button type="button" class="btn btn-danger" id="plan-clear-btn">Clear</button>
-      <span class="dialog-actions-spacer"></span>
+      <span class="action-bar-spacer"></span>
       <button type="button" class="btn btn-ghost" id="plan-copy-btn">Copy</button>
       <button type="button" class="btn btn-ghost" id="plan-share-btn" hidden>Share</button>
       <button type="button" class="btn btn-primary" id="plan-done-btn" hidden>Done</button>
     </div>
-  </dialog>
+  </section>
 
   <!-- Move a recipe to another book -->
   <dialog id="move-dialog" class="recipe-dialog">
     <h2 id="move-title">Copy recipe</h2>
     <p class="books-hint" id="move-intro">Choose which book to put a copy in.</p>
     <ul id="move-list" class="book-list"></ul>
-    <div class="dialog-actions">
+    <div class="action-bar">
       <button type="button" class="btn btn-ghost" id="move-cancel-btn">Cancel</button>
     </div>
   </dialog>
@@ -393,7 +391,7 @@
        everyone else, or reading and copying out and nothing more. Treat a link like a key:
        send it to one person, and revoke it if it goes astray.</p>
 
-    <div class="dialog-actions">
+    <div class="action-bar">
       <button type="button" class="btn btn-primary" id="books-close-btn">Done</button>
     </div>
   </dialog>
@@ -421,7 +419,7 @@
        how amounts are shown to you. Everyone sharing a book can keep their own setting.
        Teaspoons and tablespoons stay as they are, and units we don't recognise
        ("cloves", "pinch", "can") are never converted.</p>
-    <div class="dialog-actions">
+    <div class="action-bar">
       <button type="button" class="btn btn-ghost" id="prefs-close-btn">Cancel</button>
       <button type="button" class="btn btn-primary" id="prefs-save-btn">Save preferences</button>
     </div>
@@ -466,9 +464,9 @@ If I ask for only part of a recipe, include only that part.
 After the JSON, give me this link on its own line so I can click straight through to the box I paste it into:
 
 https://malfernion.github.io/Recipe-friend/#paste</pre>
-    <div class="dialog-actions">
+    <div class="action-bar">
       <button type="button" class="btn btn-ghost" id="ai-help-close-btn">Close</button>
-      <span class="dialog-actions-spacer"></span>
+      <span class="action-bar-spacer"></span>
       <button type="button" class="btn btn-ghost" id="ai-to-paste-btn">Paste a recipe</button>
       <button type="button" class="btn btn-primary" id="ai-copy-btn">Copy prompt</button>
     </div>
@@ -483,9 +481,9 @@ https://malfernion.github.io/Recipe-friend/#paste</pre>
     <textarea id="paste-input" class="paste-input" rows="10" spellcheck="false"
               placeholder='{&#10;  "name": "Coleslaw",&#10;  "ingredients": [...],&#10;  "steps": [...]&#10;}'></textarea>
     <p id="paste-error" class="paste-error" hidden></p>
-    <div class="dialog-actions">
+    <div class="action-bar">
       <button type="button" class="btn btn-ghost" id="paste-close-btn">Cancel</button>
-      <span class="dialog-actions-spacer"></span>
+      <span class="action-bar-spacer"></span>
       <button type="button" class="btn btn-primary" id="paste-save-btn">Add recipe</button>
     </div>
   </dialog>
@@ -494,7 +492,7 @@ https://malfernion.github.io/Recipe-friend/#paste</pre>
   <dialog id="confirm-dialog" class="recipe-dialog confirm-dialog">
     <form method="dialog">
       <p id="confirm-message" class="confirm-message"></p>
-      <div class="dialog-actions">
+      <div class="action-bar">
         <button type="submit" value="" class="btn btn-ghost">Cancel</button>
         <button type="submit" value="yes" id="confirm-yes" class="btn btn-danger">OK</button>
       </div>

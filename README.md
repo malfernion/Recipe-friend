@@ -29,11 +29,14 @@ accounts and sync.
   planned, so a card can say "Planned 3 weeks ago" and a sort can put
   what you have not had lately under your thumb. A plan belongs to the
   book, so whoever does the shop sees what whoever planned it chose.
-- **A recipe view built for a worktop** — it takes the whole screen on a
-  phone, puts ingredients beside the method wherever there is width for
-  two columns (a phone on its side included), and keeps its controls to
-  one row. An open recipe has its own address, so Back closes it instead
-  of leaving the app and a reload mid-cook comes back to where you were.
+- **A recipe view built for a worktop** — a screen of its own rather than
+  a box over the list, so pinching to zoom, panning and turning the phone
+  do what they do on any page. It takes the whole screen, puts ingredients
+  beside the method wherever there is width for two columns (a phone on
+  its side included), and keeps its controls to one row. An open recipe
+  has its own address, so Back closes it instead of leaving the app and a
+  reload mid-cook comes back to where you were; a breadcrumb says which
+  book you are in and takes you back to it.
 - **Cook mode** — a *Screen on* toggle in the recipe view holds the
   screen awake while you cook, so a phone propped against the bread bin
   does not lock with your hands covered in flour. Off until asked for,
@@ -91,8 +94,8 @@ type in the search box, pick a photo, click Export, open an invite link.
 
 Every test name quotes a criterion from [`docs/journeys.md`](docs/journeys.md),
 so a failure points at behaviour that was agreed rather than at an
-implementation detail. **131 of the 140 criteria have a test naming
-them**; the nine that do not are listed at the end of the journeys, along
+implementation detail. **143 of the 153 criteria have a test naming
+them**; the ten that do not are listed at the end of the journeys, along
 with the database, which is deliberately outside the net.
 
 The database is deliberately not covered — see the note at the end of the

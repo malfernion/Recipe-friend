@@ -346,8 +346,9 @@ test("J1.1 · the gate hides the recipes, the controls and the navigation", () =
 
   // The class has to actually take the app off the screen, or "gated" is
   // just a word. These are the three regions index.html is built from.
-  const hiding = /body\.gated\s+\.appbar,\s*body\.gated\s+\.container,\s*body\.gated\s+\.app-footer\s*\{[^}]*display:\s*none/;
-  assert.match(css, hiding, "the appbar, the recipe list and the footer are all hidden");
+  const hiding = /body\.gated\s+\.appbar,\s*body\.gated\s+\.container,\s*body\.gated\s+\.app-footer,\s*body\.gated\s+\.view\s*\{[^}]*display:\s*none/;
+  assert.match(css, hiding,
+    "the appbar, the recipe list, the footer and any open view are all hidden");
   assert.match(css, /\.signin-view\s*\{\s*display:\s*none/, "and the sign-in screen is hidden by default");
   assert.match(css, /body\.gated\s+\.signin-view\s*\{\s*display:\s*flex/, "shown only while gated");
 });
@@ -763,6 +764,25 @@ test("J1.1 · signing out stops sync and puts the gate back", async () => {
   assert.equal(a.el("books-btn").hidden, true);
   assert.equal(a.el("current-book").hidden, true);
   assert.equal(a.el("sync-status").hidden, true);
+});
+
+test("J4.24 · signing out takes an open recipe off the screen with it", async () => {
+  const a = arrive({ session: aSession() });
+  await flush();
+
+  const recipe = a.store.add(aRecipe({ name: "Weeknight Ramen" }));
+  a.app.render();
+  a.el("recipe-list").fire("click", {
+    target: { closest: (sel) => (sel === ".recipe-card" ? { dataset: { id: recipe.id } } : null) },
+  });
+  assert.equal(a.el("detail-view").open, true, "reading a recipe when the session ends");
+
+  await a.el("account-btn").fire("click");
+  await flush();
+
+  assert.equal(a.el("detail-view").open, false,
+    "or it would be left over the sign-in form, with nothing behind it");
+  assert.equal(a.win.location.hash, "", "and the address stops naming it");
 });
 
 test("J1.1 · a session arriving later lifts the gate and starts sync", async () => {

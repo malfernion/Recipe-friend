@@ -16,7 +16,7 @@
 
 const { test } = require("node:test");
 const assert = require("node:assert/strict");
-const { loadUI, aRecipe } = require("./helpers/load.js");
+const { loadUI, aRecipe, clickCrumb } = require("./helpers/load.js");
 
 const BOLOGNESE = aRecipe({
   name: "Bolognese",
@@ -253,7 +253,7 @@ test("J12.6 · the shopping list sums the entries without caring", () => {
 test("J12.7 · outside plan mode the recipe view gains nothing", () => {
   const app = planning([BOLOGNESE]);
   app.openRecipe(app.named("Bolognese").id);
-  assert.equal(app.el("detail-dialog").open, true);
+  assert.equal(app.el("detail-view").open, true);
   assert.equal(app.el("detail-plan-btn").hidden, true,
     "the row J4.19 fought for is not spent on something you are not doing");
 });
@@ -309,11 +309,11 @@ test("J12.9 · the plan has an address, and Back closes it", () => {
   app.card("add", app.named("Bolognese").id);
   app.open();
 
-  assert.equal(app.el("plan-dialog").open, true);
+  assert.equal(app.el("plan-view").open, true);
   assert.equal(app.win.location.hash, "#plan");
 
   app.win.history.back();
-  assert.equal(app.el("plan-dialog").open, false, "Back closed the plan");
+  assert.equal(app.el("plan-view").open, false, "Back closed the plan");
   assert.notEqual(app.win.leftTheApp, true, "rather than walking out of the app");
   assert.equal(app.win.location.hash, "");
 });
@@ -322,16 +322,16 @@ test("J12.9 · closing the plan takes its history entry with it", () => {
   const app = planMode([BOLOGNESE]);
   app.open();
   const before = app.win.history.length;
-  app.el("plan-close-btn").fire("click");
+  clickCrumb(app, "plan");
 
-  assert.equal(app.el("plan-dialog").open, false);
+  assert.equal(app.el("plan-view").open, false);
   assert.equal(app.win.history.length, before - 1);
   assert.equal(app.win.location.hash, "");
 });
 
 test("J12.9, J4.21 · the plan reopens from its address, with focus on the heading", () => {
   const app = planning([BOLOGNESE], { hash: "#plan" });
-  assert.equal(app.el("plan-dialog").open, true, "a reload comes back to it");
+  assert.equal(app.el("plan-view").open, true, "a reload comes back to it");
   assert.equal(app.el("plan-heading").focused, true,
     "focus names what has filled the screen, not the first control in the markup");
 });
@@ -341,28 +341,28 @@ test("J12.9 · a recipe restored from its address does not open over the readout
   app.card("add", app.named("Bolognese").id);
   const id = app.named("Bolognese").id;
   app.openRecipe(id);
-  assert.equal(app.el("detail-dialog").open, true);
+  assert.equal(app.el("detail-view").open, true);
 
   // An address arriving over an open recipe — a bookmark, or a step
   // through history — puts the plan up and takes the recipe down.
   app.win.history.pushState({}, "", "#plan");
   app.win.fire("popstate", {});
-  assert.equal(app.el("plan-dialog").open, true);
-  assert.equal(app.el("detail-dialog").open, false);
+  assert.equal(app.el("plan-view").open, true);
+  assert.equal(app.el("detail-view").open, false);
 
   app.win.history.back();
 
-  assert.equal(app.el("detail-dialog").open, true, "Back brings the recipe back");
-  assert.equal(app.el("plan-dialog").open, false,
+  assert.equal(app.el("detail-view").open, true, "Back brings the recipe back");
+  assert.equal(app.el("plan-view").open, false,
     "and does not leave the readout open underneath it, holding the page still");
 });
 
-test("J4.22 · the page behind the plan is held still", () => {
+test("J4.22 · the plan takes the screen, rather than covering a page held still", () => {
   const app = planMode([BOLOGNESE]);
   app.open();
-  assert.equal(app.win.document.body.classList.contains("dialog-open"), true);
-  app.el("plan-close-btn").fire("click");
-  assert.equal(app.win.document.body.classList.contains("dialog-open"), false);
+  assert.equal(app.win.document.body.classList.contains("viewing"), true);
+  clickCrumb(app, "plan");
+  assert.equal(app.win.document.body.classList.contains("viewing"), false);
 });
 
 test("J12.10 · a viewer gets the recipes and no planner", () => {
@@ -400,7 +400,7 @@ test("J12.10 · a viewer's tap on the planner is refused, not merely hidden", ()
   app.open();
 
   assert.deepEqual(app.plan().meals, [], "nothing went into the book's plan");
-  assert.equal(app.el("plan-dialog").open, false);
+  assert.equal(app.el("plan-view").open, false);
   assert.equal(app.app.openFromHash(), false, "and its address opens nothing either");
 });
 
@@ -935,7 +935,7 @@ test("J14.6 · a page that never loaded the planner still draws its cards", () =
     "with nothing to say about planning");
   assert.equal(app.el("plan-btn").hidden, true, "and no planner offered");
   app.openRecipe(app.named("Curry").id);
-  assert.equal(app.el("detail-dialog").open, true, "and a recipe still opens");
+  assert.equal(app.el("detail-view").open, true, "and a recipe still opens");
 });
 
 test("J13.7 · a recipe name off a share link reaches the readout as text", () => {

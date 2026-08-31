@@ -42,12 +42,12 @@
   const sortSummaryEl = $("#sort-summary");
   const sortOptionsEl = $("#sort-options");
   const activeFiltersEl = $("#active-filters");
-  const recipeDialog = $("#recipe-dialog");
+  const editorView = $("#editor-view");
   const recipeForm = $("#recipe-form");
-  const dialogTitle = $("#dialog-title");
-  const detailDialog = $("#detail-dialog");
+  const editorTitle = $("#editor-title");
+  const detailView = $("#detail-view");
   const detailContent = $("#detail-content");
-  const planDialog = $("#plan-dialog");
+  const planView = $("#plan-view");
   const planContent = $("#plan-content");
   const toastEl = $("#toast");
   const toastActionEl = $("#toast-action");
@@ -65,22 +65,179 @@
   const escapeHTML = RecipeHTML.escapeHTML;
 
   /**
-   * Hold the page still behind a full-screen recipe (J4.22).
+   * --- Screens you go to, rather than boxes that open over one (J4.22) --
    *
-   * A modal <dialog> makes the page inert, not unscrollable: reaching the
-   * end of a long method and carrying on scrolls the recipe list behind
-   * it, so closing the recipe leaves you somewhere you never chose to be.
-   * `overscroll-behavior: contain` on the dialog stops the chaining where
-   * it is honoured; this stops the page moving at all.
+   * The recipe, the plan and the editor were modal <dialog>s. A dialog is
+   * the wrong shape for a screen you read with your hands full: it is a
+   * scrolling box inside a page held still, and pinching, panning and
+   * rotating are all things the browser does to a page rather than to a
+   * box inside one. Zooming into an ingredient asks to pan; panning is a
+   * document scroll; and the lock a dialog needs — so that reaching the
+   * end of a long method does not carry on into the list behind it — had
+   * just turned that off. Measured on a phone: zoom in, and the recipe
+   * would not move under your thumb.
+   *
+   * So they are sections in the page, shown one at a time. Nothing is
+   * held still, because there is nothing behind to hold: the list is
+   * hidden rather than covered, which is also what takes it out of a
+   * screen reader's way now that no dialog is making the rest of the
+   * page inert for us.
+   *
+   * What a dialog did give us is a close event, and the routing below
+   * hangs the history unwind and the wake lock on it. That is kept —
+   * `closeView` calls the one handler each view registers — so
+   * everything written against it goes on reading the same.
    */
-  function syncScrollLock() {
-    const open = detailDialog.open || recipeDialog.open || planDialog.open;
-    document.body.classList.toggle("dialog-open", open);
-    // The scrolling element is <html>, not <body>, so a rule on the body
-    // alone leaves the page free to move — measured, after trying exactly
-    // that. The guard is for the stub DOM, which has a body and no root.
-    const root = document.documentElement;
-    if (root && root.classList) root.classList.toggle("dialog-open", open);
+  const VIEWS = [editorView, detailView, planView];
+
+  const aViewIsOpen = () => VIEWS.some((v) => v.open);
+
+  /** One handler each, called however the view closes. */
+  const viewCloseHandlers = new Map();
+  const onViewClose = (el, fn) => viewCloseHandlers.set(el, fn);
+
+  /**
+   * Where the list had got to when you left it. A browser restores this
+   * for a page you navigate away from and come back to; inside one
+   * document it is ours to remember, or opening a recipe and closing it
+   * puts you back at the top of a list you had scrolled a long way down.
+   */
+  let listScrollY = 0;
+
+  function scrollPageTo(y) {
+    // Absent in the stub DOM, where there is no page to move.
+    if (typeof window.scrollTo === "function") window.scrollTo(0, y);
+  }
+
+  function syncViewState() {
+    const open = aViewIsOpen();
+    // The app bar, the list and the footer go rather than sit behind a
+    // view: on a phone a row of chrome is a row of ingredients nobody can
+    // see (J4.19), and a view carries its own way back in the breadcrumb.
+    document.body.classList.toggle("viewing", open);
+  }
+
+  function showView(el) {
+    if (el.open) return;
+    // Opening one view over another is a handover, not a new place: the
+    // one underneath goes without unwinding the entry that opened it.
+    if (!aViewIsOpen()) listScrollY = window.scrollY || 0;
+    for (const other of VIEWS) if (other !== el && other.open) closeQuietly(other);
+    el.open = true;
+    el.hidden = false;
+    syncViewState();
+    scrollPageTo(0);
+  }
+
+  function closeView(el) {
+    if (!el.open) return;
+    el.open = false;
+    el.hidden = true;
+    syncViewState();
+    if (!aViewIsOpen()) scrollPageTo(listScrollY);
+    const handler = viewCloseHandlers.get(el);
+    if (handler) handler();
+  }
+
+  /**
+   * Back to the list, whatever was on screen — for the moments when the
+   * ground moves rather than the person: signing out, or a book going
+   * out from under a recipe. Quietly, because the address is rewritten
+   * here rather than walked back through one entry at a time.
+   */
+  function leaveAllViews() {
+    if (!aViewIsOpen()) return;
+    for (const view of VIEWS) if (view.open) closeQuietly(view);
+    toListAddress();
+  }
+
+  /**
+   * --- The way back up (J4.19) -----------------------------------------
+   *
+   * A view has no × and no backdrop to tap, and Escape went with the
+   * dialog that answered it. What it has instead is a breadcrumb, which
+   * says where you are as well as how to leave — and which is the only
+   * navigation on screen, the app bar being hidden behind a view.
+   *
+   * The trail is read off the address rather than off the history stack,
+   * so a link opened cold gets the same trail as one you walked to: the
+   * editor sits under the recipe it edits whether or not you came
+   * through it.
+   *
+   * On a phone the trail collapses to its last link — the way up, and
+   * nothing else — because the heading underneath already says where you
+   * are, and a wrapped trail costs a row of ingredients.
+   */
+  function bookName() {
+    const cloud = window.RecipeCloud;
+    const book = cloud && cloud.books && cloud.books.currentBook && cloud.books.currentBook();
+    // Signed out, or a page with no backend behind it: the recipes are
+    // still yours, they just have nobody's name on them.
+    return (book && book.name) || "Recipes";
+  }
+
+  /** The trail for whatever the address names, root first. */
+  function crumbTrail() {
+    const route = currentRoute();
+    const root = { label: bookName(), to: "list" };
+    if (route.name === "plan") return [root, { label: "The plan" }];
+    if (route.name === "new") return [root, { label: "New recipe" }];
+    if (route.name === "review") return [root, { label: "Review recipe" }];
+    if (route.name === "recipe") {
+      const recipe = store.getById(route.id);
+      return [root, { label: recipe ? recipe.name : "Recipe" }];
+    }
+    if (route.name === "edit") {
+      const recipe = store.getById(route.id);
+      // The recipe is a step of its own: Back from the editor returns to
+      // it, and so does the crumb naming it.
+      return recipe
+        ? [root, { label: recipe.name, to: "recipe" }, { label: "Edit" }]
+        : [root, { label: "Edit" }];
+    }
+    return [root];
+  }
+
+  function renderCrumbs() {
+    const trail = crumbTrail();
+    const html = trail
+      .map((crumb, i) => {
+        const last = i === trail.length - 1;
+        if (last) {
+          return `<span class="crumb crumb-here" aria-current="page">${escapeHTML(crumb.label)}</span>`;
+        }
+        // The last link is the way up, and the only one a phone shows.
+        const parent = i === trail.length - 2 ? " crumb-parent" : "";
+        return `<button type="button" class="crumb${parent}" data-crumb="${escapeHTML(crumb.to)}">${escapeHTML(crumb.label)}</button>`;
+      })
+      .join('<span class="crumb-sep" aria-hidden="true">\u203a</span>');
+    for (const id of ["#detail-crumbs", "#plan-crumbs", "#editor-crumbs"]) {
+      const el = $(id);
+      if (el) el.innerHTML = html;
+    }
+  }
+
+  /**
+   * Climbing is closing: each screen's close already unwinds the entry
+   * that opened it (J4.17), so one step up is one close, and the root
+   * from the editor is two. The editor asks about typed work first, and
+   * a "keep editing" stops the climb where it is (J2.9).
+   */
+  async function climbTo(target) {
+    if (editorView.open && !(await tryCloseEditor())) return;
+    if (target !== "list") return;
+    if (detailView.open) closeView(detailView);
+    if (planView.open) closeView(planView);
+  }
+
+  for (const id of ["#detail-crumbs", "#plan-crumbs", "#editor-crumbs"]) {
+    const el = $(id);
+    if (!el) continue;
+    el.addEventListener("click", (event) => {
+      const crumb = event.target.closest("[data-crumb]");
+      if (!crumb) return undefined;
+      return climbTo(crumb.dataset.crumb); // returned so a test can await it
+    });
   }
 
   let toastTimer = null;
@@ -464,7 +621,7 @@
     syncPlanUI();
     // The plan is read from the same store, so a redraw it did not cause
     // — a sync landing somebody else's meal — still reaches it.
-    if (planDialog.open) renderPlan();
+    if (planView.open) renderPlan();
   }
 
   /**
@@ -550,10 +707,10 @@
    * saving adds rather than updates, keeping the incoming id so opening the
    * same link twice never duplicates.
    */
-  function openRecipeDialog(recipe, review, { restoring = false } = {}) {
+  function openEditor(recipe, review, { restoring = false } = {}) {
     editingId = recipe && !review ? recipe.id : null;
     incomingId = review && recipe ? recipe.id : null;
-    dialogTitle.textContent = review ? "Review recipe" : recipe ? "Edit recipe" : "New recipe";
+    editorTitle.textContent = review ? "Review recipe" : recipe ? "Edit recipe" : "New recipe";
     // Re-opening a link you already saved shows the sender's version again,
     // so say that saving replaces your copy rather than adding a second.
     // An incoming recipe carries its own id, and the sender chose it. If it
@@ -603,10 +760,12 @@
     recipeForm.elements.imageUrl.value = image.startsWith("http") ? image : "";
     updatePhotoPreview();
     formBaseline = formSnapshot();
-    const wasOpen = recipeDialog.open;
-    recipeDialog.showModal();
+    const wasOpen = editorView.open;
+    showView(editorView);
+    // After the address, not before it: the trail is read off the route
+    // (J4.23), and until this has pushed, the route is still the recipe.
     if (!wasOpen && !restoring) pushRoute(editorHash());
-    syncScrollLock();
+    renderCrumbs();
   }
 
   /**
@@ -650,8 +809,8 @@
         }))) {
       return false;
     }
-    if (quiet) closeQuietly(recipeDialog);
-    else recipeDialog.close();
+    if (quiet) closeQuietly(editorView);
+    else closeView(editorView);
     return true;
   }
 
@@ -709,7 +868,7 @@
         clearTimeout(photoRerender);
         photoRerender = setTimeout(() => {
           render();
-          if (detailDialog.open && detailId) {
+          if (detailView.open && detailId) {
             const recipe = store.getById(detailId);
             if (recipe) detailContent.innerHTML = recipeDetailHTML(recipe, true);
           }
@@ -832,7 +991,7 @@
         }
       });
     }
-    recipeDialog.close();
+    closeView(editorView);
     if (!store.persistOk) {
       toast("Saved for this visit, but browser storage is full — try a smaller photo or export a backup.");
     } else {
@@ -881,7 +1040,6 @@
    * change.
    */
   function renderDetailHead(recipe) {
-    $("#detail-kicker").textContent = "From your recipe box";
     $("#detail-title-text").textContent = recipe.name;
   }
 
@@ -988,7 +1146,7 @@
     if (!canPlan()) {
       planMode = false;
       forgetPendingPortions();
-      if (planDialog.open) planDialog.close();
+      if (planView.open) closeView(planView);
     }
     syncPlanUI();
   }
@@ -1044,8 +1202,8 @@
    * you are. `restoring` marks the opens that are replaying history rather
    * than making it, so the two do not push each other in circles.
    */
-  function openDetailDialog(recipe, { restoring = false } = {}) {
-    const wasOpen = detailDialog.open;
+  function openRecipeView(recipe, { restoring = false } = {}) {
+    const wasOpen = detailView.open;
     // Keep the scale when re-rendering the same open recipe (e.g. after a
     // favourite toggle); reset it when a different recipe opens.
     if (detailId !== recipe.id || !wasOpen) detailScale = 1;
@@ -1057,14 +1215,14 @@
     syncCookButton();
     if (!wasOpen) {
       if (!restoring) pushRoute(`#recipe=${recipe.id}`);
-      detailDialog.showModal();
+      showView(detailView);
+      renderCrumbs();
       // showModal() takes the first focusable thing it finds, which is
       // whichever control happens to be first in the markup — the star,
       // today; the portions stepper before that. Neither says what has
       // just opened. The heading does (J4.22).
       const heading = $("#detail-heading");
       if (heading && heading.focus) heading.focus();
-      syncScrollLock();
       cookMode.enter();
     }
   }
@@ -1114,9 +1272,21 @@
     return "#new";
   }
 
+  /**
+   * How many entries this session pushed and has not yet walked back out
+   * of. A screen restored from the address — a link opened cold, a reload
+   * mid-cook — pushed nothing, so there is nothing behind it to go back
+   * to, and going back anyway walks out of the app: exactly what having
+   * an address was meant to prevent (J4.17). Measured before this
+   * existed: open a shared #recipe= link, press the breadcrumb, and you
+   * were out of Recipe Friend rather than in the list.
+   */
+  let pushedDepth = 0;
+
   function pushRoute(hash) {
     try {
       history.pushState({ hash }, "", hash);
+      pushedDepth += 1;
     } catch {
       /* history is a convenience here; the screen still opens without it */
     }
@@ -1138,10 +1308,10 @@
   */
   let suppressUnwind = 0;
 
-  function closeQuietly(dialog) {
+  function closeQuietly(view) {
     suppressUnwind += 1;
     try {
-      dialog.close();
+      closeView(view);
     } finally {
       suppressUnwind -= 1;
     }
@@ -1150,6 +1320,12 @@
   function unwind(mine) {
     if (suppressUnwind) return;
     if (!mine) return;
+    if (pushedDepth === 0) {
+      // Nothing of ours underneath: rewrite the address to the list
+      // rather than reaching for somebody else's page.
+      toListAddress();
+      return;
+    }
     try {
       history.back();
     } catch {
@@ -1167,7 +1343,7 @@
    * opened it.
    */
   function leavePlanReadout() {
-    if (planDialog.open) closeQuietly(planDialog);
+    if (planView.open) closeQuietly(planView);
   }
 
   /**
@@ -1179,42 +1355,42 @@
     if (document.body.classList.contains("gated")) return false;
     const route = currentRoute();
     if (route.name === "recipe") {
-      if (detailDialog.open && detailId === route.id) return true;
+      if (detailView.open && detailId === route.id) return true;
       const recipe = store.getById(route.id);
       if (!recipe) return false;
-      if (recipeDialog.open) closeQuietly(recipeDialog);
+      if (editorView.open) closeQuietly(editorView);
       leavePlanReadout();
-      openDetailDialog(recipe, { restoring: true });
+      openRecipeView(recipe, { restoring: true });
       return true;
     }
     if (route.name === "edit") {
-      if (recipeDialog.open && editingId === route.id) return true;
+      if (editorView.open && editingId === route.id) return true;
       const recipe = store.getById(route.id);
       if (!recipe) return false;
-      if (detailDialog.open) closeQuietly(detailDialog);
+      if (detailView.open) closeQuietly(detailView);
       leavePlanReadout();
-      openRecipeDialog(recipe, false, { restoring: true });
+      openEditor(recipe, false, { restoring: true });
       return true;
     }
     if (route.name === "new") {
-      if (recipeDialog.open) return true;
-      if (detailDialog.open) closeQuietly(detailDialog);
+      if (editorView.open) return true;
+      if (detailView.open) closeQuietly(detailView);
       leavePlanReadout();
-      openRecipeDialog(null, false, { restoring: true });
+      openEditor(null, false, { restoring: true });
       return true;
     }
     if (route.name === "plan") {
-      if (planDialog.open) return true;
+      if (planView.open) return true;
       // A viewer has no planner to come back to (J12.10).
       if (!canPlan()) return false;
-      if (detailDialog.open) closeQuietly(detailDialog);
-      if (recipeDialog.open) closeQuietly(recipeDialog);
-      openPlanDialog({ restoring: true });
+      if (detailView.open) closeQuietly(detailView);
+      if (editorView.open) closeQuietly(editorView);
+      openPlanView({ restoring: true });
       return true;
     }
     // A review holds a recipe that is not in the box yet, so there is
     // nothing to rebuild it from once it has gone.
-    if (route.name === "review") return recipeDialog.open;
+    if (route.name === "review") return editorView.open;
     return false;
   }
 
@@ -1507,18 +1683,18 @@
    * J4.16 gives for ingredients above steps: two panes would be the top
    * half of each, and neither list would ever be finished.
    */
-  function openPlanDialog({ restoring = false } = {}) {
+  function openPlanView({ restoring = false } = {}) {
     if (!planStore) return false;
-    const wasOpen = planDialog.open;
+    const wasOpen = planView.open;
     renderPlan();
     if (!wasOpen) {
       if (!restoring) pushRoute("#plan");
-      planDialog.showModal();
+      showView(planView);
+      renderCrumbs();
       // The heading, not the first control — which is a portions stepper
       // and does not say what has just filled the screen (J4.21).
       const heading = $("#plan-heading");
       if (heading && heading.focus) heading.focus();
-      syncScrollLock();
     }
     return true;
   }
@@ -1761,7 +1937,7 @@
     }
     if (!done) return;
     const count = done.archived.meals.length;
-    if (planDialog.open) planDialog.close();
+    if (planView.open) closeView(planView);
     render();
     toast(`Planned ${count} ${count === 1 ? "meal" : "meals"}.`, {
       label: "Undo",
@@ -1817,7 +1993,7 @@
     // (see mergePlans in plan.js). `generationAfter` is where that sum
     // lives, so Clear, Done and Undo all order themselves the same way.
     planStore.setPlan(RecipePlan.emptyPlan(RecipePlan.generationAfter(plan)));
-    if (planDialog.open) planDialog.close();
+    if (planView.open) closeView(planView);
     toast("Plan cleared.");
     render();
   }
@@ -1841,7 +2017,7 @@
   });
 
   $("#plan-open-btn").addEventListener("click", () => {
-    if (canPlan()) openPlanDialog();
+    if (canPlan()) openPlanView();
   });
 
   $("#detail-plan-btn").addEventListener("click", () => {
@@ -1860,10 +2036,8 @@
     return planAction(btn.dataset.plan, btn.dataset);
   });
 
-  $("#plan-close-btn").addEventListener("click", () => planDialog.close());
 
-  planDialog.addEventListener("close", () => {
-    syncScrollLock();
+  onViewClose(planView, () => {
     unwind(currentRoute().name === "plan");
   });
 
@@ -1941,9 +2115,9 @@
   }
 
   // --- Event wiring ---
-  $("#add-recipe-btn").addEventListener("click", () => openRecipeDialog(null));
-  $("#empty-add-btn").addEventListener("click", () => openRecipeDialog(null));
-  $("#cancel-dialog-btn").addEventListener("click", () => recipeDialog.close());
+  $("#add-recipe-btn").addEventListener("click", () => openEditor(null));
+  $("#empty-add-btn").addEventListener("click", () => openEditor(null));
+  $("#cancel-edit-btn").addEventListener("click", () => closeView(editorView));
 
   // --- AI assistance: a prompt to take away, and a box to bring JSON back to ---
   const aiHelpDialog = $("#ai-help-dialog");
@@ -2073,7 +2247,7 @@
     prefsDialog.close();
     toast("Preferences saved.");
     // Nothing stored changed — only how amounts are shown.
-    if (detailDialog.open && detailId) {
+    if (detailView.open && detailId) {
       const recipe = store.getById(detailId);
       if (recipe) detailContent.innerHTML = recipeDetailHTML(recipe, true);
     }
@@ -2202,6 +2376,12 @@
     activeTags = [];
     favoritesOnly = false;
     sortBy = "added";
+    // A recipe you were reading belongs to the book you were in. Landing
+    // in another one — switching, or being removed from one while you
+    // read (J7.13) — leaves it naming something that is not in the list
+    // underneath any more, so it goes back to the list with everything
+    // else the old book took with it.
+    leaveAllViews();
   };
 
   listEl.addEventListener("click", (event) => {
@@ -2234,7 +2414,7 @@
     const card = event.target.closest(".recipe-card");
     if (card) {
       const recipe = store.getById(card.dataset.id);
-      if (recipe) openDetailDialog(recipe);
+      if (recipe) openRecipeView(recipe);
     }
   });
 
@@ -2244,7 +2424,7 @@
     if (!card) return;
     event.preventDefault();
     const recipe = store.getById(card.dataset.id);
-    if (recipe) openDetailDialog(recipe);
+    if (recipe) openRecipeView(recipe);
   });
 
   // --- Share links ---
@@ -2293,7 +2473,7 @@
    */
   function reviewIncoming(preview) {
     clearPendingShare();
-    openRecipeDialog(preview, true);
+    openEditor(preview, true);
   }
 
   /** Called once signed in, for a link that arrived before sign-in. */
@@ -2369,13 +2549,12 @@
   const openTransfer = (verb) => () => {
     const cloud = window.RecipeCloud;
     if (!cloud || !cloud.books || !detailId) return;
-    detailDialog.close();
+    closeView(detailView);
     cloud.books.openMove(detailId, verb);
   };
   $("#detail-copy-btn").addEventListener("click", openTransfer("copy"));
   $("#detail-move-btn").addEventListener("click", openTransfer("move"));
 
-  $("#detail-close-btn").addEventListener("click", () => detailDialog.close());
 
   // Escape and the backdrop close a <dialog> without going through any
   // button, so the lock is let go here rather than at each call site (J4.10).
@@ -2384,17 +2563,15 @@
   // pushed, or the entry outlives the recipe and Back re-opens something
   // the person has already closed. `poppingBack` marks the close that Back
   // itself caused — that entry is already gone.
-  detailDialog.addEventListener("close", () => {
+  onViewClose(detailView, () => {
     // Before the history guard: the lock goes whichever way the recipe
     // closed, a handover to the editor included (J4.10).
     cookMode.leave();
     syncCookButton();
-    syncScrollLock();
     unwind(currentRoute().name === "recipe");
   });
 
-  recipeDialog.addEventListener("close", () => {
-    syncScrollLock();
+  onViewClose(editorView, () => {
     unwind(isEditorRoute(currentRoute().name));
   });
 
@@ -2404,11 +2581,13 @@
    */
   window.addEventListener("popstate", async () => {
     const route = currentRoute();
+    // Whatever Back just walked out of, it is no longer ours to unwind.
+    if (pushedDepth > 0) pushedDepth -= 1;
 
     // Leaving the editor by Back is still leaving the editor, so typed
     // work gets the question it gets from Escape (J2.9). "Keep editing"
     // puts the entry back, so Back still means Back next time.
-    if (recipeDialog.open && !isEditorRoute(route.name)) {
+    if (editorView.open && !isEditorRoute(route.name)) {
       const hash = editorHash();
       if (!(await tryCloseEditor({ quiet: true }))) {
         pushRoute(hash);
@@ -2418,9 +2597,9 @@
 
     if (openFromHash()) return;
 
-    if (detailDialog.open) closeQuietly(detailDialog);
-    if (recipeDialog.open) closeQuietly(recipeDialog);
-    if (planDialog.open) closeQuietly(planDialog);
+    if (detailView.open) closeQuietly(detailView);
+    if (editorView.open) closeQuietly(editorView);
+    if (planView.open) closeQuietly(planView);
     // Back into a recipe that has since been deleted or moved away: the
     // address must not go on naming it. Only ever reached from a live
     // navigation, so this cannot strip a link that is merely waiting on
@@ -2442,20 +2621,20 @@
   $("#detail-fav-btn").addEventListener("click", () => {
     const recipe = store.toggleFavorite(detailId);
     if (!recipe) return;
-    openDetailDialog(recipe); // re-render the open dialog with the new state
+    openRecipeView(recipe); // re-render the open dialog with the new state
     render();
   });
 
   $("#detail-edit-btn").addEventListener("click", () => {
     const recipe = store.getById(detailId);
     if (!recipe) {
-      detailDialog.close();
+      closeView(detailView);
       return;
     }
     // A handover, not an exit: the recipe's entry stays underneath so
     // Back from the editor returns to the recipe you were reading.
-    closeQuietly(detailDialog);
-    openRecipeDialog(recipe);
+    closeQuietly(detailView);
+    openEditor(recipe);
   });
 
   // Deleting happens from the editor (J4.20): by then you have said you
@@ -2480,28 +2659,18 @@
     // The editor closes without the unsaved-work guard: what it was
     // holding was edits to a recipe that no longer exists.
     editingId = null;
-    recipeDialog.close();
+    closeView(editorView);
     toast("Recipe deleted.");
     render();
   });
 
   // Close dialogs when clicking the backdrop. These hold nothing that
   // isn't already saved, so they go without asking.
-  for (const dialog of [detailDialog, planDialog, prefsDialog, aiHelpDialog, pasteDialog]) {
+  for (const dialog of [detailView, planView, prefsDialog, aiHelpDialog, pasteDialog]) {
     dialog.addEventListener("click", (event) => {
       if (event.target === dialog) dialog.close();
     });
   }
-
-  // The editor holds typed work, so both its accidental exits are guarded.
-  recipeDialog.addEventListener("click", (event) => {
-    if (event.target !== recipeDialog) return undefined;
-    return tryCloseEditor(); // returned so a test can await the answer
-  });
-  recipeDialog.addEventListener("cancel", (event) => {
-    event.preventDefault(); // Escape: decide for ourselves whether this closes
-    return tryCloseEditor();
-  });
 
   // --- Menus ---
   // <details> doesn't close on outside clicks or after choosing an item,
@@ -2552,7 +2721,10 @@
   // way to redraw once remote changes land.
   // planStore goes out with it: account.js adopts this one rather than
   // making a second, so the screen and the sync layer read one plan.
-  window.RecipeApp = { store, planStore, render, toast, showPendingShare, openFromHash, setCanEdit };
+  window.RecipeApp = {
+    store, planStore, render, toast, showPendingShare, openFromHash, setCanEdit,
+    leaveAllViews,
+  };
 
   render();
   handleIncomingShare();

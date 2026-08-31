@@ -15,7 +15,7 @@
 
 const { test } = require("node:test");
 const assert = require("node:assert/strict");
-const { loadUI, aRecipe } = require("./helpers/load.js");
+const { loadUI, aRecipe, clickCrumb } = require("./helpers/load.js");
 const { makeElement } = require("./helpers/dom.js");
 
 // A book id and photo path in the shape Storage uses, "<book>/<recipe>.jpg".
@@ -344,7 +344,7 @@ function openedDinner() {
 
 test("J4.1 · opening a recipe shows ingredients and steps in reading order", () => {
   const ui = openedDinner();
-  assert.equal(ui.el("detail-dialog").open, true, "the recipe opened");
+  assert.equal(ui.el("detail-view").open, true, "the recipe opened");
   assert.deepEqual(listItems(ui.html(), "detail-ingredients"), [
     "1½ tbsp olive oil",
     "400 g tomatoes",
@@ -410,8 +410,8 @@ test("J4.3 · closing the recipe forgets the scale", () => {
   pressScale(ui, "up");
   assert.equal(scaleValue(ui.html()), "Serves 6");
 
-  ui.el("detail-close-btn").fire("click");
-  assert.equal(ui.el("detail-dialog").open, false);
+  clickCrumb(ui, "detail");
+  assert.equal(ui.el("detail-view").open, false);
   openDetail(ui, ui.recipe.id);
 
   assert.equal(scaleValue(ui.html()), "Serves 4", "reopening starts at the recipe as written");
@@ -536,15 +536,11 @@ function editorWith(ui) {
   return {
     asked,
     answers: (yes) => { dialog.answer = yes ? "yes" : ""; },
-    open: () => ui.el("recipe-dialog").open,
-    tapOutside: () => ui.el("recipe-dialog").fire("click"),
-    pressEscape: () => {
-      const prevented = { yes: false };
-      const settled = ui.el("recipe-dialog").fire("cancel", {
-        preventDefault: () => { prevented.yes = true; },
-      });
-      return Promise.resolve(settled).then(() => prevented.yes);
-    },
+    open: () => ui.el("editor-view").open,
+    // The way out of the editor that is not Cancel: a crumb up to the
+    // recipe, or to the book. Both are navigation rather than a decision
+    // about the recipe, so both ask before dropping typed work.
+    climbOut: (to = "list") => Promise.resolve(clickCrumb(ui, "editor", to)),
     type: (name) => { ui.el("recipe-form").elements.name.value = name; },
   };
 }
@@ -555,40 +551,42 @@ test("J2.9 · leaving an untouched form alone closes it without asking", async (
   openNewRecipeForm(ui);
   assert.equal(editor.open(), true);
 
-  await editor.tapOutside();
+  await editor.climbOut();
   assert.equal(editor.open(), false, "nothing was typed, so nothing is at risk");
   assert.deepEqual(editor.asked, [], "and open-look-leave stays a single tap");
 });
 
-test("J2.9 · a tap outside a half-typed recipe asks before discarding it", async () => {
+test("J2.9 · climbing out of a half-typed recipe asks before discarding it", async () => {
   const ui = loadUI();
   const editor = editorWith(ui);
   openNewRecipeForm(ui);
   editor.type("Grandmother's pie");
 
   editor.answers(false);
-  await editor.tapOutside();
+  await editor.climbOut();
   assert.equal(editor.open(), true, "answering no leaves the recipe where it was");
   assert.equal(editor.asked.length, 1);
   assert.match(editor.asked[0], /Discard this recipe\?/);
 
   editor.answers(true);
-  await editor.tapOutside();
+  await editor.climbOut();
   assert.equal(editor.open(), false, "answering yes still lets it go");
 });
 
-test("J2.9 · Escape asks too, and keeps the form open when the answer is no", async () => {
-  const ui = loadUI();
+test("J2.9 · the crumb back to the recipe asks too, and no keeps the form open", async () => {
+  const ui = openedDinner();
   const editor = editorWith(ui);
-  openNewRecipeForm(ui);
+  ui.el("detail-edit-btn").fire("click");
   editor.type("Grandmother's pie");
 
   editor.answers(false);
-  // The app takes the decision off the browser, which would otherwise
-  // have closed the dialog before anyone was asked.
-  assert.equal(await editor.pressEscape(), true, "the browser's own close is stopped first");
+  // Climbing one step, to the recipe being edited, is still leaving the
+  // editor: a crumb is a way to somewhere else, not a way of saying the
+  // typed work can go.
+  await editor.climbOut("recipe");
   assert.equal(editor.open(), true);
   assert.equal(editor.asked.length, 1);
+  assert.match(editor.asked[0], /Discard this recipe\?/);
 });
 
 test("J2.9 · Cancel is an explicit choice, so it does not ask", () => {
@@ -597,7 +595,7 @@ test("J2.9 · Cancel is an explicit choice, so it does not ask", () => {
   openNewRecipeForm(ui);
   editor.type("Grandmother's pie");
 
-  ui.el("cancel-dialog-btn").fire("click");
+  ui.el("cancel-edit-btn").fire("click");
   assert.equal(editor.open(), false);
   assert.deepEqual(editor.asked, [], "the button says what it does; asking twice is nagging");
 });
@@ -616,14 +614,14 @@ test("J2.10 · deleting a recipe asks first, and no means no", async () => {
   dialog.answer = "";
   await ui.el("edit-delete-btn").fire("click");
   assert.equal(ui.store.recipes.length, 1, "answering no leaves the recipe where it was");
-  assert.equal(ui.el("recipe-dialog").open, true, "and does not close the editor either");
+  assert.equal(ui.el("editor-view").open, true, "and does not close the editor either");
   assert.match(asked[0], /Dinner/, "the recipe is named rather than described as 'this recipe'");
   assert.match(asked[0], /can't be undone/);
 
   dialog.answer = "yes";
   await ui.el("edit-delete-btn").fire("click");
   assert.deepEqual(ui.store.recipes, [], "and yes still deletes it");
-  assert.equal(ui.el("recipe-dialog").open, false);
+  assert.equal(ui.el("editor-view").open, false);
 });
 
 test("J4.20 · there is nothing to delete until there is something saved", () => {
@@ -648,7 +646,7 @@ test("J4.20 · a recipe arriving from a link cannot be deleted before it is your
   });
   await ui.el("paste-save-btn").fire("click");
 
-  assert.equal(ui.el("dialog-title").textContent, "Review recipe", "the review form is open");
+  assert.equal(ui.el("editor-title").textContent, "Review recipe", "the review form is open");
   assert.equal(ui.el("edit-delete-btn").hidden, true,
     "there is nothing of yours to delete — it is not in the box until you save it");
 });
@@ -712,8 +710,9 @@ test("J4.10 · closing the recipe any way at all lets the screen go", async () =
   await new Promise((r) => setImmediate(r));
   assert.equal(calls.requested, 1);
 
-  // Escape and the backdrop both fire `close` without touching a button.
-  ui.el("detail-dialog").fire("close");
+  // However the recipe closes — the crumb, Back, a book going out from
+  // under it — the lock is let go on the way out.
+  clickCrumb(ui, "detail");
   await new Promise((r) => setImmediate(r));
   assert.equal(calls.released, 1, "a phone in a pocket is not still awake");
 });
@@ -736,7 +735,7 @@ test("J4.14 · cook mode is never a reason a recipe fails to open", async () => 
   await ui.el("detail-cook-btn").fire("click");
   await new Promise((r) => setImmediate(r));
 
-  assert.equal(ui.el("detail-dialog").open, true, "the recipe is still on screen");
+  assert.equal(ui.el("detail-view").open, true, "the recipe is still on screen");
   assert.equal(ui.el("detail-title-text").textContent, "Slow Braise");
 });
 
@@ -759,7 +758,7 @@ test("J4.17 · Back closes the recipe rather than leaving the app", () => {
   const ui = openedDinner();
   ui.win.history.back();
 
-  assert.equal(ui.el("detail-dialog").open, false, "the recipe closed");
+  assert.equal(ui.el("detail-view").open, false, "the recipe closed");
   assert.notEqual(ui.win.leftTheApp, true,
     "and Back was spent on the recipe, not on walking out of the app");
   assert.equal(ui.win.location.hash, "", "the address is back to the list");
@@ -768,9 +767,9 @@ test("J4.17 · Back closes the recipe rather than leaving the app", () => {
 test("J4.17 · closing the recipe takes its history entry with it", () => {
   const ui = openedDinner();
   const before = ui.win.history.length;
-  ui.el("detail-close-btn").fire("click");
+  clickCrumb(ui, "detail");
 
-  assert.equal(ui.el("detail-dialog").open, false);
+  assert.equal(ui.el("detail-view").open, false);
   assert.equal(ui.win.history.length, before - 1,
     "an entry left behind would let Back re-open a recipe already closed");
   assert.equal(ui.win.location.hash, "");
@@ -787,7 +786,7 @@ test("J4.17 · a recipe reopened from its address is the one named", () => {
   ui.win.location.hash = `#recipe=${wanted.id}`;
   assert.equal(ui.app.openFromHash(), true);
 
-  assert.equal(ui.el("detail-dialog").open, true, "the recipe came back");
+  assert.equal(ui.el("detail-view").open, true, "the recipe came back");
   assert.equal(ui.el("detail-title-text").textContent, "Dinner");
   assert.doesNotMatch(ui.el("detail-content").innerHTML, /Something Else/,
     `and it is the recipe the address named, not merely ${other.name}`);
@@ -796,7 +795,7 @@ test("J4.17 · a recipe reopened from its address is the one named", () => {
 test("J4.17 · an address naming a recipe we do not hold opens nothing", () => {
   const ui = loadUI({ hash: "#recipe=22222222-2222-4222-8222-222222222222" });
   assert.equal(ui.app.openFromHash(), false);
-  assert.equal(ui.el("detail-dialog").open, false, "and nothing is invented to fill it");
+  assert.equal(ui.el("detail-view").open, false, "and nothing is invented to fill it");
   assert.equal(ui.win.location.hash, "#recipe=22222222-2222-4222-8222-222222222222",
     "the fragment survives, so a later sync can still honour it");
 });
@@ -844,7 +843,7 @@ test("J2.11 · the editor has an address, so Back closes it rather than the app"
   assert.equal(ui.win.location.hash, "#new", "a new recipe is somewhere you can be");
 
   ui.win.history.back();
-  assert.equal(ui.el("recipe-dialog").open, false, "the editor closed");
+  assert.equal(ui.el("editor-view").open, false, "the editor closed");
   assert.notEqual(ui.win.leftTheApp, true, "and Back was spent on it, not on walking out");
   assert.equal(ui.win.location.hash, "");
 });
@@ -854,12 +853,12 @@ test("J2.11 · editing from a recipe stacks, so Back returns to the recipe", asy
   const recipeHash = ui.win.location.hash;
 
   ui.el("detail-edit-btn").fire("click");
-  assert.equal(ui.el("recipe-dialog").open, true);
+  assert.equal(ui.el("editor-view").open, true);
   assert.equal(ui.win.location.hash, `#edit=${ui.recipe.id}`);
 
   await ui.win.history.back();
-  assert.equal(ui.el("recipe-dialog").open, false, "the editor closed");
-  assert.equal(ui.el("detail-dialog").open, true, "and the recipe you were reading came back");
+  assert.equal(ui.el("editor-view").open, false, "the editor closed");
+  assert.equal(ui.el("detail-view").open, true, "and the recipe you were reading came back");
   assert.equal(ui.win.location.hash, recipeHash);
 });
 
@@ -871,14 +870,14 @@ test("J2.9, J2.11 · Back out of the editor asks before it drops typed work", as
 
   ui.el("confirm-dialog").answer = ""; // keep editing
   await ui.win.history.back();
-  assert.equal(ui.el("recipe-dialog").open, true, "typed work is not dropped by a stray Back");
+  assert.equal(ui.el("editor-view").open, true, "typed work is not dropped by a stray Back");
   assert.equal(ui.win.location.hash, editorHash,
     "and the entry goes back, so Back still means Back next time");
 
   ui.el("confirm-dialog").answer = "yes"; // discard
   await ui.win.history.back();
-  assert.equal(ui.el("recipe-dialog").open, false, "answering yes lets it go");
-  assert.equal(ui.el("detail-dialog").open, true, "onto the recipe it was opened from");
+  assert.equal(ui.el("editor-view").open, false, "answering yes lets it go");
+  assert.equal(ui.el("detail-view").open, true, "onto the recipe it was opened from");
 });
 
 test("J4.21 · opening a recipe says which recipe opened", () => {
@@ -887,12 +886,95 @@ test("J4.21 · opening a recipe says which recipe opened", () => {
     "focus lands on the recipe's name, not on whichever control is first in the markup");
 });
 
-test("J4.22 · the page behind is held still while a recipe is open", () => {
+test("J4.22 · a recipe takes the screen, rather than covering a page held still", () => {
   const ui = openedDinner();
-  assert.equal(ui.win.document.body.classList.contains("dialog-open"), true);
-  ui.el("detail-close-btn").fire("click");
-  assert.equal(ui.win.document.body.classList.contains("dialog-open"), false,
-    "and released again, or the list could never be scrolled");
+  assert.equal(ui.win.document.body.classList.contains("viewing"), true,
+    "the list, the app bar and the footer go rather than sit behind it");
+  clickCrumb(ui, "detail");
+  assert.equal(ui.win.document.body.classList.contains("viewing"), false,
+    "and come back, or there would be nothing to return to");
+});
+
+/** The crumbs a view is showing, as plain text, root first. */
+function crumbs(ui, view) {
+  const html = ui.el(`${view}-crumbs`).innerHTML;
+  // "crumb" alone or "crumb crumb-here"; never "crumb-sep", which is the
+  // › between them and is hidden from a screen reader for the same reason.
+  return [...html.matchAll(/class="crumb(?: [^"]*)?"[^>]*>([^<]*)</g)].map((m) => m[1]);
+}
+
+test("J4.23 · a recipe's breadcrumb is the book it is in, then the recipe", () => {
+  const ui = openedDinner();
+  assert.deepEqual(crumbs(ui, "detail"), ["Recipes", "Dinner"],
+    "the root is where the recipes actually are, not a word for the screen");
+});
+
+test("J4.23 · the editor sits under the recipe it edits", () => {
+  const ui = openedDinner();
+  ui.el("detail-edit-btn").fire("click");
+
+  assert.deepEqual(crumbs(ui, "editor"), ["Recipes", "Dinner", "Edit"],
+    "so the way back to the recipe is on screen, not only on the Back button");
+});
+
+test("J4.23 · a new recipe has no recipe above it", () => {
+  const ui = loadUI();
+  openNewRecipeForm(ui);
+  assert.deepEqual(crumbs(ui, "editor"), ["Recipes", "New recipe"]);
+});
+
+test("J4.23 · the crumb above the editor goes to the recipe, not to the list", async () => {
+  const ui = openedDinner();
+  ui.el("detail-edit-btn").fire("click");
+  assert.equal(ui.el("editor-view").open, true);
+
+  await clickCrumb(ui, "editor", "recipe");
+  assert.equal(ui.el("editor-view").open, false, "the editor closed");
+  assert.equal(ui.el("detail-view").open, true, "onto the recipe it was opened from");
+});
+
+test("J4.23 · the root crumb from the editor goes all the way out", async () => {
+  const ui = openedDinner();
+  ui.el("detail-edit-btn").fire("click");
+
+  await clickCrumb(ui, "editor", "list");
+  assert.equal(ui.el("editor-view").open, false);
+  assert.equal(ui.el("detail-view").open, false, "the recipe underneath goes too");
+  assert.equal(ui.win.location.hash, "");
+});
+
+test("J4.23 · a recipe opened from a link has nothing behind it to go back into", () => {
+  const ui = loadUI();
+  const recipe = ui.store.add(DINNER);
+  ui.app.render();
+  // What following a shared #recipe= link leaves: the address names a
+  // recipe and no entry of ours sits underneath it.
+  ui.win.location.hash = `#recipe=${recipe.id}`;
+  assert.equal(ui.app.openFromHash(), true);
+
+  clickCrumb(ui, "detail");
+  assert.equal(ui.el("detail-view").open, false, "the recipe closed");
+  assert.notEqual(ui.win.leftTheApp, true,
+    "rather than walking out of Recipe Friend, which is what the address was for");
+  assert.equal(ui.win.location.hash, "", "and the address stops naming what is not open");
+});
+
+test("J4.24 · a book going out from under a recipe takes the recipe with it", () => {
+  const ui = loadUI();
+  // In a book already, so the switch below is a switch rather than the
+  // first one, which adopts a pre-account box instead of changing books.
+  ui.store.useBook("11111111-1111-4111-8111-111111111111");
+  const recipe = ui.store.add(DINNER);
+  ui.app.render();
+  openDetail(ui, recipe.id);
+  assert.equal(ui.el("detail-view").open, true);
+
+  // Being removed from a book, or switching away from one, both land here.
+  ui.store.useBook("33333333-3333-4333-8333-333333333333");
+
+  assert.equal(ui.el("detail-view").open, false,
+    "a recipe from the book you have left is not in the list underneath any more");
+  assert.equal(ui.win.location.hash, "", "and the address does not go on naming it");
 });
 
 test("J4.17 · Back into a recipe that has been deleted does not name it any more", async () => {
@@ -903,6 +985,6 @@ test("J4.17 · Back into a recipe that has been deleted does not name it any mor
   assert.deepEqual(ui.store.recipes, [], "the recipe is gone");
 
   await ui.win.history.back();
-  assert.equal(ui.el("detail-dialog").open, false, "nothing is resurrected");
+  assert.equal(ui.el("detail-view").open, false, "nothing is resurrected");
   assert.equal(ui.win.location.hash, "", "and the address stops pointing at it");
 });

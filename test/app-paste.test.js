@@ -20,8 +20,8 @@ async function paste(text) {
   await ui.el("paste-save-btn").fire("click");
   return {
     error: ui.el("paste-error").textContent,
-    dialogTitle: ui.el("dialog-title").textContent,
-    reviewing: ui.el("recipe-dialog").open,
+    dialogTitle: ui.el("editor-title").textContent,
+    reviewing: ui.el("editor-view").open,
     nameField: ui.el("recipe-form").elements.name.value,
     store: ui.store,
   };
