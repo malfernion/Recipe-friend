@@ -1256,9 +1256,22 @@ body {
   and landing the bar over the middle of the recipe.
 */
 .view .action-bar {
-  bottom: 0;
+  /*
+    Not stuck to anything. A dialog has to pin its bar — it is a small box
+    you scroll inside, and Save sat below a long form with Close below
+    every step of a recipe. On a page neither is true: Close is the
+    breadcrumb at the top now, and what is left down here is reached for
+    deliberately rather than continuously. Held over the recipe for the
+    whole scroll it was a band fighting the ingredients for pixels, and
+    the offsets that pinned it there were the iPad's trouble as well.
+    It sits where the content ends, which is where you look for it.
+  */
+  position: static;
   margin-bottom: 0;
-  padding-bottom: 1.25rem;
+  padding-bottom: 0;
+  /* Nothing scrolls under it any more, so it needs no ground of its own —
+     only the rule that separates it from the last step. */
+  background: none;
 }
 
 .action-bar-spacer {
