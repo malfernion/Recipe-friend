@@ -174,6 +174,10 @@
 
   function stopSync() {
     const app = window.RecipeApp;
+    // Signed out, the app itself goes behind the gate — so a recipe or a
+    // plan left open has to come off the screen with it, rather than
+    // sitting there over a sign-in form with nothing behind it.
+    if (app && app.leaveAllViews) app.leaveAllViews();
     const booksBtn = document.getElementById("books-btn");
     const bookLabel = document.getElementById("current-book");
     if (booksBtn) booksBtn.hidden = true;

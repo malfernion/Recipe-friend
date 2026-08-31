@@ -16,7 +16,7 @@
 
 const { test } = require("node:test");
 const assert = require("node:assert/strict");
-const { loadUI, aRecipe } = require("./helpers/load.js");
+const { loadUI, aRecipe, clickCrumb } = require("./helpers/load.js");
 
 const BOLOGNESE = aRecipe({
   name: "Bolognese",
@@ -322,7 +322,7 @@ test("J12.9 · closing the plan takes its history entry with it", () => {
   const app = planMode([BOLOGNESE]);
   app.open();
   const before = app.win.history.length;
-  app.el("plan-close-btn").fire("click");
+  clickCrumb(app, "plan");
 
   assert.equal(app.el("plan-view").open, false);
   assert.equal(app.win.history.length, before - 1);
@@ -357,12 +357,12 @@ test("J12.9 · a recipe restored from its address does not open over the readout
     "and does not leave the readout open underneath it, holding the page still");
 });
 
-test("J4.22 · the page behind the plan is held still", () => {
+test("J4.22 · the plan takes the screen, rather than covering a page held still", () => {
   const app = planMode([BOLOGNESE]);
   app.open();
-  assert.equal(app.win.document.body.classList.contains("dialog-open"), true);
-  app.el("plan-close-btn").fire("click");
-  assert.equal(app.win.document.body.classList.contains("dialog-open"), false);
+  assert.equal(app.win.document.body.classList.contains("viewing"), true);
+  clickCrumb(app, "plan");
+  assert.equal(app.win.document.body.classList.contains("viewing"), false);
 });
 
 test("J12.10 · a viewer gets the recipes and no planner", () => {

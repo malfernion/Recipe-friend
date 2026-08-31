@@ -346,8 +346,9 @@ test("J1.1 · the gate hides the recipes, the controls and the navigation", () =
 
   // The class has to actually take the app off the screen, or "gated" is
   // just a word. These are the three regions index.html is built from.
-  const hiding = /body\.gated\s+\.appbar,\s*body\.gated\s+\.container,\s*body\.gated\s+\.app-footer\s*\{[^}]*display:\s*none/;
-  assert.match(css, hiding, "the appbar, the recipe list and the footer are all hidden");
+  const hiding = /body\.gated\s+\.appbar,\s*body\.gated\s+\.container,\s*body\.gated\s+\.app-footer,\s*body\.gated\s+\.view\s*\{[^}]*display:\s*none/;
+  assert.match(css, hiding,
+    "the appbar, the recipe list, the footer and any open view are all hidden");
   assert.match(css, /\.signin-view\s*\{\s*display:\s*none/, "and the sign-in screen is hidden by default");
   assert.match(css, /body\.gated\s+\.signin-view\s*\{\s*display:\s*flex/, "shown only while gated");
 });

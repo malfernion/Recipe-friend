@@ -196,6 +196,7 @@
 
   <!-- Add / edit recipe -->
   <section id="editor-view" class="view editor-view" hidden>
+    <nav class="crumbs" id="editor-crumbs" aria-label="Breadcrumb"></nav>
     <form id="recipe-form" novalidate>
       <h2 id="editor-title">New recipe</h2>
       <p id="review-warning" class="review-warning" role="status" hidden></p>
@@ -282,15 +283,15 @@
   </section>
 
   <!--
-    Recipe detail. Favourite and Close sit in a bar above the recipe rather
-    than below it: they are about this screen, not about the recipe, and on
-    a phone every row of the bottom bar is a row of ingredients you cannot
-    see. What is left below is what you reach for mid-cook.
+    Recipe detail. Favourite and Edit are about this recipe, so they run on
+    from its title; the way back out is the breadcrumb above, which is the
+    only navigation a view carries — the app bar is hidden behind one, since
+    on a phone every row of chrome is a row of ingredients you cannot see.
   -->
   <section id="detail-view" class="view detail-view" hidden>
+    <nav class="crumbs" id="detail-crumbs" aria-label="Breadcrumb"></nav>
     <div class="detail-head">
       <div class="detail-head-text">
-        <p class="detail-kicker" id="detail-kicker"></p>
         <h2 class="detail-title" id="detail-heading" tabindex="-1"><span
           id="detail-title-text"></span><span
           class="detail-title-btns"><button
@@ -299,8 +300,6 @@
           type="button" class="icon-btn detail-title-btn" id="detail-edit-btn"
           aria-label="Edit recipe">&#x270E;&#xFE0E;</button></span></h2>
       </div>
-      <button type="button" class="icon-btn" id="detail-close-btn"
-              aria-label="Close recipe">×</button>
     </div>
     <div id="detail-content"></div>
     <div class="action-bar detail-actions">
@@ -323,13 +322,11 @@
     this is read one-handed in an aisle.
   -->
   <section id="plan-view" class="view detail-view plan-view" hidden>
+    <nav class="crumbs" id="plan-crumbs" aria-label="Breadcrumb"></nav>
     <div class="detail-head">
       <div class="detail-head-text">
-        <p class="detail-kicker">This week</p>
         <h2 class="detail-title" id="plan-heading" tabindex="-1">The plan</h2>
       </div>
-      <button type="button" class="icon-btn" id="plan-close-btn"
-              aria-label="Close the plan">×</button>
     </div>
     <div id="plan-content"></div>
     <!--

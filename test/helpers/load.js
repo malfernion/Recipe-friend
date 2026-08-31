@@ -157,4 +157,18 @@ function swapGlobals(values) {
   };
 }
 
-module.exports = { loadApp, loadUI, makeStorage, aRecipe };
+/**
+ * Press a crumb — the way out of a view, now that there is no × to click
+ * and no backdrop to tap. `view` is the view's id prefix ("detail",
+ * "plan", "editor") and `to` the step being climbed to.
+ *
+ * Returns whatever the handler did, so a test that climbs out of the
+ * editor can await the question it asks about typed work (J2.9).
+ */
+function clickCrumb(ui, view, to = "list") {
+  return ui.el(`${view}-crumbs`).fire("click", {
+    target: { closest: (sel) => (sel === "[data-crumb]" ? { dataset: { crumb: to } } : null) },
+  });
+}
+
+module.exports = { loadApp, loadUI, makeStorage, aRecipe, clickCrumb };
