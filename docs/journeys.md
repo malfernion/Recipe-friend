@@ -157,6 +157,24 @@ Someone types in a recipe from their head or a book.
     showed the Ingredients heading and no ingredients. Either dimension
     being tight — narrow, or short because the phone is on its side —
     earns the full screen. Wide, tall screens keep the card.
+
+    **And the photo takes a column there rather than a band.** The
+    measurement above was made on a recipe with no photo, and the full
+    screen fixed it only for that recipe: with a photo the picture is 3:2
+    across the whole width, which is 223px on that phone, and it sits
+    above a three-line title, a description, the particulars and the tags
+    — so the first ingredient landed at 709px on a 667px screen and the
+    view showed the heading and nothing under it all over again. Capping
+    the picture's height does not reach: it still owns a whole line of
+    the page, and even a 133px band leaves the first ingredient behind
+    the action bar. So on a phone, and on any screen short enough to be
+    full-bleed for the reason above, the photo takes 40% of the measure
+    and the description sits beside it. Nothing is hidden or clipped to
+    buy that: the description keeps all of its words, the photo keeps its
+    ratio, and the first ingredient comes up to 513px. A screen with the
+    height to spend — a tablet held upright — keeps the full-width
+    photograph, capped at three tenths of the screen so that it can never
+    again be the whole of the first screenful.
 16. **Where there is width to spare, each list runs into two columns —
     but the ingredients still sit above the steps.** A phone on its side
     is short, not narrow, and a second column is what makes that shape
@@ -860,7 +878,28 @@ accident:
   ones that is still most of the first screenful. Shrinking it was
   considered and deliberately deferred: what it costs is measured in the
   note below, so the next person to look does not have to measure it
-  again.
+  again. What has since been rearranged rather than shrunk is the photo,
+  which on a phone sits beside the description instead of above it
+  (J4.15) — the words are all still there, and so are the five parts of
+  the preamble; two of them simply share a line now.
+- **A card is as tall as what is in it**, and a row of cards is not.
+  Half a book has a photograph and half has not, and the difference is
+  247px in a 330px column; making every card in a row the height of the
+  tallest of them put that difference *inside* the shorter cards, as a
+  356px hole between a description and its tags. The slack falls between
+  the cards instead, where the next row begins. The cost is that the feet
+  of a row no longer line up — in plan mode the row of controls each card
+  carries can sit up to 350px apart across a row at 1440px — and that is
+  accepted: every card has that row while the mode is on, so each is
+  drawn at the foot of its own card rather than short of it.
+- **Titles across a row of cards are not on one baseline**, because the
+  photo sits above the title and a photo-less card has nothing there.
+  Reserving the picture's 247px on a card that has no picture was the
+  alternative and is worse: it is a hole in the same place, drawn on
+  every second card, and it buys a shared baseline with a screenful of
+  nothing. Making the photo shorter — 3:2 or 16:9 rather than 4:3 —
+  would close most of the offset and is a decision about what a card
+  looks like rather than about this defect, so it is left alone.
 
 ## What the tests cover, and what they do not
 
@@ -958,6 +997,88 @@ not reach, recorded so the gap is visible:
   new problem. The line is not paid for anywhere: shrinking the preamble
   stays deferred, and this records what deferring it now costs.
 
+  **What the photograph cost that table, and what it costs now.** The
+  table above was measured on a recipe with no photo, which is why it
+  reads at all: opened with one, every entry in it was nought. Measured
+  again in Chromium at the same seven sizes, with a coarse pointer and a
+  phone's overlay scrollbar, on the same fixture — eleven ingredients,
+  eight steps, a three-line title at 375px, a description of three lines,
+  four tags and the recipe in the plan — and counted against the top of
+  the sticky action bar, which is what the content scrolls under, the
+  same recipe with and without a photograph:
+
+  | Viewport | Ingredients, no photo | Ingredients, photo | First ingredient, photo |
+  |---|---|---|---|
+  | Narrow 320×568 | 0 | 0 | 707 → **548** |
+  | iPhone SE 375×667 | 2 | 0 → **1** | 709 → **513** |
+  | iPhone 14 393×852 | 7 | 1 → **5** | 721 → **513** |
+  | Phone landscape 852×393 | 0 | 0 | 903 → **365** |
+  | iPad mini 744×1133 | 11 | 4 → **6** | 865 → **757** |
+  | iPad mini 1133×744 | 10 | 0 | 1083 → **624** |
+  | Desktop 1440×900 | 11 | 0 → **2** | 1094 → **680** |
+
+  Nothing in the no-photo column moved, which is the point: the recipe
+  that already read well reads exactly as it did. Every action bar is
+  where it was — 85px on the four phone entries, 93px on the three wide
+  ones — and no step count changed.
+
+  **Three entries still read nought with a photo**, and each is honest
+  about why. At 320×568 and at 852×393 the photo-less recipe reads nought
+  too: that is the deferred preamble again, not the picture. At 1133×744
+  the picture is capped by the height of a short landscape screen and the
+  first ingredient sits at 624px, on the screen but under the action bar
+  — 19px of preamble short, which would have to come out of the title,
+  the description or the portions stepper, and none of the three is this
+  fix's to spend.
+
+  **What the app bar measures.** Signed in, with an account name and a
+  book name of ordinary length, at the same seven sizes — the bar itself,
+  the top of the first card, and the first recipe's name, which is what
+  somebody is actually looking for:
+
+  | Viewport | App bar | First card | First recipe's name |
+  |---|---|---|---|
+  | Narrow 320×568 | 133.4 → **107.6** | 339.1 → **313.3** | 611.4 → **585.6** |
+  | iPhone SE 375×667 | 132.4 → **106.6** | 290.1 → **264.3** | 603.6 → **577.8** |
+  | iPhone 14 393×852 | 132.4 → **106.6** | 290.1 → **264.3** | 617.1 → **591.3** |
+  | Phone landscape 852×393 | 117.4 → **88** | 296.8 → **267.3** | 647.0 → **617.6** |
+  | iPad mini 744×1133 | 117.4 → **88** | 296.8 → **267.3** | 611.0 → **581.6** |
+  | iPad mini 1133×744 | 67.4 | 246.8 | 542.0 |
+  | Desktop 1440×900 | 65.4 | 229.5 | 524.8 |
+
+  Both themes measure the same at every one of the seven, in the list and
+  in the recipe view; nothing here is a colour. In plan mode the bar is
+  the same and the first card is 95.6px further down at every size, which
+  is the plan's own bar over the list.
+
+  **The bar no longer grows as the window does.** Swept from 320 to 1920
+  it was 132.4px up to 520, 88 from 539 to 620, and then **117.4 from 621
+  to 744** — a third row appearing as the window widened, because the
+  account and the book stopped taking a line of their own and pushed the
+  four controls onto one instead. It now falls and never rises: 107.6 at
+  320, 106.6 from 360 to 412, 88 from 440 to 744, 86 from 820 to 999, and
+  65.4 from 1000 up.
+
+  **One row on a phone was not reachable and here is the arithmetic.**
+  The four controls come to 303px at their most compact, the brand mark
+  is 36 and the page's own gutters are 40, which is 387px against a 375px
+  screen. The bar is therefore two rows below 420px — the mark and, on
+  the same line opposite it, the account and the book; the controls
+  across the line beneath — and two rows from 420 to 999 in the other
+  arrangement, the mark and the controls together with the account and
+  the book on the line below. The wordmark beside the mark is what goes
+  under 540px, where it is exactly what stops the controls fitting; the
+  mark itself stays, and the full masthead is on the sign-in screen where
+  there is a screen to give it. Taking a word off a control, or a control
+  off the bar, would buy the last row and neither is this fix's to spend.
+
+  **The masthead shares an edge with the page now.** The rule under the
+  bar is still full-bleed, but what stands on it begins where the first
+  card begins: the brand sat at x=16 on a phone and x=20 at 1440 while
+  the columns of recipes started at 20 and 202.5. Measured at every width
+  in the sweep, the brand and the grid now start at the same x — 20 up to
+  1060, then 32.5 at 1100, 82.5 at 1200, 202.5 at 1440 and 442.5 at 1920.
+
   **What the plan's own screens measure**, so those have something to
   regress from too. Eleven recipes carrying nine tags between them, five
   of them planned, twenty-four shopping lines, one part-settled and three
@@ -1019,7 +1140,11 @@ not reach, recorded so the gap is visible:
   **Neither panel pushes the list** (J15.11): the first card sits at the
   same y open or shut at every one of the seven — 320.7 at 320×568, 272.7
   at the three taller phones, 246.8 at the three wide ones — and both
-  panels paint over the active row rather than reflowing it. **Neither
+  panels paint over the active row rather than reflowing it. (Those three
+  absolute numbers were taken before the app bar was compacted and are
+  now some 26px lower on a phone and 30px on a tablet — see the app bar's
+  own table below. What they were measuring is the difference between
+  open and shut, which is still nought.) **Neither
   runs off an edge** now. Hung from its own chip, Filter began 136.5px
   across a 320px screen and ended at 344.5, putting the counts that are
   the point of the menu (J15.4) past the edge and giving the page a 25px

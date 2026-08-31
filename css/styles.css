@@ -106,14 +106,24 @@ body {
 }
 
 /* ---------- App bar ----------
-   A single compact row so the recipes start near the top of the page.
-   The full masthead treatment lives on the sign-in screen instead. */
+   As few rows as the controls in it allow, so the recipes start near the
+   top of the page: one row from 1000px up, two below it, and never three
+   — see the wrap note further down, which is where that is arranged.
+   The full masthead treatment lives on the sign-in screen instead.
+
+   The rule under it is full-bleed, but what stands on it lines up with the
+   page: the brand sat at x=20 while every column of recipes beneath it
+   started at x=202.5, so the masthead shared an edge with nothing it was
+   the masthead of. The padding is the container's own sum — half the slack
+   either side of a 1060px measure, plus the same 1.25rem the container
+   keeps — so the mark begins where the first card begins, and on anything
+   narrower than the measure the max() hands back the plain gutter. */
 .appbar {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   gap: 0.5rem 1.25rem;
-  padding: 0.7rem 1.25rem;
+  padding: 0.7rem max(1.25rem, calc((100% - 1060px) / 2 + 1.25rem));
   border-bottom: 1px solid var(--rule);
   background: var(--paper);
   position: sticky;
@@ -192,6 +202,57 @@ body {
   color: var(--danger);
 }
 
+/*
+  Three things go in this bar and it holds two rows at most.
+
+  Wrapping was left to the flex box, and the bar got taller as the window
+  got wider: at 620px it stood 88px, and at 621px — where the account and
+  the book stop being given a line of their own — 117px, because the meta
+  then joined the brand on line one and pushed the four controls onto a
+  line of their own. The same wrap put it at 162px on a 375px phone, three
+  rows and 24% of the screen before a word of the list.
+
+  So the wrap is stated rather than discovered. Below the width where all
+  three fit across, the account and the book take a line of their own —
+  they are the shortest of the three and the least urgent — and the brand
+  and the controls share the line above it. Above that width the bar is
+  one row and may not wrap at all: a name long enough to break it is
+  ellipsised instead, which the meta was already prepared for.
+*/
+@media (min-width: 1000px) {
+  .appbar {
+    flex-wrap: nowrap;
+  }
+
+  /* Room to give: these already end in an ellipsis rather than a wrap. */
+  .appbar-meta {
+    flex-wrap: nowrap;
+    flex-shrink: 1;
+  }
+
+  .brand,
+  .appbar-actions {
+    flex-shrink: 0;
+  }
+}
+
+@media (max-width: 999px) {
+  .appbar-meta {
+    flex-basis: 100%;
+    order: 3;
+    flex-wrap: nowrap;
+    gap: 0.75rem;
+  }
+
+  /* Wherever the bar is two rows it is the same two rows, so the gutters
+     that set its height are the same too — otherwise it steps 5px taller
+     at the width where the phone's tighter ones stop. */
+  .appbar {
+    padding-block: 0.6rem;
+    row-gap: 0.4rem;
+  }
+}
+
 /* Secondary actions tuck into a menu so the bar stays one line. */
 .more-menu {
   position: relative;
@@ -256,13 +317,20 @@ body {
   display: none;
 }
 
-@media (max-width: 620px) {
+/*
+  660 rather than 620: at 639px the brand and the four full-width controls
+  stop fitting across, and between 621 and 639 the bar was taking a third
+  row — the same wrapping bug the block above is about, in the last 18px
+  where nobody looks. The compact labels and gutters now run up to where
+  the long ones fit, with room for a two-digit count on the plan toggle.
+*/
+@media (max-width: 660px) {
   .appbar {
-    padding: 0.6rem 1rem;
-    gap: 0.4rem 0.75rem;
+    padding-block: 0.6rem;
+    gap: 0.4rem 0.5rem;
   }
 
-  /* Keep the bar to a single row on phones. */
+  /* The short label is what keeps the four controls to one row. */
   .label-long {
     display: none;
   }
@@ -276,7 +344,7 @@ body {
   }
 
   .brand-logo {
-    width: 38px;
+    width: 36px;
   }
 
   .brand-name {
@@ -284,20 +352,71 @@ body {
   }
 
   .appbar-actions {
-    gap: 0.5rem;
-  }
-
-  /* Account and book move to their own line rather than squeezing the bar. */
-  .appbar-meta {
-    flex-basis: 100%;
-    order: 3;
-    gap: 0.75rem;
+    gap: 0.25rem;
   }
 
   .account-name,
   .current-book,
   .sync-status {
     max-width: 9rem;
+  }
+}
+
+/*
+  Narrower than this and the four controls cannot sit beside the mark at
+  all: they come to 303px and the mark, the gutters and the gap take 84
+  more, so 387px is the width at which the bar holds two rows rather than
+  three. Below it the controls take a row of their own and spread across
+  it, and the line above holds the mark and — opposite it, where the
+  desktop bar also keeps them — the account and the book. It is the same
+  two rows either way round: who and where, then what you can do.
+*/
+@media (max-width: 419px) {
+  .appbar-actions {
+    flex-basis: 100%;
+    order: 4;
+    justify-content: space-between;
+  }
+
+  /*
+    `flex: 1 1 0` rather than its own width: a flex line breaks on what an
+    item wants, and shrinks only afterwards — so at 320px the pair asked
+    for 267px, took a row of their own, and never got as far as the
+    ellipsis they were built for. Wanting nothing, they never break the
+    line and they take whatever the mark leaves.
+  */
+  .appbar-meta {
+    flex: 1 1 0;
+    order: 2;
+    justify-content: flex-end;
+    min-width: 0;
+  }
+
+  /* A 320px screen has not the width for both names in full; they end in
+     an ellipsis rather than taking a third row for the last few letters. */
+  .account-name,
+  .current-book,
+  .sync-status {
+    min-width: 0;
+  }
+}
+
+/*
+  The wordmark is what the phone cannot afford. Four controls come to
+  303px of a 375px screen and the mark and its word come to 170 more, so
+  the bar spent a whole 44px row on the brand and another on the buttons,
+  and the first recipe's name sat at 621px — 93% of the screen, and below
+  the fold entirely in plan mode. The mark stays, because the mark is the
+  brand; the word beside it is the masthead, and the masthead is on the
+  sign-in screen (.app-title), where there is a screen to give it.
+
+  Above this width the word comes back: the mark, the word and the four
+  controls come to 519px across, and 540 is that with room for the count
+  on the plan toggle to reach two digits.
+*/
+@media (max-width: 539px) {
+  .brand-name {
+    display: none;
   }
 }
 
@@ -699,10 +818,19 @@ body {
 }
 
 /* ---------- Recipe grid ---------- */
+/*
+  Cards take their own height. A grid item stretches to the tallest card in
+  its row by default, and half this book has a photo and half has not — so
+  a photo-less card beside a photographed one was drawn 247px too tall and
+  spent the difference on a hole inside itself, between the description and
+  the tags. Slack a card has no use for belongs after the card, where the
+  next row begins and it reads as rhythm; `start` is what puts it there.
+*/
 .recipe-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
   gap: 2.5rem 2.75rem;
+  align-items: start;
 }
 
 .recipe-card {
@@ -842,7 +970,6 @@ body {
   display: flex;
   gap: 0.3rem 0.7rem;
   flex-wrap: wrap;
-  margin-top: auto;
   padding-top: 0.2rem;
 }
 
@@ -1301,9 +1428,18 @@ body {
   white-space: nowrap;
 }
 
+/*
+  A photo of the dish, and never more of the screen than the dish is worth:
+  at 3:2 across a 1028px sheet it stood 684px tall and put every ingredient
+  below the fold of a 900px screen — a recipe view showing nothing to cook,
+  which is the whole of what J4.15 is about. Three tenths of the height is
+  the cap; the ratio still draws it wherever there is room for it, and the
+  crop is `cover`'s job and the cheaper loss of the two.
+*/
 .detail-img {
   width: 100%;
   aspect-ratio: 3 / 2;
+  max-height: 30vh;
   object-fit: cover;
   display: block;
   margin: 0.75rem 0 1rem;
@@ -1508,28 +1644,31 @@ body {
   color: var(--ink-soft);
 }
 
-/* The card's way in, and the portions of what it has already put in. */
+/*
+  The card's way in, and the portions of what it has already put in.
+
+  It carried `margin-top: auto` for a while, to hold the hairline across
+  the foot of every card in a row level: under the grid's old stretch a
+  card shorter than its neighbours was drawn tall and the row could sit
+  anywhere inside it. That was true, and it cost the main list a 356px
+  void inside every photo-less card — the auto margin drops a row's slack
+  wherever it sits, and on the list nothing wants it.
+
+  The alignment is had the other way now. Plan mode gives *every* card
+  this row (`planCardRow` in app.js returns one whenever the mode is on
+  and the book can be planned), so it is the last line of every card
+  whatever else the card has, and with cards at their own height it needs
+  no margin to be there. A row of cards no longer shares one foot,
+  because a card with a photo is taller than one without and always was —
+  what each card has is its own foot, and the rule is drawn on it.
+*/
 .plan-card-row {
   display: flex;
   align-items: center;
   flex-wrap: wrap;
   gap: 0.4rem 0.6rem;
-  /*
-    The card's last line, so it is what takes the card's slack and lines
-    up across a row of cards. The auto margin used to sit on .card-tags,
-    which is the bottom of a card only until a recipe has no tags —
-    nothing says one must — and then its buttons sat 30px above its
-    neighbours' (measured at 1440px, three cards across, one untagged).
-    The hairline is the giveaway: it is a rule across the foot of every
-    card, and one of them was drawn short of the foot.
-  */
-  margin-top: auto;
   padding-top: 0.75rem;
   border-top: 1px solid var(--rule);
-}
-
-.recipe-card:has(.plan-card-row) .card-tags {
-  margin-top: 0;
 }
 
 .plan-add {
@@ -2148,6 +2287,44 @@ body {
   }
 }
 
+/*
+  A photo, and something to cook, on the same screen.
+
+  J4.15 was measured on a 375x667 phone and fixed for a recipe with no
+  photo; with one it was never fixed at all. The picture is 3:2 across the
+  full width, which is 223px, and it sits above a three-line title, a
+  description, the particulars and the tags — so the first ingredient
+  landed at 793px, past the bottom of a 667px screen, and the recipe view
+  showed the Ingredients heading and nothing under it.
+
+  Capping the picture's height was tried and does not reach: even a band
+  of 133px leaves the first ingredient behind the action bar, because the
+  band still owns a whole line of the page. What buys the room is giving
+  it a column instead — the photo beside the description rather than above
+  it, which is how the same two things sit on a card in a magazine. The
+  preamble stops being six stacked blocks and becomes two, the first
+  ingredient comes up to 512px, and nothing is hidden or clipped to get
+  there: the description keeps all of its words and the photo keeps its
+  ratio.
+
+  Only where the height is actually scarce — a phone, or any screen short
+  enough that the recipe is already full-bleed. A tablet held upright has
+  1133px to spend and keeps the full-width photograph.
+*/
+@media (max-width: 560px), (max-height: 560px) {
+  .detail-img {
+    float: left;
+    width: 40%;
+    max-width: 12rem;
+    margin: 0.35rem 1rem 0.7rem 0;
+  }
+
+  /* The lists start below the picture, whatever flowed beside it. */
+  .detail-body {
+    clear: both;
+  }
+}
+
 /* The wider sheet is for screens with the height to keep a margin. A short
    one is full-bleed above, and must not have its width put back here —
    both queries match a phone held sideways. */
@@ -2307,13 +2484,15 @@ body.gated .app-footer {
 }
 
 /* ---------- Recipe books ---------- */
+/* The gap to the account name is the meta row's own, said once there
+   rather than again here — two of them came to 28.8px, which is what
+   pushed the pair off a 375px bar and onto a row of its own. */
 .current-book {
   font-size: 0.68rem;
   font-weight: 600;
   letter-spacing: 0.18em;
   text-transform: uppercase;
   color: var(--ink-faint);
-  margin-left: 0.9rem;
 }
 
 .current-book::before {
