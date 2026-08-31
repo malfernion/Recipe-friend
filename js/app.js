@@ -42,12 +42,12 @@
   const sortSummaryEl = $("#sort-summary");
   const sortOptionsEl = $("#sort-options");
   const activeFiltersEl = $("#active-filters");
-  const recipeDialog = $("#recipe-dialog");
+  const editorView = $("#editor-view");
   const recipeForm = $("#recipe-form");
-  const dialogTitle = $("#dialog-title");
-  const detailDialog = $("#detail-dialog");
+  const editorTitle = $("#editor-title");
+  const detailView = $("#detail-view");
   const detailContent = $("#detail-content");
-  const planDialog = $("#plan-dialog");
+  const planView = $("#plan-view");
   const planContent = $("#plan-content");
   const toastEl = $("#toast");
   const toastActionEl = $("#toast-action");
@@ -74,7 +74,7 @@
    * it is honoured; this stops the page moving at all.
    */
   function syncScrollLock() {
-    const open = detailDialog.open || recipeDialog.open || planDialog.open;
+    const open = detailView.open || editorView.open || planView.open;
     document.body.classList.toggle("dialog-open", open);
     // The scrolling element is <html>, not <body>, so a rule on the body
     // alone leaves the page free to move — measured, after trying exactly
@@ -464,7 +464,7 @@
     syncPlanUI();
     // The plan is read from the same store, so a redraw it did not cause
     // — a sync landing somebody else's meal — still reaches it.
-    if (planDialog.open) renderPlan();
+    if (planView.open) renderPlan();
   }
 
   /**
@@ -550,10 +550,10 @@
    * saving adds rather than updates, keeping the incoming id so opening the
    * same link twice never duplicates.
    */
-  function openRecipeDialog(recipe, review, { restoring = false } = {}) {
+  function openEditor(recipe, review, { restoring = false } = {}) {
     editingId = recipe && !review ? recipe.id : null;
     incomingId = review && recipe ? recipe.id : null;
-    dialogTitle.textContent = review ? "Review recipe" : recipe ? "Edit recipe" : "New recipe";
+    editorTitle.textContent = review ? "Review recipe" : recipe ? "Edit recipe" : "New recipe";
     // Re-opening a link you already saved shows the sender's version again,
     // so say that saving replaces your copy rather than adding a second.
     // An incoming recipe carries its own id, and the sender chose it. If it
@@ -603,8 +603,8 @@
     recipeForm.elements.imageUrl.value = image.startsWith("http") ? image : "";
     updatePhotoPreview();
     formBaseline = formSnapshot();
-    const wasOpen = recipeDialog.open;
-    recipeDialog.showModal();
+    const wasOpen = editorView.open;
+    editorView.showModal();
     if (!wasOpen && !restoring) pushRoute(editorHash());
     syncScrollLock();
   }
@@ -650,8 +650,8 @@
         }))) {
       return false;
     }
-    if (quiet) closeQuietly(recipeDialog);
-    else recipeDialog.close();
+    if (quiet) closeQuietly(editorView);
+    else editorView.close();
     return true;
   }
 
@@ -709,7 +709,7 @@
         clearTimeout(photoRerender);
         photoRerender = setTimeout(() => {
           render();
-          if (detailDialog.open && detailId) {
+          if (detailView.open && detailId) {
             const recipe = store.getById(detailId);
             if (recipe) detailContent.innerHTML = recipeDetailHTML(recipe, true);
           }
@@ -832,7 +832,7 @@
         }
       });
     }
-    recipeDialog.close();
+    editorView.close();
     if (!store.persistOk) {
       toast("Saved for this visit, but browser storage is full — try a smaller photo or export a backup.");
     } else {
@@ -988,7 +988,7 @@
     if (!canPlan()) {
       planMode = false;
       forgetPendingPortions();
-      if (planDialog.open) planDialog.close();
+      if (planView.open) planView.close();
     }
     syncPlanUI();
   }
@@ -1044,8 +1044,8 @@
    * you are. `restoring` marks the opens that are replaying history rather
    * than making it, so the two do not push each other in circles.
    */
-  function openDetailDialog(recipe, { restoring = false } = {}) {
-    const wasOpen = detailDialog.open;
+  function openRecipeView(recipe, { restoring = false } = {}) {
+    const wasOpen = detailView.open;
     // Keep the scale when re-rendering the same open recipe (e.g. after a
     // favourite toggle); reset it when a different recipe opens.
     if (detailId !== recipe.id || !wasOpen) detailScale = 1;
@@ -1057,7 +1057,7 @@
     syncCookButton();
     if (!wasOpen) {
       if (!restoring) pushRoute(`#recipe=${recipe.id}`);
-      detailDialog.showModal();
+      detailView.showModal();
       // showModal() takes the first focusable thing it finds, which is
       // whichever control happens to be first in the markup — the star,
       // today; the portions stepper before that. Neither says what has
@@ -1167,7 +1167,7 @@
    * opened it.
    */
   function leavePlanReadout() {
-    if (planDialog.open) closeQuietly(planDialog);
+    if (planView.open) closeQuietly(planView);
   }
 
   /**
@@ -1179,42 +1179,42 @@
     if (document.body.classList.contains("gated")) return false;
     const route = currentRoute();
     if (route.name === "recipe") {
-      if (detailDialog.open && detailId === route.id) return true;
+      if (detailView.open && detailId === route.id) return true;
       const recipe = store.getById(route.id);
       if (!recipe) return false;
-      if (recipeDialog.open) closeQuietly(recipeDialog);
+      if (editorView.open) closeQuietly(editorView);
       leavePlanReadout();
-      openDetailDialog(recipe, { restoring: true });
+      openRecipeView(recipe, { restoring: true });
       return true;
     }
     if (route.name === "edit") {
-      if (recipeDialog.open && editingId === route.id) return true;
+      if (editorView.open && editingId === route.id) return true;
       const recipe = store.getById(route.id);
       if (!recipe) return false;
-      if (detailDialog.open) closeQuietly(detailDialog);
+      if (detailView.open) closeQuietly(detailView);
       leavePlanReadout();
-      openRecipeDialog(recipe, false, { restoring: true });
+      openEditor(recipe, false, { restoring: true });
       return true;
     }
     if (route.name === "new") {
-      if (recipeDialog.open) return true;
-      if (detailDialog.open) closeQuietly(detailDialog);
+      if (editorView.open) return true;
+      if (detailView.open) closeQuietly(detailView);
       leavePlanReadout();
-      openRecipeDialog(null, false, { restoring: true });
+      openEditor(null, false, { restoring: true });
       return true;
     }
     if (route.name === "plan") {
-      if (planDialog.open) return true;
+      if (planView.open) return true;
       // A viewer has no planner to come back to (J12.10).
       if (!canPlan()) return false;
-      if (detailDialog.open) closeQuietly(detailDialog);
-      if (recipeDialog.open) closeQuietly(recipeDialog);
-      openPlanDialog({ restoring: true });
+      if (detailView.open) closeQuietly(detailView);
+      if (editorView.open) closeQuietly(editorView);
+      openPlanView({ restoring: true });
       return true;
     }
     // A review holds a recipe that is not in the box yet, so there is
     // nothing to rebuild it from once it has gone.
-    if (route.name === "review") return recipeDialog.open;
+    if (route.name === "review") return editorView.open;
     return false;
   }
 
@@ -1507,13 +1507,13 @@
    * J4.16 gives for ingredients above steps: two panes would be the top
    * half of each, and neither list would ever be finished.
    */
-  function openPlanDialog({ restoring = false } = {}) {
+  function openPlanView({ restoring = false } = {}) {
     if (!planStore) return false;
-    const wasOpen = planDialog.open;
+    const wasOpen = planView.open;
     renderPlan();
     if (!wasOpen) {
       if (!restoring) pushRoute("#plan");
-      planDialog.showModal();
+      planView.showModal();
       // The heading, not the first control — which is a portions stepper
       // and does not say what has just filled the screen (J4.21).
       const heading = $("#plan-heading");
@@ -1761,7 +1761,7 @@
     }
     if (!done) return;
     const count = done.archived.meals.length;
-    if (planDialog.open) planDialog.close();
+    if (planView.open) planView.close();
     render();
     toast(`Planned ${count} ${count === 1 ? "meal" : "meals"}.`, {
       label: "Undo",
@@ -1817,7 +1817,7 @@
     // (see mergePlans in plan.js). `generationAfter` is where that sum
     // lives, so Clear, Done and Undo all order themselves the same way.
     planStore.setPlan(RecipePlan.emptyPlan(RecipePlan.generationAfter(plan)));
-    if (planDialog.open) planDialog.close();
+    if (planView.open) planView.close();
     toast("Plan cleared.");
     render();
   }
@@ -1841,7 +1841,7 @@
   });
 
   $("#plan-open-btn").addEventListener("click", () => {
-    if (canPlan()) openPlanDialog();
+    if (canPlan()) openPlanView();
   });
 
   $("#detail-plan-btn").addEventListener("click", () => {
@@ -1860,9 +1860,9 @@
     return planAction(btn.dataset.plan, btn.dataset);
   });
 
-  $("#plan-close-btn").addEventListener("click", () => planDialog.close());
+  $("#plan-close-btn").addEventListener("click", () => planView.close());
 
-  planDialog.addEventListener("close", () => {
+  planView.addEventListener("close", () => {
     syncScrollLock();
     unwind(currentRoute().name === "plan");
   });
@@ -1941,9 +1941,9 @@
   }
 
   // --- Event wiring ---
-  $("#add-recipe-btn").addEventListener("click", () => openRecipeDialog(null));
-  $("#empty-add-btn").addEventListener("click", () => openRecipeDialog(null));
-  $("#cancel-dialog-btn").addEventListener("click", () => recipeDialog.close());
+  $("#add-recipe-btn").addEventListener("click", () => openEditor(null));
+  $("#empty-add-btn").addEventListener("click", () => openEditor(null));
+  $("#cancel-edit-btn").addEventListener("click", () => editorView.close());
 
   // --- AI assistance: a prompt to take away, and a box to bring JSON back to ---
   const aiHelpDialog = $("#ai-help-dialog");
@@ -2073,7 +2073,7 @@
     prefsDialog.close();
     toast("Preferences saved.");
     // Nothing stored changed — only how amounts are shown.
-    if (detailDialog.open && detailId) {
+    if (detailView.open && detailId) {
       const recipe = store.getById(detailId);
       if (recipe) detailContent.innerHTML = recipeDetailHTML(recipe, true);
     }
@@ -2234,7 +2234,7 @@
     const card = event.target.closest(".recipe-card");
     if (card) {
       const recipe = store.getById(card.dataset.id);
-      if (recipe) openDetailDialog(recipe);
+      if (recipe) openRecipeView(recipe);
     }
   });
 
@@ -2244,7 +2244,7 @@
     if (!card) return;
     event.preventDefault();
     const recipe = store.getById(card.dataset.id);
-    if (recipe) openDetailDialog(recipe);
+    if (recipe) openRecipeView(recipe);
   });
 
   // --- Share links ---
@@ -2293,7 +2293,7 @@
    */
   function reviewIncoming(preview) {
     clearPendingShare();
-    openRecipeDialog(preview, true);
+    openEditor(preview, true);
   }
 
   /** Called once signed in, for a link that arrived before sign-in. */
@@ -2369,13 +2369,13 @@
   const openTransfer = (verb) => () => {
     const cloud = window.RecipeCloud;
     if (!cloud || !cloud.books || !detailId) return;
-    detailDialog.close();
+    detailView.close();
     cloud.books.openMove(detailId, verb);
   };
   $("#detail-copy-btn").addEventListener("click", openTransfer("copy"));
   $("#detail-move-btn").addEventListener("click", openTransfer("move"));
 
-  $("#detail-close-btn").addEventListener("click", () => detailDialog.close());
+  $("#detail-close-btn").addEventListener("click", () => detailView.close());
 
   // Escape and the backdrop close a <dialog> without going through any
   // button, so the lock is let go here rather than at each call site (J4.10).
@@ -2384,7 +2384,7 @@
   // pushed, or the entry outlives the recipe and Back re-opens something
   // the person has already closed. `poppingBack` marks the close that Back
   // itself caused — that entry is already gone.
-  detailDialog.addEventListener("close", () => {
+  detailView.addEventListener("close", () => {
     // Before the history guard: the lock goes whichever way the recipe
     // closed, a handover to the editor included (J4.10).
     cookMode.leave();
@@ -2393,7 +2393,7 @@
     unwind(currentRoute().name === "recipe");
   });
 
-  recipeDialog.addEventListener("close", () => {
+  editorView.addEventListener("close", () => {
     syncScrollLock();
     unwind(isEditorRoute(currentRoute().name));
   });
@@ -2408,7 +2408,7 @@
     // Leaving the editor by Back is still leaving the editor, so typed
     // work gets the question it gets from Escape (J2.9). "Keep editing"
     // puts the entry back, so Back still means Back next time.
-    if (recipeDialog.open && !isEditorRoute(route.name)) {
+    if (editorView.open && !isEditorRoute(route.name)) {
       const hash = editorHash();
       if (!(await tryCloseEditor({ quiet: true }))) {
         pushRoute(hash);
@@ -2418,9 +2418,9 @@
 
     if (openFromHash()) return;
 
-    if (detailDialog.open) closeQuietly(detailDialog);
-    if (recipeDialog.open) closeQuietly(recipeDialog);
-    if (planDialog.open) closeQuietly(planDialog);
+    if (detailView.open) closeQuietly(detailView);
+    if (editorView.open) closeQuietly(editorView);
+    if (planView.open) closeQuietly(planView);
     // Back into a recipe that has since been deleted or moved away: the
     // address must not go on naming it. Only ever reached from a live
     // navigation, so this cannot strip a link that is merely waiting on
@@ -2442,20 +2442,20 @@
   $("#detail-fav-btn").addEventListener("click", () => {
     const recipe = store.toggleFavorite(detailId);
     if (!recipe) return;
-    openDetailDialog(recipe); // re-render the open dialog with the new state
+    openRecipeView(recipe); // re-render the open dialog with the new state
     render();
   });
 
   $("#detail-edit-btn").addEventListener("click", () => {
     const recipe = store.getById(detailId);
     if (!recipe) {
-      detailDialog.close();
+      detailView.close();
       return;
     }
     // A handover, not an exit: the recipe's entry stays underneath so
     // Back from the editor returns to the recipe you were reading.
-    closeQuietly(detailDialog);
-    openRecipeDialog(recipe);
+    closeQuietly(detailView);
+    openEditor(recipe);
   });
 
   // Deleting happens from the editor (J4.20): by then you have said you
@@ -2480,25 +2480,25 @@
     // The editor closes without the unsaved-work guard: what it was
     // holding was edits to a recipe that no longer exists.
     editingId = null;
-    recipeDialog.close();
+    editorView.close();
     toast("Recipe deleted.");
     render();
   });
 
   // Close dialogs when clicking the backdrop. These hold nothing that
   // isn't already saved, so they go without asking.
-  for (const dialog of [detailDialog, planDialog, prefsDialog, aiHelpDialog, pasteDialog]) {
+  for (const dialog of [detailView, planView, prefsDialog, aiHelpDialog, pasteDialog]) {
     dialog.addEventListener("click", (event) => {
       if (event.target === dialog) dialog.close();
     });
   }
 
   // The editor holds typed work, so both its accidental exits are guarded.
-  recipeDialog.addEventListener("click", (event) => {
-    if (event.target !== recipeDialog) return undefined;
+  editorView.addEventListener("click", (event) => {
+    if (event.target !== editorView) return undefined;
     return tryCloseEditor(); // returned so a test can await the answer
   });
-  recipeDialog.addEventListener("cancel", (event) => {
+  editorView.addEventListener("cancel", (event) => {
     event.preventDefault(); // Escape: decide for ourselves whether this closes
     return tryCloseEditor();
   });

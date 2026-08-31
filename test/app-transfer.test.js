@@ -171,8 +171,8 @@ function openApp({ hash = "", gated = false, seed = null } = {}) {
     sessionWrites,
     sessionRemovals,
     toast: () => ui.el("toast").textContent,
-    reviewing: () => ui.el("recipe-dialog").open,
-    title: () => ui.el("dialog-title").textContent,
+    reviewing: () => ui.el("editor-view").open,
+    title: () => ui.el("editor-title").textContent,
     field: (name) => ui.el("recipe-form").elements[name].value,
     warning: () => ui.el("review-warning"),
     saveButton: () => ui.el("save-recipe-btn").textContent,
@@ -182,7 +182,7 @@ function openApp({ hash = "", gated = false, seed = null } = {}) {
     handled: () =>
       until(
         () =>
-          ui.el("recipe-dialog").open ||
+          ui.el("editor-view").open ||
           ui.el("toast").textContent !== "" ||
           sessionWrites.length > 0,
         "the incoming link to be reviewed, refused, or held for sign-in"
@@ -193,7 +193,7 @@ function openApp({ hash = "", gated = false, seed = null } = {}) {
       ui.win.location.hash = h;
       ui.win.fireWindow("hashchange");
       await until(
-        () => ui.el("recipe-dialog").open || ui.el("toast").textContent !== "",
+        () => ui.el("editor-view").open || ui.el("toast").textContent !== "",
         "the link arriving in an open tab to be reviewed or refused"
       );
     },
@@ -415,7 +415,7 @@ test("J5.1 · an opened share link is reviewed in the edit form, not saved on th
   assert.equal(ui.saveButton(), "Add to my recipes");
 
   // Backing out leaves the box as it was.
-  ui.el("cancel-dialog-btn").fire("click");
+  ui.el("cancel-edit-btn").fire("click");
   assert.equal(ui.reviewing(), false);
   assert.equal(ui.store.recipes.length, 0);
 });
