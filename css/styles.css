@@ -1021,10 +1021,17 @@ body {
    find your place in, which is the one thing a recipe must not be — but
    the cap is on the content, not on a card. */
 .view {
-  --pad-t: 2rem;
   --pad-x: 2.25rem;
   --pad-b: 1.75rem;
-  padding: var(--pad-t) var(--pad-x) var(--pad-b);
+  /*
+    No top padding: the breadcrumb is the first thing in a view and
+    carries its own. It used to be dragged back up through this by a
+    negative top margin, which is a thing to avoid on a sticky element —
+    the box then starts above its containing block's content box, and
+    how far a sticky element may travel is measured from that box. The
+    header stopped following the scroll partway down, on WebKit.
+  */
+  padding: 0 var(--pad-x) var(--pad-b);
   /*
     The body is a column flex container, and an auto inline margin on a
     flex item beats the default stretch: without a width to hold it open
@@ -1237,6 +1244,23 @@ body {
   border-top: 1px solid var(--rule);
 }
 
+/*
+  In a dialog the scrollport is the dialog's own content box, and its
+  bottom padding is a strip the content scrolls through underneath — so
+  the bar is pulled down through it and grows its own padding to cover
+  it. A view has no such strip: the scrollport is the page. Left as it
+  was, that negative offset pinned the bar below the bottom edge of the
+  screen — measured at 820x1180, 28px of it sat under the fold for the
+  whole scroll, on every engine. WebKit made it obvious by resolving the
+  negative offset and the negative margin against each other differently
+  and landing the bar over the middle of the recipe.
+*/
+.view .action-bar {
+  bottom: 0;
+  margin-bottom: 0;
+  padding-bottom: 1.25rem;
+}
+
 .action-bar-spacer {
   flex: 1;
 }
@@ -1293,8 +1317,8 @@ body {
   align-items: center;
   flex-wrap: wrap;
   gap: 0.15rem 0.4rem;
-  margin: calc(-1 * var(--pad-t)) calc(-1 * var(--pad-x)) 1.25rem;
-  padding: 0.55rem var(--pad-x);
+  margin: 0 calc(-1 * var(--pad-x)) 1.25rem;
+  padding: 0.7rem var(--pad-x) 0.55rem;
   background: var(--paper);
   border-bottom: 1px solid var(--rule);
   font-size: 0.9rem;
@@ -2296,7 +2320,6 @@ button.crumb:hover {
    no width to spend on margins, and a short one has no height. */
 @media (max-width: 819px), (max-height: 560px) {
   .view {
-    --pad-t: 1rem;
     --pad-x: 1.1rem;
     --pad-b: 1.25rem;
   }
