@@ -1,0 +1,20 @@
+{
+  "name": "recipe-friend",
+  "version": "1.0.0",
+  "private": true,
+  "description": "The recipe box itself. Published so a program outside the app can load the app's own planning modules instead of reimplementing them (J16); there is no build step, nothing here is installed to run the site, and this file is never sent to a registry.",
+  "exports": {
+    "./modules": "./test/helpers/load.js"
+  },
+  "files": [
+    "js",
+    "test/helpers"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/malfernion/Recipe-friend.git"
+  }
+}

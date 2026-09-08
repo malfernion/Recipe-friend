@@ -267,6 +267,11 @@ supabase/migrations/           Additive schema changes, run in order
                                 the checks that keep an agent to reading,
                                 adding and planning)
 docs/journeys.md               What the app is meant to do, as criteria
+package.json                   No dependencies and no build step. It is
+                               here so a program outside the app can
+                               install these modules rather than copy
+                               them; nothing about running the site
+                               needs it
 test/                          Tests, named for the criteria they check
 .github/workflows/deploy-pages.yml   GitHub Pages deployment
 .github/workflows/test.yml           Tests on every pull request
