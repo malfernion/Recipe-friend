@@ -17,5 +17,5 @@ window.RECIPE_FRIEND_CONFIG = {
   // unreachable. Supabase is the one that decides whether a token is
   // required; turn its CAPTCHA setting on only once this is set, or
   // adding an agent starts failing.
-  turnstileSiteKey: "",
+  turnstileSiteKey: "0x4AAAAAAEsy8AJ3lTmjC1SJ",
 };
