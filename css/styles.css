@@ -2788,6 +2788,64 @@ body.gated .view {
   margin: 0.9rem 0 0;
 }
 
+/* ---------- Agents (J16) ----------
+   There is no list here: an agent is a member and is drawn in the member
+   list with everyone else (J16.7). What this section holds is the way to
+   add one and the one place its credential is shown. The badge wears the
+   accent so a program never reads as one of the household at a glance.
+*/
+.agent-badge {
+  font-size: 0.64rem;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--accent);
+}
+
+.agent-new {
+  display: flex;
+  gap: 0.5rem;
+  margin-top: 0.85rem;
+  flex-wrap: wrap;
+}
+
+.agent-new input {
+  flex: 1;
+  min-width: 12rem;
+  font-family: var(--sans);
+  font-size: 0.9rem;
+  padding: 0.5rem 0.65rem;
+  border: 1px solid var(--rule-strong);
+  background: var(--paper);
+  color: var(--ink);
+}
+
+.agent-new input:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+/* Cloudflare draws its own box, so this only gives it room. */
+.agent-turnstile {
+  margin-top: 0.85rem;
+}
+
+/*
+  The credential is a password in all but name and is shown once
+  (J16.6), so it says so where it is read rather than in the hint
+  underneath — which is where the eye goes second.
+*/
+.agent-credential {
+  display: block;
+  margin-bottom: 0.4rem;
+  font-family: var(--sans);
+  font-size: 0.68rem;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--accent);
+}
+
 /* ---------- Legal pages (privacy, terms) ---------- */
 .legal {
   max-width: 44rem;

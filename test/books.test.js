@@ -104,6 +104,9 @@ function fakeCloud() {
     book_members: [],
     invites: [],
     recipes: [],
+    // auth.users, only as far as add_agent has to ask about it: whether
+    // an id belongs to somebody or to nobody (J16.1).
+    anon_users: [],
   };
   const calls = [];
   const failures = new Map(); // "table.op" or "storage.copy" -> Error
@@ -156,6 +159,22 @@ function fakeCloud() {
     error: new Error("a recipe cannot change book: copy it and delete the original"),
   });
 
+  /**
+   * The other half of `book_members_role_only` (008 §6c). A `with check`
+   * describes the row being written and cannot see the row being
+   * replaced, so the policy alone allows agent -> editor; the trigger is
+   * what refuses it, in both directions (J16.8).
+   */
+  function freezesAgent(table, row, payload) {
+    if (table !== "book_members" || !payload.role) return false;
+    return row.role === "agent" || payload.role === "agent";
+  }
+
+  const agentIsNotARole = () => ({
+    data: null,
+    error: new Error("an agent is not a role you change; remove it and add another"),
+  });
+
   function run(q) {
     calls.push({ table: q.table, op: q.op, filters: q.filters.map((f) => f.join(":")), payload: q.payload });
     // A dropped book that keeps being re-checked, or a replacement that never
@@ -182,6 +201,7 @@ function fakeCloud() {
     } else if (q.op === "update") {
       for (const row of hit) {
         if (movesBook(q.table, row, q.payload)) return bookIsFixed();
+        if (freezesAgent(q.table, row, q.payload)) return agentIsNotARole();
         Object.assign(row, q.payload);
       }
       data = hit.map((r) => ({ ...r }));
@@ -316,6 +336,42 @@ function fakeCloud() {
       }
       return [{ book_id: book.id, book_name: book.name }];
     },
+    /**
+     * add_agent: the owner of the book, and nobody's account. Both checks
+     * are here because the real one is security definer and so has to do
+     * its own — and the second is the one migration 008 rests on (J16.1).
+     */
+    add_agent({ book, agent_id }) {
+      const target = db.books.find((b) => b.id === book);
+      if (!target || target.owner !== ME) {
+        throw new Error("only the owner of a book may add an agent to it");
+      }
+      if (!db.anon_users.includes(agent_id)) {
+        throw new Error("an agent is not a person's account");
+      }
+      const held = db.book_members.find(
+        (m) => m.book_id === book && m.user_id === agent_id
+      );
+      if (held && held.role !== "agent") {
+        throw new Error("that account already belongs to this book");
+      }
+      if (!held) join(book, agent_id, "agent");
+      return null;
+    },
+    /**
+     * discard_orphan_agent: anonymous, and in no book at all. A person
+     * fails the first test and an agent in use fails the second, which
+     * is the whole of why this is safe to expose.
+     */
+    discard_orphan_agent({ agent_id }) {
+      const anon = db.anon_users.indexOf(agent_id);
+      if (anon < 0) return null;
+      if (db.book_members.some((m) => m.user_id === agent_id)) return null;
+      db.anon_users.splice(anon, 1);
+      const profile = db.profiles.findIndex((p) => p.user_id === agent_id);
+      if (profile >= 0) db.profiles.splice(profile, 1);
+      return null;
+    },
   };
 
   const client = {
@@ -333,9 +389,48 @@ function fakeCloud() {
     },
   };
 
+  /**
+   * The second client an agent is minted in (J16.6). The real one signs
+   * an anonymous user in; this one records that somebody did, hands back
+   * a session shaped like Supabase's, and — the part that matters — puts
+   * the new id in `anon_users`, so `add_agent` can tell it from a person.
+   */
+  let anonCount = 0;
+  const captchaTokens = [];
+  const makeScratchClient = () => ({
+    auth: {
+      async signInAnonymously(opts) {
+        const failure = failures.get("auth.signInAnonymously");
+        if (failure) return { data: null, error: failure };
+        anonCount += 1;
+        const id = `agent-${anonCount}`;
+        db.anon_users.push(id);
+        // Recorded because the challenge is worth nothing if the answer
+        // never leaves the browser. The client-side guard only stops an
+        // honest caller; the token reaching Supabase is what stops the
+        // other kind.
+        captchaTokens.push(opts && opts.options && opts.options.captchaToken);
+        db.profiles.push({
+          user_id: id,
+          // handle_new_user reads the sign-up metadata, which is what puts
+          // an agent in the roster under the name somebody chose.
+          display_name: (opts && opts.options && opts.options.data && opts.options.data.name) || "",
+        });
+        calls.push({ auth: "signInAnonymously" });
+        return {
+          data: { user: { id }, session: { user: { id }, refresh_token: `refresh-${id}` } },
+          error: null,
+        };
+      },
+    },
+  });
+
   return {
     db, client, calls, files,
     join,
+    makeScratchClient,
+    anonCalls: () => calls.filter((c) => c.auth === "signInAnonymously"),
+    captchaTokens,
     fail: (what, err) => failures.set(what, err || new Error("offline")),
     unfail: (what) => failures.delete(what),
     /** Every call to one table, or every storage call of one kind. */
@@ -410,6 +505,13 @@ function harness(opts = {}) {
     store,
     render: () => { renders.count++; },
     toast: (message) => toasts.push(message),
+  };
+
+  // What account.js puts on the shared handle: the throwaway client an
+  // agent is signed in with, and the coordinates its credential carries.
+  win.RecipeCloud = {
+    makeScratchClient: cloud.makeScratchClient,
+    coords: { url: "https://test.supabase.co", key: "sb_publishable_test" },
   };
 
   const src = fs.readFileSync(path.join(__dirname, "..", "js", "books.js"), "utf8");
@@ -1885,4 +1987,456 @@ test("J7.13 · a sync that starts failing is one of the moments it is checked", 
   assert.equal(h.win.localStorage.getItem(cacheKey), null, "and forgot the gone book");
   assert.match(h.lastToast(), /isn't available to you any more/);
   assert.doesNotMatch(h.lastToast(), /delet|remov/i);
+});
+
+// ---------------------------------------------------------------------
+// J16 · letting a program help
+// ---------------------------------------------------------------------
+
+/**
+ * Open the Books dialog the way somebody does — the challenge is drawn
+ * when it opens, not on any refresh, because a widget rendered into a
+ * closed dialog is rendered into `display: none`.
+ */
+async function openBooks(h) {
+  await h.el("books-btn").fire("click", {});
+  await flush();
+}
+
+/** Add an agent the way the dialog does, and let the click settle. */
+async function addAgent(h, name) {
+  h.el("new-agent-name").value = name;
+  h.el("create-agent-btn").fire("click", {});
+  await flush();
+  await flush();
+}
+
+test("J16.2 · only an owner is offered an agent", async () => {
+  const h = harness();
+  await h.books.refresh();
+  assert.equal(h.el("agents-section").hidden, false, "your own book: yours to hand out");
+
+  await h.books.switchTo(SHARED);
+  await flush();
+
+  assert.equal(h.el("agents-section").hidden, true,
+    "a book you were invited into is not yours to give a credential to");
+});
+
+test("J16.2 · an agent is named when it is added, and refuses to be nameless", async () => {
+  const h = harness();
+  await h.books.refresh();
+
+  await addAgent(h, "   ");
+
+  assert.equal(h.cloud.anonCalls().length, 0, "nothing is minted for a name nobody typed");
+  assert.match(h.lastToast(), /name/i);
+
+  // The button is not the only caller: the api refuses it too, so a
+  // nameless agent cannot arrive by another route and land in the roster
+  // as a blank line nobody can identify later (J16.2).
+  await assert.rejects(
+    () => h.api.createAgent(MINE, "  ", h.cloud.makeScratchClient, h.win.RecipeCloud.coords, ""),
+    /needs a name/
+  );
+  assert.equal(h.cloud.anonCalls().length, 0);
+
+  await addAgent(h, "Meal planner");
+
+  assert.equal(h.cloud.anonCalls().length, 1);
+  const row = h.cloud.db.book_members.find((m) => m.role === "agent");
+  assert.ok(row, "it is placed in the book as a member");
+  assert.equal(row.book_id, MINE);
+});
+
+/**
+ * The guards that hold J16 up live in migration 008 and are enforced by
+ * Postgres, which CI has not got. A test that asks the fake server
+ * whether it refuses something is a test of the fake, and would pass with
+ * 008 deleted from the repo — so these read the migration itself and
+ * assert the clauses are present.
+ *
+ * That is a weak check and it is meant to be: it catches the clause being
+ * dropped, not the clause being wrong. What proves it works is item (f),
+ * (g) and (h) of the checklist at the top of 008, run by hand.
+ */
+const migration008 = () =>
+  fs.readFileSync(path.join(__dirname, "..", "supabase", "migrations", "008_agent_members.sql"), "utf8");
+
+test("J16.1 · add_agent refuses a person's account, and one already in a book", () => {
+  const sql = migration008();
+  const fn = /create or replace function public\.add_agent[\s\S]*?\n\$\$;/.exec(sql)[0];
+
+  assert.match(fn, /is_book_owner\(book\)/, "the caller owns the book it is placing into");
+  assert.match(fn, /is_anonymous is true/, "and the thing being placed is nobody");
+  // Without this, any member of a book can read an agent's id out of the
+  // roster and attach it to a book of their own.
+  assert.match(
+    fn,
+    /if exists \(select 1 from book_members where user_id = agent_id\) then/,
+    "and is not already somebody else's agent"
+  );
+});
+
+test("J16.8 · the role trigger freezes 'agent' in both directions", () => {
+  const sql = migration008();
+  const fn = /create or replace function public\.book_members_role_only[\s\S]*?\n\$\$;/.exec(sql)[0];
+
+  // The policy alone cannot do this: a `with check` sees the new row and
+  // never the old one, so it happily allows agent -> editor.
+  assert.match(fn, /old\.role = 'agent' or new\.role = 'agent'/,
+    "the old row is what the policy could not see");
+  assert.match(sql, /create trigger book_members_role_only/, "and the trigger is re-created");
+});
+
+test("J7.5 · an anonymous session cannot redeem an invite", () => {
+  const sql = migration008();
+  const fn = /create or replace function public\.redeem_invite[\s\S]*?\n\$\$;/.exec(sql)[0];
+
+  // Anonymous sign-ins are on for J16, so without this an invite link
+  // stops being good for one person and becomes good for anyone holding
+  // it, with no Google account at all.
+  assert.match(fn, /is_anonymous is true/);
+  assert.match(fn, /raise exception 'sign in first'/);
+});
+
+test("J16.6 · the credential is shown once, and is not shown again", async () => {
+  const h = harness();
+  await h.books.refresh();
+
+  await addAgent(h, "Meal planner");
+
+  const out = h.el("agent-out");
+  assert.equal(out.hidden, false);
+  assert.match(out.innerHTML, /rfa1\./, "the credential itself");
+  assert.match(out.innerHTML, /not shown again/i, "and what that means, beside it");
+  assert.equal(h.clipboard.length, 0,
+    "a password in all but name is read before it is copied, not copied before it is read");
+
+  // Closing and reopening on the same book is the thing somebody
+  // actually does, and is where "not shown again" was false.
+  await openBooks(h);
+
+  assert.equal(h.el("agent-out").hidden, true, "gone, and not recoverable from the dialog");
+  assert.equal(h.el("agent-out").textContent, "");
+});
+
+test("J16.6 · the credential is escaped where it is rendered", async () => {
+  const h = harness();
+  await h.books.refresh();
+  // The credential is base64url and cannot contain these — but it is
+  // written with innerHTML, and the escaping is the reason that is safe
+  // rather than lucky. Take the escaper away and this is an injection.
+  h.api.createAgent = async () => ({
+    userId: "agent-1",
+    name: "Meal planner",
+    credential: '"><img src=x onerror=alert(1)>',
+  });
+
+  await addAgent(h, "Meal planner");
+
+  const html = h.el("agent-out").innerHTML;
+  assert.doesNotMatch(html, /<img/, "no tag reaches the markup");
+  assert.match(html, /&lt;img/, "it is shown as text instead");
+});
+
+test("J16.6 · the credential carries the book it is for", async () => {
+  const h = harness();
+  await h.books.refresh();
+  await addAgent(h, "Meal planner");
+
+  const packed = /rfa1\.([A-Za-z0-9_-]+)/.exec(h.el("agent-out").innerHTML)[1];
+  const parts = JSON.parse(Buffer.from(packed, "base64url").toString("utf8"));
+
+  assert.equal(parts.book, MINE,
+    "pinned, so an agent never has to guess which book it was given");
+  assert.equal(parts.url, "https://test.supabase.co");
+  assert.equal(parts.key, "sb_publishable_test");
+  assert.match(parts.refresh_token, /^refresh-/, "and the thing that says who is asking");
+});
+
+test("J16.7 · an agent is in the member list, by name and marked as one", async () => {
+  const h = harness();
+  await h.books.refresh();
+  await addAgent(h, "Meal planner");
+
+  const html = h.el("member-list").innerHTML;
+  assert.match(html, /Meal planner/, "under the name somebody gave it");
+  assert.match(html, /class="agent-badge">agent</, "and said to be a program, not a person");
+  assert.match(html, /Dave/, "beside the people");
+});
+
+test("J16.8 · an agent's role is not a control, and cannot be changed", async () => {
+  const h = harness();
+  h.cloud.join(MINE, THEM, "editor");
+  await h.books.refresh();
+  await addAgent(h, "Meal planner");
+
+  const rows = h.el("member-list").innerHTML.split("<li");
+  const agentRow = rows.find((r) => r.includes("Meal planner"));
+  const personRow = rows.find((r) => r.includes("Sam"));
+
+  assert.doesNotMatch(agentRow, /member-role-pick/,
+    "no select: offered one it would have read 'Can add and edit' and widened on the next change");
+  assert.match(personRow, /member-role-pick/, "a person still has one");
+
+  // The screen not offering it is a courtesy. Try it the way anything
+  // else would — through the handler the select drives — and it must
+  // still not happen.
+  const agent = h.cloud.db.book_members.find((m) => m.role === "agent");
+  await h.el("member-list").fire("change", {
+    target: control({ roleFor: agent.user_id }, { value: "editor" }),
+  });
+  await flush();
+
+  assert.equal(
+    h.cloud.db.book_members.find((m) => m.user_id === agent.user_id).role,
+    "agent",
+    "still an agent — a widened credential is the thing J16.8 exists to prevent"
+  );
+});
+
+test("J16.7 · the × that removes a person removes an agent, and says which", async () => {
+  const h = harness();
+  await h.books.refresh();
+  await addAgent(h, "Meal planner");
+  const agent = h.cloud.db.book_members.find((m) => m.role === "agent");
+
+  await h.el("member-list").fire("click", { target: control({ remove: agent.user_id }) });
+  await flush();
+
+  assert.match(h.confirms[h.confirms.length - 1], /Meal planner/,
+    "the question names it rather than calling a program 'this person'");
+  assert.match(h.confirms[h.confirms.length - 1], /credential stops working/);
+  assert.equal(
+    h.cloud.db.book_members.some((m) => m.user_id === agent.user_id), false,
+    "and the membership row is what goes"
+  );
+});
+
+test("J16.3 · sync pushes for an agent; the books UI still draws read-only", async () => {
+  const h = harness();
+
+  // The two helpers disagree about this one role on purpose. sync.js is in
+  // the agent's module set and has to push; books.js is not, and a browser
+  // opened with a credential should show the screen whose controls the
+  // database would allow, not the ones it would refuse.
+  //
+  // canWrite is private to sync.js, so it is asked the way the app asks
+  // it: resolveBook is what settles readOnly, one whole sync before the
+  // books UI gets round to the question (J7.17).
+  h.api.listBooks = async () => [{ id: SHARED, name: "Household", role: "agent", isOwner: false }];
+  await h.sync.resolveBook("agent-1", SHARED, "Meal planner");
+
+  assert.equal(h.sync.readOnly, false, "an agent pushes: adding a recipe is the point");
+  assert.equal(h.books.canEdit({ role: "agent" }), false, "and the books UI still says no");
+  assert.equal(h.books.canEdit({ role: "editor" }), true);
+  assert.equal(h.books.canEdit({ role: "viewer" }), false);
+});
+
+test("J16.3 · an agent pushes a recipe it added, and never one already there", async () => {
+  const h = harness({ book: SHARED });
+  h.cloud.join(SHARED, ME, "agent");
+  h.api.listBooks = async () => [{ id: SHARED, name: "Household", role: "agent", isOwner: false }];
+  await h.sync.resolveBook(ME, SHARED, "Meal planner");
+  h.store.useBook(SHARED);
+
+  // One the household wrote, already on the server and older there than
+  // in this cache — so the merge wants to push it as an update, which is
+  // exactly the write an agent has no policy for. And one the agent has
+  // just added, which the server has never seen.
+  const theirs = h.typed({ name: "Bolognese" });
+  h.cloud.db.recipes.push({
+    id: theirs.id,
+    book_id: SHARED,
+    data: JSON.parse(JSON.stringify(theirs)),
+    updated_at: new Date(theirs.updatedAt - 60000).toISOString(),
+    deleted_at: null,
+  });
+  const mine = h.typed({ name: "Agent curry" });
+
+  await h.sync.syncNow();
+
+  const pushes = h.cloud.tableCalls("recipes", "upsert");
+  const sent = pushes.flatMap((c) => [].concat(c.payload)).map((r) => r.id);
+  assert.deepEqual(sent, [mine.id], "only the one the server had never seen");
+  assert.equal(sent.includes(theirs.id), false,
+    "an upsert of a row that exists is an update, and one refusal fails the whole batch");
+});
+
+test("J16.3 · a viewer still cannot push, now that another role can", async () => {
+  const h = harness();
+  h.api.listBooks = async () => [{ id: SHARED, name: "Household", role: "viewer", isOwner: false }];
+
+  await h.sync.resolveBook(ME, SHARED, "Dave");
+
+  assert.equal(h.sync.readOnly, true, "J7.17 is unchanged by J16 existing");
+});
+
+test("J16.11 · what an agent pushes is sanitised on the way back down", async () => {
+  const h = harness();
+  const agentBook = MINE;
+
+  // A recipe an agent wrote, sitting on the server as it would after its
+  // push — including the things a program gets wrong or a hostile one
+  // tries. What the household's phone renders is what comes out of
+  // `sanitizeRecipe`, not what was sent (J5.7, J2.1).
+  h.cloud.db.recipes.push({
+    id: "33333333-3333-4333-8333-333333333333",
+    book_id: agentBook,
+    data: {
+      name: "Agent curry",
+      ingredients: [{ amount: 2, unit: "Grams", item: "onion" }],
+      steps: ["Cook."],
+      tags: ["Quick", "quick"],
+      image: "javascript:alert(1)",
+    },
+    updated_at: new Date().toISOString(),
+    deleted_at: null,
+  });
+  // And one that breaks the floor every recipe is held to.
+  h.cloud.db.recipes.push({
+    id: "44444444-4444-4444-8444-444444444444",
+    book_id: agentBook,
+    data: { name: "No steps", ingredients: [{ item: "onion" }], steps: [] },
+    updated_at: new Date().toISOString(),
+    deleted_at: null,
+  });
+
+  await h.sync.syncNow();
+
+  const got = h.store.getById("33333333-3333-4333-8333-333333333333");
+  assert.ok(got, "the good one arrives");
+  assert.equal(got.ingredients[0].unit, "g", "units normalised, whoever wrote them");
+  assert.deepEqual(got.tags, ["quick"], "a tag written twice is one tag");
+  assert.equal(got.image, "", "and an image that is not an image does not survive");
+  assert.equal(
+    h.store.getById("44444444-4444-4444-8444-444444444444"), null,
+    "and a recipe with no steps is not one, whoever sent it"
+  );
+});
+
+/**
+ * Turnstile, as far as books.js is concerned: a thing on `window` that
+ * draws, answers and resets. Absent, everything below must still work —
+ * which is the state before a site key exists and the state when
+ * Cloudflare does not load.
+ */
+function fakeTurnstile(win, answer = "tick") {
+  const calls = { rendered: 0, resets: 0 };
+  let response = answer;
+  win.turnstile = {
+    render() { calls.rendered += 1; return "widget-1"; },
+    getResponse() { return response; },
+    reset() { calls.resets += 1; response = ""; },
+  };
+  // Only on the fake window, which is the `global` books.js closes over.
+  // Putting it on globalThis too would leave it there for the next test.
+  return { calls, unanswered: () => { response = ""; } };
+}
+
+test("J16.2 · with no challenge configured, adding an agent still works", async () => {
+  const h = harness();
+  h.win.RECIPE_FRIEND_CONFIG = { turnstileSiteKey: "" };
+  await h.books.refresh();
+
+  await addAgent(h, "Meal planner");
+
+  assert.equal(h.cloud.anonCalls().length, 1, "nothing is gated on a challenge nobody drew");
+  assert.equal(h.books.challengeId, undefined, "and none was drawn");
+});
+
+test("J16.2 · the challenge is drawn once, and answered before an agent is made", async () => {
+  const h = harness();
+  h.win.RECIPE_FRIEND_CONFIG = { turnstileSiteKey: "site-key" };
+  const turnstile = fakeTurnstile(h.win);
+
+  await openBooks(h);
+  assert.equal(turnstile.calls.rendered, 1);
+  assert.equal(h.el("agent-turnstile").hidden, false);
+
+  // Closing and reopening must not stack a second widget on the first.
+  await h.books.refresh();
+  await openBooks(h);
+  assert.equal(turnstile.calls.rendered, 1, "drawn once and kept");
+
+  await addAgent(h, "Meal planner");
+
+  assert.equal(h.cloud.anonCalls().length, 1);
+  assert.deepEqual(h.cloud.captchaTokens, ["tick"],
+    "and the answer reaches the server, which is the only place it counts");
+  assert.equal(turnstile.calls.resets, 1, "and is spent");
+});
+
+test("J16.2 · an unanswered challenge stops the account being made at all", async () => {
+  const h = harness();
+  h.win.RECIPE_FRIEND_CONFIG = { turnstileSiteKey: "site-key" };
+  const turnstile = fakeTurnstile(h.win);
+  await openBooks(h);
+  turnstile.unanswered();
+
+  await addAgent(h, "Meal planner");
+
+  assert.equal(h.cloud.anonCalls().length, 0, "nothing is created on the strength of no answer");
+  assert.match(h.lastToast(), /tick the box/i, "and the box under the thumb says why");
+});
+
+test("J16.2 · a refused sign-in says what the server said", async () => {
+  const h = harness();
+  await h.books.refresh();
+  // The two failures somebody setting this up will actually hit:
+  // anonymous sign-ins still switched off, and a challenge the server
+  // wanted and did not get. "Couldn't add that agent" tells them nothing.
+  h.cloud.fail("auth.signInAnonymously", new Error("Anonymous sign-ins are disabled"));
+
+  await addAgent(h, "Meal planner");
+
+  assert.match(h.lastToast(), /Anonymous sign-ins are disabled/);
+  assert.equal(h.cloud.db.book_members.filter((m) => m.role === "agent").length, 0);
+});
+
+test("J16.1 · an agent that cannot be placed does not stay behind as an account", async () => {
+  const h = harness();
+  await h.books.refresh();
+  // The book is somebody else's: signing in succeeds, placing refuses.
+  h.sync.setBook(SHARED);
+
+  await addAgent(h, "Meal planner");
+
+  assert.equal(h.cloud.anonCalls().length, 1, "the account was made before we knew");
+  assert.equal(
+    h.cloud.rpcCalls("discard_orphan_agent").length, 1,
+    "and is cleared up in the moment rather than left lying about"
+  );
+  assert.deepEqual(h.cloud.db.anon_users, [], "the account really is gone, not just asked about");
+  assert.match(h.lastToast(), /Couldn't add that agent/);
+});
+
+test("J16.1 · clearing up only ever reaches an account in no book", () => {
+  const fn = /create or replace function public\.discard_orphan_agent[\s\S]*?\n\$\$;/.exec(
+    migration008()
+  )[0];
+
+  // This is a definer DELETE on auth.users granted to every signed-in
+  // caller. Its two predicates are the whole of why that is safe: a
+  // person fails the first, an agent in use fails the second.
+  assert.match(fn, /is_anonymous is true/);
+  assert.match(fn, /not exists \(select 1 from book_members where user_id = agent_id\)/);
+});
+
+test("J16.7 · removing an agent takes its account with it", async () => {
+  const h = harness();
+  await h.books.refresh();
+  await addAgent(h, "Meal planner");
+  const agent = h.cloud.db.book_members.find((m) => m.role === "agent");
+
+  await h.el("member-list").fire("click", { target: control({ remove: agent.user_id }) });
+  await flush();
+
+  assert.equal(
+    h.cloud.db.book_members.some((m) => m.user_id === agent.user_id), false,
+    "out of the book"
+  );
+  assert.deepEqual(h.cloud.db.anon_users, [],
+    "and the account is gone too — the dialog promises the credential stops working");
 });

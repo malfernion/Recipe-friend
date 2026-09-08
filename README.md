@@ -47,6 +47,14 @@ accounts and sync.
   single-use, expire in 48 hours, can be revoked, say which kind they are
   before anyone accepts, and never join anyone to anything without their
   say-so.
+- **Agents** — let a program read a book. An owner adds one from the
+  Sharing list, names it, and gets a credential to paste into whatever
+  assistant they run. It can read the book, add recipes and work on the
+  plan; it cannot edit or delete a recipe, favourite one, see the photos,
+  finish a plan, or invite anybody — and it has no book of its own and
+  cannot make one. It sits in the member list like anybody else, cannot
+  be promoted, and is removed with the same ×, which takes its account
+  with it. The credential is shown once.
 - **Copy and move** — copy a recipe into any book you can write to, which
   is how a book you only read is still worth being in. Moving one out of a
   book is the owner's, asks first, and leaves a tombstone so it does not
@@ -94,9 +102,9 @@ type in the search box, pick a photo, click Export, open an invite link.
 
 Every test name quotes a criterion from [`docs/journeys.md`](docs/journeys.md),
 so a failure points at behaviour that was agreed rather than at an
-implementation detail. **143 of the 153 criteria have a test naming
-them**; the ten that do not are listed at the end of the journeys, along
-with the database, which is deliberately outside the net.
+implementation detail. **146 of the 164 criteria have a test naming
+them**; the eighteen that do not are listed at the end of the journeys,
+along with the database, which is deliberately outside the net.
 
 The database is deliberately not covered — see the note at the end of the
 journeys. Row-level security is verified by hand when a migration is run.
@@ -124,9 +132,37 @@ design; all protection is row-level security). One-time setup:
    Configuration → Redirect URLs.
 3. Sign in from the app's header. First sign-in auto-creates your profile
    and a personal "My recipes" book.
+4. **Agents** (optional — only needed to let a program read a book).
+   Do these in this order; the middle step is what makes the first one
+   safe.
 
-Signed out, the app shows a sign-in screen; recipes and preferences live
-with the account, not the browser.
+   1. Create a **Cloudflare Turnstile** widget. It is a CAPTCHA — a
+      "prove you are a person" checkbox — and Cloudflare's is the one
+      Supabase accepts. Put its **site key** in `js/config.js` as
+      `turnstileSiteKey` (public, like the publishable key beside it) and
+      keep the secret key for the next step.
+   2. Supabase → Authentication → **Attack Protection → CAPTCHA
+      protection**: switch it on, provider Turnstile, and paste the
+      **secret key**. Check that signing in with Google still works
+      before going further.
+   3. Supabase → Authentication → Providers → **Anonymous sign-ins**:
+      turn it on. This is what lets an agent have an identity with no
+      email address, and it is also a public endpoint that creates
+      accounts — which is why the CAPTCHA goes on first.
+
+   **Why that order.** The app only sends a challenge answer once a site
+   key is set, and Supabase only demands one once its setting is on, so
+   filling in the key first is what avoids a window where adding an agent
+   fails. Turning on anonymous sign-ins first would open the
+   account-creating endpoint while nothing is in front of it.
+
+   The challenge is for the person adding the agent, once, in their
+   browser. The agent itself signs up for nothing and is never asked.
+   Note the checkbox in the dialog is not what protects the endpoint —
+   an abuser would call it directly and never open the page. The
+   server-side setting in step 2 is what does that; the checkbox is what
+   lets you switch it on without breaking the one place the app
+   legitimately creates an account.
 
 ### Recipe books and sync
 
@@ -218,7 +254,9 @@ supabase/migrations/           Additive schema changes, run in order
                                 moving one an owner's act, and adds the
                                 read-only member role; 007 adds the live
                                 plan a book keeps and the plans it has
-                                finished)
+                                finished; 008 adds the agent role, and
+                                the checks that keep an agent to reading,
+                                adding and planning)
 docs/journeys.md               What the app is meant to do, as criteria
 test/                          Tests, named for the criteria they check
 .github/workflows/deploy-pages.yml   GitHub Pages deployment

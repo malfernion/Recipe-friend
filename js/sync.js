@@ -28,12 +28,41 @@
   const toIso = (ms) => new Date(ms || Date.now()).toISOString();
 
   /**
-   * May we write to this book? The same question `BooksUI.canEdit` asks,
-   * asked here because `resolveBook` has the answer in its hands one
-   * whole sync before the books UI gets round to it (J7.17).
+   * May we write to this book at all? The same question `BooksUI.canEdit`
+   * asks, asked here because `resolveBook` has the answer in its hands
+   * one whole sync before the books UI gets round to it (J7.17). An agent
+   * may (J16.3), which is why it is not simply `readOnly`.
+   *
+   * `BooksUI.canEdit` deliberately disagrees about `agent`: nothing an
+   * agent runs loads the books UI, and a browser opened with an agent's
+   * credential should draw the read-only screen rather than controls
+   * whose writes the database would refuse.
    */
   function canWrite(book) {
-    return Boolean(book && (book.isOwner || book.role === "owner" || book.role === "editor"));
+    return Boolean(
+      book &&
+        (book.isOwner ||
+          book.role === "owner" ||
+          book.role === "editor" ||
+          book.role === "agent")
+    );
+  }
+
+  /**
+   * Is this the narrow kind of write — add a recipe, work on the plan,
+   * and nothing else (J16.3, J16.4)?
+   *
+   * There are three answers to "may this device write", not two, and
+   * pretending otherwise is what makes an agent's sync park. An agent
+   * that pushed like an editor would send an upsert against a row the
+   * server already has, which is an UPDATE it has no policy for, and one
+   * refusal fails the whole batch — every good insert beside it included.
+   * The same for a finished plan it may hold and may not record.
+   *
+   * So this is asked in the two places that push, and nowhere else.
+   */
+  function addsOnly(book) {
+    return Boolean(book && book.role === "agent");
   }
 
   /**
@@ -85,6 +114,7 @@
       this.planStore = planStore || null;
       this.bookId = null;
       this.readOnly = false; // a book we may read and not write (J7.17)
+      this.addOnly = false; // an agent: adds recipes, never edits them (J16.3)
       this.pending = false; // local edits waiting to go up
       this.running = false;
       this.timer = null;
@@ -148,6 +178,7 @@
         const book = await this.api.createBook(global.RecipeApi.ownBookName(displayName));
         this.bookId = book.id;
         this.readOnly = false; // our own, so ours to write in
+        this.addOnly = false;
         return this.bookId;
       }
       const preferred = preferredId && books.find((b) => b.id === preferredId);
@@ -164,6 +195,7 @@
       // not to do (J12.10). The book list is already in hand here, and it
       // carries the answer.
       this.readOnly = !canWrite(chosen);
+      this.addOnly = addsOnly(chosen);
       return this.bookId;
     }
 
@@ -287,10 +319,11 @@
      * Whether we may write to it travels with it, because the answer is
      * per book, not per person.
      */
-    setBook(bookId, { readOnly = false } = {}) {
+    setBook(bookId, { readOnly = false, addOnly = false } = {}) {
       clearTimeout(this.timer);
       this.bookId = bookId;
       this.readOnly = readOnly;
+      this.addOnly = addOnly;
       // Each book keeps its own plan, so switching books switches plans
       // (J12.3). It is done here rather than left to every caller because
       // a plan pointed at the wrong book is a shopping list for somebody
@@ -317,8 +350,17 @@
         const { recipes, tombstones, toPush } = this.merge(rows);
         this.store.applyMerge(recipes, tombstones);
 
-        const pushed = this.readOnly ? 0 : toPush.length;
-        if (pushed > 0) await this.api.pushRecipes(toPush);
+        // An agent may add a recipe and may not touch one that is there
+        // (J16.3). `pushRecipes` sends an upsert, so a row the server
+        // already has would go up as an UPDATE it has no policy for —
+        // and one refusal fails the whole batch, taking every good
+        // insert with it. So it pushes what the server has never seen
+        // and leaves the rest where it is.
+        const held = new Set(rows.map((r) => r.id));
+        const mine = this.addOnly ? toPush.filter((r) => !held.has(r.id)) : toPush;
+
+        const pushed = this.readOnly ? 0 : mine.length;
+        if (pushed > 0) await this.api.pushRecipes(mine);
 
         const plans = await this.syncPlans();
 
@@ -453,7 +495,13 @@
       // half alone would put them on a fresh generation of their own
       // that they can never push — an empty list on their phone while
       // the household is still shopping from the one the book holds.
-      if (plan && plan.completedAt && !this.readOnly) {
+      // An agent is excluded here for the same reason a viewer is, and it
+      // matters more: it may write the live plan but not the archive
+      // (J16.4). Taking this branch, it would clear its own live plan
+      // locally and then be refused the record — leaving a week that
+      // never happened and a sync parked for ever on a book that is
+      // perfectly well. A person's device finishes the job.
+      if (plan && plan.completedAt && !this.readOnly && !this.addOnly) {
         archived = plan;
         plan = global.RecipePlan.emptyPlan(global.RecipePlan.generationAfter(plan));
       }
@@ -501,6 +549,19 @@
       // J7.17). It would be refused, and a refused push parks the status
       // line on "Sync paused" and makes read-only look broken.
       if (this.readOnly) return { pushed: 0, pulled: missingHere.length, live: "read" };
+
+      // An agent works on the live plan and never on the record (J16.4),
+      // so the archive push below is not its errand. It has nothing owed
+      // in any case — the branch that mints a debt is the one it did not
+      // take above — and skipping it is what keeps that true even if a
+      // debt arrives from somewhere else, which would otherwise be
+      // pushed, refused, and park the sync.
+      if (this.addOnly) {
+        const blank = plan.meals.length === 0 && Object.keys(plan.settled).length === 0;
+        const live = (!remote && blank) || samePlan(plan, remote) ? "unchanged" : "pushed";
+        if (live === "pushed") await this.api.pushLivePlan(this.bookId, plan);
+        return { pushed: 0, pulled: missingHere.length, live };
+      }
 
       // The record first, the live row second, and that order is the whole
       // of what makes a half-finished Done safe. Recording a plan and then
@@ -557,6 +618,10 @@
       // An empty plan has nothing to record and offers no Done (J14.3).
       if (!finished || finished === live) return null;
       if (this.readOnly) throw new Error("this is a book you read, not one you plan");
+      // Done is what records a week as planned (J14.1), and that record
+      // is what an agent reads to decide what to suggest next (J14.9).
+      // An agent does not write its own evidence (J16.4).
+      if (this.addOnly) throw new Error("an agent does not finish a plan");
 
       // Strictly later than the plan it replaces, so the two are ordered
       // as generations on every device that meets them (see mergePlans).
@@ -590,6 +655,7 @@
       const archived = this.planStore.archive.find((p) => p.id === planId);
       if (!archived) return null;
       if (this.readOnly) throw new Error("this is a book you read, not one you plan");
+      if (this.addOnly) throw new Error("an agent does not finish a plan");
 
       await this.api.deleteArchivedPlan(this.bookId, planId);
       this.planStore.removeArchived(planId);

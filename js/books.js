@@ -52,6 +52,18 @@
      * is worse than one that is not offered, and the database will refuse
      * anyway.
      */
+    /**
+     * May this book be written to at all, by anybody holding this
+     * session? Wider than `canEdit`, which answers the different question
+     * of whether to draw the controls: an agent writes (J16.3) and is
+     * still shown the read-only screen, because nothing an agent runs
+     * opens this dialog and a person who did should not be offered
+     * buttons the database would refuse.
+     */
+    canWriteTo(book) {
+      return this.canEdit(book) || Boolean(book && book.role === "agent");
+    }
+
     canEdit(book) {
       const b = book || this.currentBook();
       if (!b) return false;
@@ -119,6 +131,60 @@
       this.applyRole();
       this.renderHeader();
       this.renderDialog();
+    }
+
+    /**
+     * Draw the challenge in front of adding an agent, if there is one to
+     * draw (J16.2).
+     *
+     * Every part of this is allowed to be absent, and the absence is the
+     * same answer each time: no widget, no token, and `createAgent` sends
+     * nothing. That covers the state before a site key is configured, a
+     * Cloudflare that did not load, and the tests. Supabase is what
+     * decides whether a token is required — so its CAPTCHA setting goes
+     * on only once the key here is set, which is written down in
+     * js/config.js beside the key itself.
+     *
+     * Drawn once and kept. A challenge is answered per token, not per
+     * widget, so the widget is reset after a token is spent rather than
+     * being torn down and rebuilt.
+     */
+    drawChallenge() {
+      const cfg = global.RECIPE_FRIEND_CONFIG;
+      const key = cfg && cfg.turnstileSiteKey;
+      const box = $("#agent-turnstile");
+      const api = global.turnstile;
+      if (!key || !box || !api || this.challengeId !== undefined) return;
+      try {
+        this.challengeId = api.render(box, { sitekey: key });
+        box.hidden = false;
+      } catch (err) {
+        // A challenge that will not draw must not take the dialog with
+        // it. Adding an agent then fails at the server, which says why.
+        console.warn("Recipe Friend: could not draw the challenge.", err);
+      }
+    }
+
+    /** The answer to the challenge, or "" where there is no challenge. */
+    challengeToken() {
+      const api = global.turnstile;
+      if (!api || this.challengeId === undefined) return "";
+      try {
+        return api.getResponse(this.challengeId) || "";
+      } catch {
+        return "";
+      }
+    }
+
+    /** Spend it: a token answers once, so the next agent needs a new one. */
+    resetChallenge() {
+      const api = global.turnstile;
+      if (!api || this.challengeId === undefined) return;
+      try {
+        api.reset(this.challengeId);
+      } catch {
+        /* the next attempt will say so */
+      }
     }
 
     /** Tell sync and the UI what this book allows, from one answer. */
@@ -210,15 +276,24 @@
           <li class="member-item">
             <span class="member-name">${esc(m.name)}${m.isMe ? " (you)" : ""}</span>
             ${
-              iOwn && !m.isMe
-                ? `<label class="member-role-field">
+              m.role === "agent"
+                ? // An agent is in the list like anybody else (J16.7), and
+                  // wears a marker rather than a control: what it may do
+                  // cannot be changed, to it or from it (J16.8). Offered a
+                  // select here it would have rendered as "Can add and
+                  // edit" — the first option, since it is not "viewer" —
+                  // and the next change would have silently widened a
+                  // credential handed over for something narrower.
+                  `<span class="agent-badge">agent</span>`
+                : iOwn && !m.isMe
+                  ? `<label class="member-role-field">
                      <span class="visually-hidden">What ${esc(m.name)} may do</span>
                      <select class="member-role-pick" data-role-for="${esc(m.userId)}">
                        <option value="editor"${m.role === "viewer" ? "" : " selected"}>Can add and edit</option>
                        <option value="viewer"${m.role === "viewer" ? " selected" : ""}>Can read only</option>
                      </select>
                    </label>`
-                : `<span class="member-role">${esc(m.role)}</span>`
+                  : `<span class="member-role">${esc(m.role)}</span>`
             }
             ${
               iOwn && !m.isMe
@@ -241,6 +316,30 @@
       // there would be nowhere to put new recipes.
       const deleteBtn = $("#delete-book-btn");
       if (deleteBtn) deleteBtn.hidden = !iOwn || this.books.length < 2;
+
+      // Agents are the owner's to hand out and take back (J16.2), so the
+      // whole block goes rather than being shown disabled — a control
+      // that is not yours to press reads better absent than greyed.
+      const agents = $("#agents-section");
+      if (agents) agents.hidden = !iOwn;
+      // The challenge is drawn when the dialog opens, not here. This runs
+      // on every refresh — including the one at sign-in and the one a
+      // failing sync triggers — and a widget rendered into a dialog that
+      // is closed is rendered into `display: none`, once, for the life of
+      // the page.
+      if (iOwn && this.dialog && this.dialog.open) this.drawChallenge();
+      // A credential belongs to the moment it was made (J16.6), and this
+      // is every moment after it. Keyed on the book it was minted for, it
+      // survived closing and reopening the dialog on the same book —
+      // which is the thing somebody actually does, and which made "it is
+      // not shown again" false where it was easiest to disprove. It is
+      // cleared unless this very render is the one that drew it.
+      const agentOut = $("#agent-out");
+      if (agentOut && !this.credentialJustShown) {
+        agentOut.hidden = true;
+        agentOut.textContent = "";
+      }
+      this.credentialJustShown = false;
 
       this.renderInvites(iOwn);
     }
@@ -287,7 +386,13 @@
     async switchTo(bookId) {
       if (!bookId || bookId === this.sync.bookId) return;
       const book = this.books.find((b) => b.id === bookId);
-      this.sync.setBook(bookId, { readOnly: !this.canEdit(book) });
+      // Three answers, not two: a viewer pushes nothing, an agent pushes
+      // only what the server has never seen, everyone else pushes
+      // everything (J16.3).
+      this.sync.setBook(bookId, {
+        readOnly: !this.canWriteTo(book),
+        addOnly: Boolean(book && book.role === "agent"),
+      });
       if (this.app.setCanEdit) this.app.setCanEdit(this.canEdit(book));
       this.app.store.useBook(bookId);
       rememberSelection(this.sync.userId, bookId);
@@ -319,6 +424,10 @@
       $("#books-btn").addEventListener("click", async () => {
         this.dialog.showModal();
         await this.refresh();
+        // After the dialog is open and the section has been shown or
+        // hidden, so the widget is drawn into something with a size.
+        const current = this.currentBook();
+        if (current && current.isOwner) this.drawChallenge();
       });
       $("#books-close-btn").addEventListener("click", () => this.dialog.close());
       this.dialog.addEventListener("click", (event) => {
@@ -487,19 +596,111 @@
       $("#member-list").addEventListener("click", async (event) => {
         const btn = event.target.closest("[data-remove]");
         if (!btn) return;
-        const ok = await RecipeAsk.ask("Remove this person from the book?", {
-          confirmLabel: "Remove",
-          danger: true,
-        });
+        // The same × takes an agent out (J16.7), and the question has to
+        // know which it is asking about: "this person" over a program is
+        // the kind of wrong wording that makes somebody answer no.
+        const who = this.members.find((m) => m.userId === btn.dataset.remove);
+        const isAgent = Boolean(who && who.role === "agent");
+        const ok = await RecipeAsk.ask(
+          isAgent
+            ? `Remove ${who.name} from the book? Its credential stops working straight away.`
+            : "Remove this person from the book?",
+          { confirmLabel: "Remove", danger: true }
+        );
         if (!ok) return;
         try {
-          await this.api.removeMember(this.sync.bookId, btn.dataset.remove);
+          // An agent's removal takes its account with it, which is what
+          // makes the promise above true (J16.7). A person's does not:
+          // they keep the account they signed in with.
+          if (isAgent) {
+            await this.api.removeAgent(this.sync.bookId, btn.dataset.remove);
+          } else {
+            await this.api.removeMember(this.sync.bookId, btn.dataset.remove);
+          }
           await this.refresh();
+          if (isAgent) this.app.toast(`${who.name} can no longer see this book.`);
         } catch (err) {
           console.warn("Recipe Friend: could not remove member.", err);
-          this.app.toast("Couldn't remove that person.");
+          this.app.toast(isAgent ? "Couldn't remove that agent." : "Couldn't remove that person.");
         }
       });
+
+      // --- agents (J16) ---------------------------------------------------
+
+      const agentName = $("#new-agent-name");
+      const addAgent = $("#create-agent-btn");
+      if (addAgent) {
+        addAgent.addEventListener("click", async () => {
+          const name = (agentName && agentName.value.trim()) || "";
+          if (!name) {
+            this.app.toast("Give the agent a name first.");
+            if (agentName) agentName.focus();
+            return;
+          }
+          const cloud = window.RecipeCloud;
+          if (!cloud || !cloud.makeScratchClient) return;
+          // Where there is a challenge on screen it has to be answered
+          // first. Asked for and refused, the server's complaint is the
+          // unhelpful kind, so the box under the thumb is what says so.
+          const token = this.challengeToken();
+          if (this.challengeId !== undefined && !token) {
+            this.app.toast("Tick the box to say you're a person first.");
+            return;
+          }
+          try {
+            const agent = await this.api.createAgent(
+              this.sync.bookId,
+              name,
+              cloud.makeScratchClient,
+              cloud.coords,
+              token
+            );
+            // Shown, not copied. This is a password in all but name and
+            // it is shown exactly once (J16.6) — putting it straight on
+            // the clipboard invites pasting it somewhere before reading
+            // what it is, and the warning beside it is the point.
+            if (agentName) agentName.value = "";
+            // Before the refresh below, which is what redraws the dialog
+            // and would otherwise wipe the credential it is about to show.
+            this.credentialJustShown = true;
+            const out = $("#agent-out");
+            if (out) {
+              out.hidden = false;
+              out.innerHTML =
+                `<span class="agent-credential">Copy this now — it is not shown again</span>` +
+                esc(agent.credential);
+            }
+            // The agent exists and its credential is on screen, so a
+            // refresh that fails now must not report a failure to create
+            // it — the roster being stale is a smaller thing than telling
+            // somebody their credential is worthless while it is in front
+            // of them.
+            try {
+              await this.refresh();
+            } catch (err) {
+              console.warn("Recipe Friend: the agent was added but the list is stale.", err);
+            }
+            this.app.toast(`${agent.name} can now read this book.`);
+          } catch (err) {
+            console.warn("Recipe Friend: could not add an agent.", err);
+            // The two likely failures are "anonymous sign-ins are
+            // disabled" and a refused challenge, and both are exactly
+            // what somebody setting this up has got wrong. Saying
+            // "couldn't add that agent" to either is telling them
+            // nothing they did not already know.
+            this.app.toast(
+              err && err.message
+                ? `Couldn't add that agent — ${err.message}`
+                : "Couldn't add that agent."
+            );
+          } finally {
+            // Spent either way: a token answers once, and a refused
+            // attempt has still used it up. Left alone, the second try
+            // fails on a stale answer and reads as the same failure.
+            this.resetChallenge();
+          }
+        });
+      }
 
       $("#delete-book-btn").addEventListener("click", async () => {
         const current = this.currentBook();
