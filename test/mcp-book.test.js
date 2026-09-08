@@ -92,7 +92,7 @@ test("the credential is exchanged once, however many tools ask at once", async (
   assert.equal(a.userId, "agent-1");
 });
 
-test("nothing is persisted and no url is read: this is a process, not a browser", async () => {
+test("J17.3 · nothing is persisted and no url is read: this is a process, not a browser", async () => {
   const fake = fakeSupabase();
   await new Session(CREDENTIAL, { createClient: fake.createClient }).open();
 
@@ -157,6 +157,22 @@ test("J16.1 · the book the credential names is the book that is opened", async 
   assert.equal(book.name, "Ours");
   assert.equal(api.userId, "agent-1");
   assert.deepEqual(book.recipes.map((r) => r.name), ["Soup"], "a cold start is a full pull");
+});
+
+test("J17.2 · the credential names the book, and nothing else chooses one", async () => {
+  // An agent belongs to one book and cannot be added to a second
+  // (J16.1), so a roster with anything else in it is a project half way
+  // through a migration — the situation the pinned book id is for.
+  const api = fakeApi();
+  api.listBooks = async () => [
+    { id: "99999999-9999-4999-8999-999999999999", role: "agent", name: "Somewhere else", isOwner: true },
+    { id: BOOK, role: "agent", name: "Ours", isOwner: false },
+  ];
+
+  const book = await openBook(session(), { api });
+
+  assert.equal(book.id, BOOK, "the one the credential named, not the one it owns");
+  assert.equal(book.name, "Ours");
 });
 
 test("J16.7 · an agent that has been removed is told, not shown an empty book", async () => {

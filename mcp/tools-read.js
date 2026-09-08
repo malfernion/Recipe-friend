@@ -221,7 +221,7 @@ const planningHistory = {
   description:
     "For every recipe, when it was last planned and how often, worked out from the plans the " +
     "book has finished. Least recently planned first, and recipes never planned come first of " +
-    "all. This is the honest answer to 'what have we not had in ages'.",
+    "all. This is the honest answer to 'what have we not had in ages'. " + HOUSEHOLD_DATA,
   annotations: LOOKS,
   inputSchema: { type: "object", properties: {}, additionalProperties: false },
   async run(book) {
@@ -254,7 +254,7 @@ const getPlan = {
     "What is in the book's live plan, at the portions each meal is planned for, and the one " +
     "combined shopping list those meals add up to — summed, with plurals folded together. " +
     "A plan is a bag of meals: nothing in it belongs to a day or a date. Keep the calendar on " +
-    "your side and ask this for meals and portions.",
+    "your side and ask this for meals and portions. " + HOUSEHOLD_DATA,
   annotations: LOOKS,
   inputSchema: { type: "object", properties: {}, additionalProperties: false },
   async run(book) {

@@ -65,7 +65,7 @@ test("a host is offered nine tools, each saying what kind of thing it is", async
   assert.equal(tools.find((t) => t.name === "get_plan").annotations.readOnlyHint, true);
 });
 
-test("listing the tools opens no book, so a host may spawn this and think again", async () => {
+test("J17.4 · listing the tools opens no book, so a host may spawn this and think again", async () => {
   let opened = 0;
   const client = await connect({
     openBook: async () => {
@@ -92,7 +92,7 @@ test("a tool answers with the thing itself, as json a model can read", async () 
   assert.deepEqual(said.recipes.map((r) => r.name), ["Lentil soup"]);
 });
 
-test("a credential nobody can use is an answer somebody can act on", async () => {
+test("J17.5 · a credential nobody can use is an answer somebody can act on", async () => {
   const client = await connect({
     openBook: async () => {
       throw new Error("That agent is not in that book any more.");
@@ -105,7 +105,7 @@ test("a credential nobody can use is an answer somebody can act on", async () =>
   assert.match(out.content[0].text, /not in that book any more/);
 });
 
-test("a book that would not open is tried again rather than remembered as dead", async () => {
+test("J17.4 · a book that would not open is tried again rather than remembered as dead", async () => {
   let attempts = 0;
   const client = await connect({
     openBook: async () => {
@@ -164,7 +164,7 @@ const HELLO = {
   params: { protocolVersion: "2025-06-18", capabilities: {}, clientInfo: { name: "t", version: "1" } },
 };
 
-test("nothing but MCP messages ever reaches stdout, which on stdio is the wire", async () => {
+test("J17.1 · nothing but MCP messages ever reaches stdout, which on stdio is the wire", async () => {
   const { out, err } = await run(
     [HELLO, { jsonrpc: "2.0", method: "notifications/initialized" }, { jsonrpc: "2.0", id: 2, method: "tools/list" }],
     { RECIPE_FRIEND_CREDENTIAL: CREDENTIAL }

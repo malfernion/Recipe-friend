@@ -90,7 +90,7 @@ test("a mealId that is not in the plan is an answer, not a failure", async () =>
   assert.deepEqual(out.missing, ["not-a-meal"]);
 });
 
-test("J12.11 · a meal somebody added from a phone survives the agent's write", async () => {
+test("J17.9 · a meal somebody added from a phone survives the agent's write (J12.11)", async () => {
   const { book, win, idOf, setRemotePlan, sent } = await aBook();
 
   // The agent plans a soup, and it goes up.
@@ -147,7 +147,7 @@ test("J16.11 · a recipe below the floor is refused, the same as from anybody", 
   assert.deepEqual(sent.recipes, [], "nothing refused was sent anywhere");
 });
 
-test("a recipe that could not be sent does not leave somebody thinking it landed", async () => {
+test("J17.10 · a recipe that could not be sent does not leave somebody thinking it landed", async () => {
   const { book, breakNetwork } = await aBook();
   breakNetwork();
 
@@ -166,7 +166,7 @@ test("a recipe that could not be sent does not leave somebody thinking it landed
   assert.deepEqual(book.recipes.map((r) => r.name).sort(), ["Chicken pie", "Lentil soup"]);
 });
 
-test("J16.4 · no tool exists for anything the credential cannot do", () => {
+test("J17.6 · no tool exists for anything the credential cannot do", () => {
   const names = [...read, ...write].map((t) => t.name);
 
   assert.deepEqual(names.filter((n) => /edit|update|delete|remove_recipe|favourite|favorite|star|done|finish|complete/.test(n)), []);
@@ -178,7 +178,7 @@ test("J16.4 · no tool exists for anything the credential cannot do", () => {
   ]);
 });
 
-test("the one-way tool says so twice: to the client in a hint, to the model in words", () => {
+test("J17.10 · the one-way tool says so twice: to the client in a hint, to the model in words", () => {
   const filing = by("add_recipe");
   assert.equal(filing.annotations.readOnlyHint, false);
   assert.equal(filing.annotations.destructiveHint, true);

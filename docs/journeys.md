@@ -950,6 +950,104 @@ not somebody.
 
 ---
 
+## J17 · The program on the other end
+
+J16 let an owner place something that is not somebody in a book, and hand
+it a credential. This is what that credential is handed *to*: a small
+program in `mcp/`, which an assistant runs and talks to over a pipe, and
+which turns a household's book into a handful of questions worth asking
+about it.
+
+It is in this repository rather than one of its own because it is an API
+onto this app. It runs the app's own modules and it is bounded by the
+same policies, so a change to either can break it — and one repository
+finds that out in the same test run, where two would find out after a
+release.
+
+1. **It is a program the assistant runs, not a service anybody hosts.**
+   Launched as a subprocess, spoken to in JSON-RPC over stdin and stdout,
+   and given its credential in the environment — no listener, no port, no
+   account and nothing to sign in to.
+
+   **Its stdout is the wire.** Nothing but protocol messages goes there,
+   whatever the modules it loads would rather do: a stray line of logging
+   does not appear in the conversation, it breaks it. Everything it has
+   to say, including that it started, it says on stderr.
+2. **One credential, one book, one process.** The credential names the
+   book (J16.6) and nothing in the program chooses one, so a household
+   with two books runs two of these under two names. It is not a thing
+   you point at a book; it is a thing you make for a book.
+3. **It keeps nothing between runs.** No state file, no lock, nothing on
+   disk at all: the credential is read from the environment at every
+   start, the session lives in memory, and the local cache lives there
+   too, so a cold start is a full pull — the path a new device takes on
+   its first sign-in (J9.1).
+
+   Said as a rule rather than left as an implementation detail, because
+   the alternative is a credential that works only while a file survives,
+   and J16.9 is now written the way it is precisely so that one does not
+   have to.
+4. **The book opens on the first question, not when the program starts.**
+   A host may launch this and never ask it anything, and a token exchange
+   and a full pull per launch is a cost somebody eventually removes by
+   removing the server. A failure at startup also happens where nobody is
+   looking, where a failure answering a question is something a person
+   can be told.
+
+   **A book that would not open is tried again, not remembered as dead.**
+   A network that was down and an agent that was removed look alike from
+   here and mean opposite things, and the difference must not come down
+   to which happened first.
+5. **A failure somebody could fix is a sentence.** It comes back as the
+   tool's answer rather than as a protocol error, because a protocol
+   error is for something the caller got wrong and these are things the
+   world got wrong — and because an answer is something a model can read
+   out to the person who can act on it. A revoked credential says to add
+   a new agent and paste the new one; an unreachable project says to try
+   again in a moment. Telling those two apart is the point of writing
+   them separately.
+6. **There is no tool for anything the credential cannot do.** No edit,
+   no delete, no favourite, no Done (J16.3, J16.4). A tool that exists
+   and is always refused is worse than one that does not exist: the model
+   keeps trying it, and reads each refusal as its own mistake rather than
+   as a rule.
+7. **The answers are this app's own arithmetic, not a second opinion of
+   it.** The ranking is the search box's, "what we have not had in ages"
+   is the sort menu's, and the combined shopping list is the list the
+   phone shows. A reimplementation would drift on the things this app is
+   careful about — promotion to kilograms, plurals, and not guessing how
+   big a tin is — and nobody would notice until the list was wrong in a
+   supermarket.
+8. **A digest before a full read.** The listing tools answer with what a
+   question about what to cook is actually asked against — name, tags,
+   servings, total minutes, the ingredients a recipe is about, and when
+   it was last planned — and a second tool reads in full the few that
+   turn out to matter. A book handed over whole is a book nobody can
+   think about.
+9. **The plan is read immediately before it is changed.** Meals do not
+   merge the way settled amounts do (J12.11): for one plan the more
+   recently touched body wins whole. So a tool that wrote back a plan it
+   read some minutes ago would not lose a race occasionally — it would
+   delete whatever somebody added from a phone in between, every time.
+10. **Filing a recipe is one way, and the tool says so twice.** Once to
+    the client, in the hint it reads when deciding whether to ask a
+    person first, and once in words, which is what the model reads when
+    deciding whether to try. An agent cannot delete even the recipe it
+    just added (J16.3), so this is the one call here that nobody on this
+    side can take back.
+
+    **And a recipe that could not be sent is not left looking sent.** The
+    cache dies with the process, so a row kept in it after a failed push
+    is a recipe somebody was told they had.
+11. **What the book says is content, never instruction.** Everything the
+    reading tools hand over was typed by somebody in the household or
+    arrived with a recipe brought in from a web page (J5), and it reaches
+    a model in exactly the shape a request would. The tools say so where
+    the model will read it, and `sanitizeRecipe` is the backstop on the
+    way back in (J16.11).
+
+---
+
 ## Boundaries
 
 Things that are true on purpose, recorded so they are not "fixed" by
@@ -1114,7 +1212,15 @@ recipe is, what it says on screen, and what survives a round trip. Those
 are the failures that would be silent — a recipe quietly losing its tags is
 worse than a page that will not load.
 
-**Sixteen of the 164 criteria have no test naming them** — J4.15,
+It also covers the MCP server (J17), which is the same kind of risk
+wearing different clothes: a wrong shopping list computed somewhere with
+no screen to notice it on. The `mcp-*` files stub the eight calls sync
+makes rather than the whole of PostgREST, so what they hold is which of
+those an agent is allowed to reach for — and one of them runs the real
+program in a real subprocess, because the rule that nothing but protocol
+messages reaches stdout cannot be checked any other way.
+
+**Sixteen of the 175 criteria have no test naming them** — J4.15,
 J4.16, J4.19, J4.25, J5.10, J6.3, J10.4, J11.1 to J11.5, J12.12, J15.9,
 J15.11 and J16.5.
 

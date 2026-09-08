@@ -105,7 +105,7 @@ dependencies, so `npm install` comes first if you want to run everything.
 
 Every test name quotes a criterion from [`docs/journeys.md`](docs/journeys.md),
 so a failure points at behaviour that was agreed rather than at an
-implementation detail. **148 of the 164 criteria have a test naming
+implementation detail. **159 of the 175 criteria have a test naming
 them**; the sixteen that do not are listed at the end of the journeys,
 along with the database, which is deliberately outside the net.
 
@@ -297,6 +297,10 @@ onto this app: it runs the app's own modules, so the shopping list it
 computes is the list the phone computes, and it is bounded by the same
 policies (migration 008) that the app is. A change to either can break
 it, and one repository finds that out in the same test run.
+
+**What it should do is written down like everything else** — J17 in
+[`docs/journeys.md`](docs/journeys.md), with J16 beside it for what the
+credential it holds is allowed to do.
 
 **Add an agent first** — Books → Sharing → Agents — and keep the
 credential it shows you. Then point your assistant at this, however it

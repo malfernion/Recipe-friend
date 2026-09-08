@@ -56,7 +56,7 @@ test("the modules that cache reach no further than localStorage", () => {
   }
 });
 
-test("the whole set an agent loads runs a plan end to end in bare Node", () => {
+test("J17.7 · the whole set an agent loads runs a plan end to end in bare Node", () => {
   // No stub DOM here, unlike the app tests: a fake window with an
   // in-memory localStorage is the whole environment, which is what a
   // program outside this app has.
