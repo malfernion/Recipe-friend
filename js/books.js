@@ -337,7 +337,12 @@
       const agentOut = $("#agent-out");
       if (agentOut && !this.credentialJustShown) {
         agentOut.hidden = true;
-        agentOut.textContent = "";
+        // The secret, not the block: the warning and the Copy button are
+        // markup that lives in the page and is wanted again next time.
+        const secret = $("#agent-secret");
+        if (secret) secret.textContent = "";
+        const said = $("#agent-copied");
+        if (said) said.textContent = "";
       }
       this.credentialJustShown = false;
 
@@ -627,6 +632,26 @@
 
       // --- agents (J16) ---------------------------------------------------
 
+      const copyBtn = $("#agent-copy-btn");
+      if (copyBtn) {
+        copyBtn.addEventListener("click", async () => {
+          const secret = $("#agent-secret");
+          const said = $("#agent-copied");
+          const text = (secret && secret.textContent) || "";
+          if (!text) return;
+          try {
+            await navigator.clipboard.writeText(text);
+            if (said) said.textContent = "Copied.";
+          } catch (err) {
+            // A refused clipboard is not a lost credential: it is still
+            // on screen and still selectable, so say that rather than
+            // reporting a failure somebody can do nothing about.
+            console.warn("Recipe Friend: could not reach the clipboard.", err);
+            if (said) said.textContent = "Couldn't copy — select it and copy by hand.";
+          }
+        });
+      }
+
       const agentName = $("#new-agent-name");
       const addAgent = $("#create-agent-btn");
       if (addAgent) {
@@ -655,20 +680,27 @@
               cloud.coords,
               token
             );
-            // Shown, not copied. This is a password in all but name and
-            // it is shown exactly once (J16.6) — putting it straight on
-            // the clipboard invites pasting it somewhere before reading
-            // what it is, and the warning beside it is the point.
+            // Shown first, copied on purpose. This is a password in all
+            // but name and it is shown exactly once (J16.6), so it does
+            // not go onto the clipboard by itself — but making somebody
+            // select 250 characters of base64 by hand, in a dialog, on a
+            // phone, is how a credential gets half-copied and pasted
+            // broken. The button is the answer; the warning above it is
+            // still the point.
             if (agentName) agentName.value = "";
             // Before the refresh below, which is what redraws the dialog
             // and would otherwise wipe the credential it is about to show.
             this.credentialJustShown = true;
             const out = $("#agent-out");
-            if (out) {
+            const secret = $("#agent-secret");
+            if (out && secret) {
+              // textContent, not innerHTML: the surrounding markup is in
+              // the page already, so the one thing that varies is the one
+              // thing that never becomes markup.
+              secret.textContent = agent.credential;
               out.hidden = false;
-              out.innerHTML =
-                `<span class="agent-credential">Copy this now — it is not shown again</span>` +
-                esc(agent.credential);
+              const said = $("#agent-copied");
+              if (said) said.textContent = "";
             }
             // The agent exists and its credential is on screen, so a
             // refresh that fails now must not report a failure to create
