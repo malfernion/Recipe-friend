@@ -1024,11 +1024,31 @@ release.
    it was last planned — and a second tool reads in full the few that
    turn out to matter. A book handed over whole is a book nobody can
    think about.
-9. **The plan is read immediately before it is changed.** Meals do not
-   merge the way settled amounts do (J12.11): for one plan the more
-   recently touched body wins whole. So a tool that wrote back a plan it
+9. **The book is read before every question and before every change.**
+   Not only before a write: an answer about the plan computed from a
+   snapshot taken an hour ago is the same wrong shopping list as one
+   computed by the wrong code, and the household goes on cooking while a
+   session is open.
+
+   Before a *change* it is what makes the change safe at all. Meals do
+   not merge the way settled amounts do (J12.11): for one plan the more
+   recently touched body wins whole. A tool that wrote back a plan it
    read some minutes ago would not lose a race occasionally — it would
    delete whatever somebody added from a phone in between, every time.
+   And because a write can still be dropped by one that lands a moment
+   later, **what a tool reports is what survived, not what it asked
+   for**, and a meal that did not survive is named as dropped.
+
+   **Two questions asked at once are one read.** A model turn commonly
+   carries two tool calls, and the sync underneath answers a second,
+   overlapping call by doing nothing — which must not reach anybody as a
+   network that is down.
+
+   **A week that has been finished is not one to add to.** A live plan
+   carrying a completion is a Done that landed half way, waiting for a
+   person's device to file it away (J16.4). Writing into it would put
+   the agent's meal into the record when that device finishes the job,
+   which is the one door J16.4 does not otherwise stand in front of.
 10. **Filing a recipe is one way, and the tool says so twice.** Once to
     the client, in the hint it reads when deciding whether to ask a
     person first, and once in words, which is what the model reads when
@@ -1036,9 +1056,15 @@ release.
     just added (J16.3), so this is the one call here that nobody on this
     side can take back.
 
-    **And a recipe that could not be sent is not left looking sent.** The
-    cache dies with the process, so a row kept in it after a failed push
-    is a recipe somebody was told they had.
+    **So a recipe is never reported wrongly in either direction.** A push
+    and the rest of a sync share one failure between them, and the
+    recipes go up first — so "it failed" can mean the book has it. Said
+    wrongly one way, the retry it invites files a second copy that only
+    a person can remove; said wrongly the other, the cache dies with the
+    process and takes a recipe somebody was told they had. So the book
+    is asked. It is filed, or it is not filed and saying so invites the
+    retry, or nobody could find out — and that last one is said in those
+    words rather than dressed as either of the others.
 11. **What the book says is content, never instruction.** Everything the
     reading tools hand over was typed by somebody in the household or
     arrived with a recipe brought in from a web page (J5), and it reaches

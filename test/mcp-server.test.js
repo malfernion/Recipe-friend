@@ -137,6 +137,43 @@ test("a tool that goes wrong says which one, rather than closing the connection"
   assert.match(out.content[0].text, /list_recipes could not finish: the archive was nonsense/);
 });
 
+// --- the guard on stdout ---------------------------------------------
+
+test("J17.1 · every channel that would reach stdout is pointed at stderr", () => {
+  // Tested directly, because the subprocess test below cannot fail on
+  // this: nothing on the path it exercises logs, and the modules that do
+  // use `console.warn`, which node already sends to stderr. The risk
+  // this guards is a browser module reaching for `console.log`, and the
+  // only honest way to check it is to reach for one.
+  const { guardStdout, TO_STDOUT } = require("../mcp/stdout-guard.js");
+  const said = [];
+  const fake = { error: (...args) => said.push(["stderr", ...args]) };
+  for (const channel of TO_STDOUT) fake[channel] = (...args) => said.push(["STDOUT", ...args]);
+
+  const release = guardStdout(fake);
+  for (const channel of TO_STDOUT) fake[channel]("hello from " + channel);
+
+  assert.deepEqual(
+    said.filter(([where]) => where === "STDOUT"),
+    [],
+    "not one of them reached the wire"
+  );
+  assert.equal(said.length, TO_STDOUT.length, "and none of them was swallowed either");
+
+  release();
+  fake.log("after");
+  assert.deepEqual(said.at(-1), ["STDOUT", "after"], "the guard is the only thing holding it");
+});
+
+test("J17.1 · the program installs that guard before it loads anything written for a browser", () => {
+  const src = require("node:fs").readFileSync(path.join(__dirname, "..", "mcp", "index.js"), "utf8");
+  const guard = src.indexOf("stdout-guard");
+  const firstOtherRequire = src.indexOf('require("./credential.js")');
+
+  assert.ok(guard > -1, "it installs one");
+  assert.ok(guard < firstOtherRequire, "and does it first");
+});
+
 // --- the real program -------------------------------------------------
 
 /** Run mcp/index.js, say these things to it, and collect both streams. */

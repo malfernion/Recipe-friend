@@ -62,7 +62,12 @@ function digest(win, recipe, planned) {
  * and travels, which is the line J6.2 already draws for a share link.
  */
 function full(win, recipe, planned) {
+  // Three cases, and the middle one is the trap: a linked picture
+  // travels, a stored or pasted one becomes a note, and a recipe with no
+  // picture at all says nothing rather than saying it was withheld.
   const linked = typeof recipe.image === "string" && /^https?:\/\//i.test(recipe.image);
+  const hasPicture = Boolean(recipe.image || recipe.imagePath);
+  const image = linked ? recipe.image : hasPicture ? NO_PHOTO : null;
   return {
     ...digest(win, recipe, planned),
     description: recipe.description,
@@ -74,7 +79,7 @@ function full(win, recipe, planned) {
       item: ing.item,
     })),
     steps: recipe.steps,
-    image: linked ? recipe.image : recipe.image || recipe.imagePath ? NO_PHOTO : null,
+    image,
     favorite: recipe.favorite,
     addedAt: new Date(recipe.createdAt).toISOString(),
   };

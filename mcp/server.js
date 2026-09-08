@@ -6,12 +6,12 @@
  * whole surface — list the tools, call one, watch a failure become an
  * answer — without a subprocess and without stdio.
  *
- * **The book is opened on the first call, not at startup.** A host may
- * spawn this speculatively, and a server that spends a token exchange
- * and a full pull per spawn is a server somebody turns off. It is also
- * where a dead credential should be reported: a failure at boot happens
- * where nobody is looking, and one in a tool result is something the
- * model can read out to the person who can fix it.
+ * **The book is opened on the first call, not at startup**, and pulled
+ * before every call after it. A host may spawn this speculatively, and a
+ * server that spends a token exchange per spawn is one somebody turns
+ * off. It is also where a dead credential should be reported: a failure
+ * at boot happens where nobody is looking, and one in a tool result is
+ * something the model can read out to the person who can fix it.
  */
 "use strict";
 
@@ -78,6 +78,13 @@ function makeServer({ session, version = "0.0.0", openBook = require("./book.js"
     let opened;
     try {
       opened = await book();
+      // Every tool call, read or write. A stdio server outlives the
+      // question it was started for, and the household goes on cooking:
+      // answering a question about the plan from a snapshot taken an
+      // hour ago is the same wrong shopping list as computing it with
+      // the wrong code (J17.9). Concurrent calls queue on one sync
+      // rather than racing, which `Book.refresh` arranges.
+      await opened.refresh();
     } catch (err) {
       // The credential, the membership, or the network — all three are
       // written to be read by somebody who can act on them.

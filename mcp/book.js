@@ -29,6 +29,15 @@ const MODULES = [
   "search.js", "sync.js",
 ];
 
+/**
+ * What being removed looks like from out here (J16.7). Said in one place
+ * because it is said from two: when the book is first opened, and when a
+ * sync that used to work stops.
+ */
+const REMOVED =
+  "That agent is not in that book any more. Somebody removed it, which takes its " +
+  "account with it — add a new agent in the Books dialog and paste the new credential.";
+
 class BookError extends Error {
   constructor(message) {
     super(message);
@@ -37,7 +46,12 @@ class BookError extends Error {
 }
 
 /**
- * Open the book the credential names, and sync it once.
+ * Open the book the credential names.
+ *
+ * Opening is the credential and the membership row, not the contents:
+ * the first pull happens on the first tool call, along with every pull
+ * after it. That way there is one rule about how fresh the answers are
+ * rather than one for the first question and another for the rest.
  *
  * `api` is a seam for the tests, which stub the eight calls sync makes
  * rather than a whole PostgREST.
@@ -57,12 +71,7 @@ async function openBook(session, { api: injected } = {}) {
   // is what being removed looks like from here (J16.7). Said plainly,
   // because the alternative is a server that reads an empty book and
   // reports a household with no recipes.
-  if (!book) {
-    throw new BookError(
-      "That agent is not in that book any more. Somebody removed it, which takes " +
-      "its account with it — add a new agent in the Books dialog and paste the new credential."
-    );
-  }
+  if (!book) throw new BookError(REMOVED);
   // A credential is minted for an agent and an agent's role cannot be
   // changed (J16.8), so anything else here means a credential this
   // server was not written for.
@@ -81,9 +90,7 @@ async function openBook(session, { api: injected } = {}) {
   sync.setBook(bookId, { readOnly: false, addOnly: true });
   store.useBook(bookId);
 
-  const opened = new Book(win, api, store, planStore, sync, book);
-  await opened.refresh();
-  return opened;
+  return new Book(win, api, store, planStore, sync, book);
 }
 
 class Book {
@@ -100,18 +107,55 @@ class Book {
   /**
    * Bring this process level with the book.
    *
-   * Called before anything is read or written, because a stdio server is
-   * long-lived and the household is editing the same book from a phone
-   * while it runs. `syncNow` reports a failure by returning null and
-   * setting its status rather than by throwing — right for a status line
-   * that will retry, wrong for a tool answering a question now.
+   * Called before every tool call, read or write, because a stdio server
+   * is long-lived and the household is editing the same book from a
+   * phone while it runs. An answer from a snapshot taken an hour ago is
+   * the same wrong shopping list as one computed by the wrong code.
+   *
+   * **One at a time.** A model turn commonly carries two tool calls, and
+   * `syncNow` answers a re-entrant call by returning undefined and doing
+   * nothing — which this layer cannot tell from a failure. So callers
+   * queue on the same promise and every one of them gets the same
+   * answer, rather than one of them being told the network is down.
    */
-  async refresh() {
-    const result = await this.sync.syncNow();
-    if (!result) {
-      throw new BookError("Could not reach the book just now. Ask again in a moment.");
+  refresh() {
+    if (!this.syncing) {
+      this.syncing = this.syncOnce().finally(() => {
+        this.syncing = null;
+      });
     }
-    return result;
+    return this.syncing;
+  }
+
+  async syncOnce() {
+    // `syncNow` reports a failure by returning null and setting its
+    // status rather than by throwing — right for a status line that will
+    // retry, wrong for a tool answering a question now.
+    const result = await this.sync.syncNow();
+    if (result) return result;
+    throw await this.whyNot();
+  }
+
+  /**
+   * Which kind of failure that was.
+   *
+   * A removed agent and an unreachable project look identical from
+   * inside `syncNow`, and J17.5 says telling them apart is the point of
+   * writing the two messages separately: one sends somebody to the Books
+   * dialog, the other says to wait. So on the failure path only — never
+   * on the ordinary one — ask the roster which it was.
+   */
+  async whyNot() {
+    let books;
+    try {
+      books = await this.api.listBooks();
+    } catch {
+      // The roster could not be read either, so the network is the
+      // simplest explanation and the honest one.
+      return new BookError("Could not reach the book just now. Ask again in a moment.");
+    }
+    if (!books.some((b) => b.id === this.id && b.role === "agent")) return new BookError(REMOVED);
+    return new BookError("Could not reach the book just now. Ask again in a moment.");
   }
 
   /** The recipes, newest first, as the app holds them. */
@@ -134,4 +178,4 @@ class Book {
   }
 }
 
-module.exports = { openBook, Book, BookError, MODULES };
+module.exports = { openBook, Book, BookError, MODULES, REMOVED };

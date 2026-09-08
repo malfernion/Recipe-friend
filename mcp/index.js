@@ -19,9 +19,9 @@
  */
 "use strict";
 
-for (const channel of ["log", "info", "debug", "warn", "trace"]) {
-  console[channel] = (...args) => console.error(...args);
-}
+// Before anything else is required, because what follows loads modules
+// written for a browser and a browser has nowhere else to log.
+require("./stdout-guard.js").guardStdout();
 
 const { decode } = require("./credential.js");
 const { Session } = require("./session.js");

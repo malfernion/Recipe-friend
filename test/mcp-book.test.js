@@ -152,6 +152,9 @@ test("J16.1 · the book the credential names is the book that is opened", async 
   const api = fakeApi({ rows: [{ id: remote.id, data: remote, updated_at: new Date(1000).toISOString(), deleted_at: null }] });
 
   const book = await openBook(session(), { api });
+  assert.deepEqual(book.recipes, [], "opening is the credential and the membership row");
+
+  await book.refresh();
 
   assert.equal(book.id, BOOK);
   assert.equal(book.name, "Ours");
@@ -218,6 +221,7 @@ test("J16.4 · an agent never records a plan, even one it finds finished", async
   });
 
   const book = await openBook(session(), { api });
+  await book.refresh();
 
   assert.deepEqual(api.pushed.archived, [], "the record is not its errand");
   assert.equal(book.plan.completedAt, 5000, "it leaves the plan exactly as it found it");
@@ -231,9 +235,69 @@ test("J8.1 · an agent has no unit preferences, because it is not a person", asy
 
 test("a book that cannot be reached says so rather than answering from nothing", async () => {
   const api = fakeApi();
+  const book = await openBook(session(), { api });
   api.fetchRecipes = async () => {
     throw new Error("network");
   };
 
-  await assert.rejects(() => openBook(session(), { api }), /Could not reach the book/);
+  await assert.rejects(() => book.refresh(), /Could not reach the book/);
+});
+
+test("J17.5 · an agent removed while the server is running is told so, not blamed on the network", async () => {
+  const api = fakeApi();
+  const book = await openBook(session(), { api });
+  await book.refresh();
+
+  // Somebody opens the Books dialog and removes it. The membership row
+  // goes, so every read stops matching — which from in here looks
+  // exactly like a network that is down, and means the opposite thing.
+  api.fetchRecipes = async () => {
+    throw new Error("permission denied");
+  };
+  api.listBooks = async () => [];
+
+  await assert.rejects(() => book.refresh(), (err) => {
+    assert.match(err.message, /not in that book any more/);
+    assert.match(err.message, /Books dialog/);
+    assert.ok(!/Ask again in a moment/.test(err.message), "not something waiting will fix");
+    return true;
+  });
+});
+
+test("J17.5 · a roster that cannot be read either is called a network, which is the honest guess", async () => {
+  const api = fakeApi();
+  const book = await openBook(session(), { api });
+  api.fetchRecipes = async () => {
+    throw new Error("network");
+  };
+  api.listBooks = async () => {
+    throw new Error("network");
+  };
+
+  await assert.rejects(() => book.refresh(), /Could not reach the book/);
+});
+
+test("two tools called at once queue on one sync rather than one of them being told the network is down", async () => {
+  // `syncNow` answers a re-entrant call by returning undefined and doing
+  // nothing, which this layer cannot tell from a failure — so without a
+  // queue the second of two tool calls in one model turn fails with a
+  // network diagnosis and a perfectly healthy network.
+  const api = fakeApi();
+  const book = await openBook(session(), { api });
+  let pulls = 0;
+  api.fetchRecipes = async () => {
+    pulls++;
+    await new Promise((resume) => setTimeout(resume, 5));
+    return [];
+  };
+
+  const [a, b] = await Promise.all([book.refresh(), book.refresh()]);
+
+  assert.ok(a, "both got an answer");
+  assert.equal(a, b, "and it was the same one");
+  assert.equal(pulls, 1, "one trip, not two");
+
+  // And the queue opens again afterwards.
+  await book.refresh();
+  assert.equal(pulls, 2);
 });

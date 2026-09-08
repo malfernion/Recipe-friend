@@ -91,35 +91,37 @@ const addToPlan = {
   },
   async run(book, args) {
     const win = book.win;
+    // The plan was pulled a moment ago, by the server, before this ran
+    // (J17.9) — so the stamp goes here, after it. Stamped before the
+    // pull it can be older than a plan body that arrived during it, and
+    // then `newerBody` hands the whole plan to the other side and this
+    // edit is dropped on the way out.
     const now = Date.now();
-    // Read the plan immediately before changing it. Meals do not merge
-    // the way settlements do (J12.11): for one plan the more recently
-    // touched body wins whole, so writing onto a copy read a few minutes
-    // ago is how a meal somebody added from a phone disappears. Pulling
-    // first narrows that to the window every device in this app shares.
-    await book.refresh();
-    let plan = book.plan;
-    const added = [];
+    const refuseIfFinished = finished(book);
+    if (refuseIfFinished) return refuseIfFinished;
+
+    const before = book.plan;
+    let plan = before;
+    const wanted = [];
     const missing = [];
 
-    for (const wanted of args.meals) {
-      const recipe = book.store.getById(wanted.recipeId);
+    for (const meal of args.meals) {
+      const recipe = book.store.getById(meal.recipeId);
       if (!recipe) {
-        missing.push(wanted.recipeId);
+        missing.push(meal.recipeId);
         continue;
       }
       plan = win.RecipePlan.addMeal(plan, recipe, now);
-      const meal = plan.meals[plan.meals.length - 1];
-      if (wanted.portions) plan = toPortions(win, plan, meal.id, recipe, wanted.portions, now);
-      const settled = plan.meals.find((m) => m.id === meal.id);
-      added.push({ mealId: settled.id, name: settled.name, portions: settled.portions });
+      const added = plan.meals[plan.meals.length - 1];
+      if (meal.portions) plan = toPortions(win, plan, added.id, recipe, meal.portions, now);
+      // The name travels with the id: a meal dropped on the way out is
+      // in neither the plan we started from nor the one we ended with,
+      // and "something was dropped" is not a useful sentence.
+      wanted.push({ id: added.id, name: added.name });
     }
 
-    if (added.length) {
-      book.planStore.setPlan(plan);
-      await book.refresh();
-    }
-    return { added, ...(missing.length ? { missing } : {}), plan: await planNow(book) };
+    if (!wanted.length) return { added: [], missing, plan: planNow(book) };
+    return settle(book, { before, plan, wanted, verb: "added", missing });
   },
 };
 
@@ -147,27 +149,25 @@ const removeFromPlan = {
   async run(book, args) {
     const win = book.win;
     const now = Date.now();
-    // Pulled first, for the reason add_to_plan gives at length.
-    await book.refresh();
-    let plan = book.plan;
-    const removed = [];
+    const refuseIfFinished = finished(book);
+    if (refuseIfFinished) return refuseIfFinished;
+
+    const before = book.plan;
+    let plan = before;
+    const wanted = [];
     const missing = [];
 
     for (const id of args.mealIds) {
-      const meal = plan.meals.find((m) => m.id === id);
-      if (!meal) {
+      if (!plan.meals.some((m) => m.id === id)) {
         missing.push(id);
         continue;
       }
       plan = win.RecipePlan.removeMeal(plan, id, now);
-      removed.push({ mealId: id, name: meal.name });
+      wanted.push({ id, name: (before.meals.find((m) => m.id === id) || {}).name || "" });
     }
 
-    if (removed.length) {
-      book.planStore.setPlan(plan);
-      await book.refresh();
-    }
-    return { removed, ...(missing.length ? { missing } : {}), plan: await planNow(book) };
+    if (!wanted.length) return { removed: [], missing, plan: planNow(book) };
+    return settle(book, { before, plan, wanted, verb: "removed", missing });
   },
 };
 
@@ -221,10 +221,18 @@ const addRecipe = {
     additionalProperties: false,
   },
   async run(book, args) {
+    // A picture arrives as a link or not at all (J16.10). `sanitizeImage`
+    // would accept an inline `data:` image, which is not in storage and
+    // so is not what the policies refuse — but "it can neither see the
+    // pictures in the book nor add one" is the sentence, and a megabyte
+    // of base64 from a program is not what the rest of that sentence
+    // has in mind.
+    const image = /^https?:\/\//i.test(String(args.image || "")) ? args.image : "";
+
     // `add` sanitises exactly as a pasted recipe is sanitised, and
     // returns null for one that does not clear the floor every recipe is
     // held to (J2.1, J16.11). Being a program earns no latitude.
-    const recipe = book.store.add({ ...args, favorite: false, imagePath: "" });
+    const recipe = book.store.add({ ...args, image, favorite: false, imagePath: "" });
     if (!recipe) {
       return {
         error:
@@ -236,22 +244,126 @@ const addRecipe = {
     try {
       await book.refresh();
     } catch (err) {
-      // The row is in this process's memory and nowhere else, and this
-      // process forgets everything when it stops. Saying it landed would
-      // be a recipe somebody thinks they have.
-      book.store.removeLocal(recipe.id);
-      throw err;
+      // The push and the plan half of a sync share one try/catch inside
+      // `syncNow`, so a failure here does not say whether the recipe
+      // landed — and the recipes go up first. Guessing wrong in one
+      // direction files the same recipe twice, which nothing on this
+      // side can undo (J16.3); guessing wrong in the other loses it
+      // silently. So ask.
+      return await whatBecameOfIt(book, recipe, err);
     }
 
-    return {
-      added: { id: recipe.id, name: recipe.name },
-      note: "Filed. An agent cannot delete a recipe, including this one — a person removes it in the app.",
-    };
+    return filed(recipe);
   },
 };
 
+/** What to say about a recipe that is definitely in the book. */
+function filed(recipe) {
+  return {
+    added: { id: recipe.id, name: recipe.name },
+    note: "Filed. An agent cannot delete a recipe, including this one — a person removes it in the app.",
+  };
+}
+
+/**
+ * Did it land? Asked of the server, on the failure path only.
+ *
+ * Three answers and they need different words, because the wrong ones
+ * produce a second copy of somebody's dinner. Present: it is filed, say
+ * so. Absent: nothing was written, take the row back out and say it is
+ * safe to try again. Cannot tell: keep the row — a later sync pushes it
+ * only if the server has never seen it (J16.3) — and say plainly that
+ * retrying might file it twice.
+ */
+async function whatBecameOfIt(book, recipe, err) {
+  let rows;
+  try {
+    rows = await book.api.fetchRecipes(book.id);
+  } catch {
+    return {
+      added: { id: recipe.id, name: recipe.name },
+      landed: "unknown",
+      error:
+        `${recipe.name} may or may not have been filed: the book could not be reached to ` +
+        "check. Do not send it again without looking — an agent cannot delete a recipe, so " +
+        "a second copy would have to be removed by a person.",
+    };
+  }
+
+  if (rows.some((row) => row.id === recipe.id)) return { ...filed(recipe), landed: "confirmed" };
+
+  // Nothing was written. The cache dies with the process, so a row left
+  // in it after a failed push is a recipe somebody was told they had.
+  book.store.removeLocal(recipe.id);
+  return {
+    error: `${recipe.name} was not filed — ${err.message} Nothing was written, so it is safe to send again.`,
+  };
+}
+
+/**
+ * A plan that has been finished is not one to add to (J16.4).
+ *
+ * A live plan carrying `completedAt` is a Done that landed half way: the
+ * week is on the record and the empty plan that should have replaced it
+ * has not arrived. An agent may write neither half, and it leaves the
+ * plan alone for a person's device to finish. Writing into it anyway
+ * would put this meal into the record when that device does finish —
+ * evidence an agent wrote about a week it did not cook, arriving by the
+ * one door J16.4 does not stand in front of.
+ */
+function finished(book) {
+  if (!book.plan || !book.plan.completedAt) return null;
+  return {
+    error:
+      "That week has been finished and is waiting to be filed away by somebody's phone. " +
+      "An agent does not finish or reopen a plan, so there is nothing to add to until then.",
+  };
+}
+
+/**
+ * Push the changed plan, and report what survived rather than what was
+ * asked for.
+ *
+ * Meals do not merge: for one plan the more recently touched body wins
+ * whole (J12.11), so a write can be dropped on its way out by a phone
+ * that wrote a moment later. Reporting the intention would be a tool
+ * saying it did something it did not do. And a push that fails takes the
+ * change back out of this process, so it cannot arrive on the next call
+ * as a meal nobody asked for twice.
+ */
+async function settle(book, { before, plan, wanted, verb, missing }) {
+  book.planStore.setPlan(plan);
+  try {
+    await book.refresh();
+  } catch (err) {
+    book.planStore.setPlan(before);
+    throw err;
+  }
+
+  const held = new Set(book.plan.meals.map((m) => m.id));
+  const wantedIn = (id) => (verb === "added" ? held.has(id) : !held.has(id));
+  const landed = wanted.filter((m) => wantedIn(m.id));
+  const dropped = wanted.filter((m) => !wantedIn(m.id));
+
+  const report = {
+    [verb]: landed.map(({ id, name }) => {
+      const meal = book.plan.meals.find((m) => m.id === id);
+      return meal ? { mealId: id, name: meal.name, portions: meal.portions } : { mealId: id, name };
+    }),
+  };
+  if (missing.length) report.missing = missing;
+  if (dropped.length) {
+    report.dropped = dropped.map((m) => m.name);
+    report.note =
+      "Somebody wrote to this plan from another device at the same moment, and the plan " +
+      "they wrote is the one the book kept. Read it again and decide what is still wanted.";
+  }
+  report.plan = planNow(book);
+  return report;
+}
+
 /** The plan as get_plan would report it, so a write answers with the result. */
-async function planNow(book) {
+function planNow(book) {
   const win = book.win;
   const plan = book.plan;
   const list = win.RecipeShopList.build(plan, book.recipes, book.prefs);

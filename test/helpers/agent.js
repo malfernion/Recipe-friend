@@ -29,6 +29,9 @@ async function agentBook({ recipes = [], archive = () => [], role = "agent" } = 
   const sent = { recipes: [], livePlans: [], archived: [] };
   let live = null;
   let broken = null;
+  let brokenPlans = null;
+  let brokenRecipePush = null;
+  let brokenPlanPush = null;
 
   const api = {
     userId: null,
@@ -40,15 +43,22 @@ async function agentBook({ recipes = [], archive = () => [], role = "agent" } = 
       return rows;
     },
     async pushRecipes(list) {
-      if (broken) throw new Error(broken);
+      if (broken || brokenRecipePush) throw new Error(broken || brokenRecipePush);
       sent.recipes.push(...list);
+      // A pushed row is a row the server holds from now on, which is
+      // what makes the addOnly filter mean anything in a test.
+      rows.push(...list.map((r) => ({ id: r.id, data: r.data, updated_at: r.updated_at, deleted_at: null })));
     },
     async fetchLivePlan() {
+      if (brokenPlans) throw new Error(brokenPlans);
       return live;
     },
     async pushLivePlan(bookId, plan) {
-      if (broken) throw new Error(broken);
+      if (broken || brokenPlans || brokenPlanPush) throw new Error(broken || brokenPlans || brokenPlanPush);
       sent.livePlans.push(plan);
+      // What the book holds now, so the next pull sees what went up —
+      // without this no test ever meets its own write coming back.
+      live = { book_id: BOOK, data: plan, updated_at: new Date(Date.now()).toISOString() };
     },
     async fetchArchivedPlanIds() {
       return plans().map((p) => p.id);
@@ -64,9 +74,22 @@ async function agentBook({ recipes = [], archive = () => [], role = "agent" } = 
 
   const session = { credential: { book: BOOK }, open: async () => ({ client: {}, userId: "agent-1" }) };
   const book = await openBook(session, { api });
+  // Opening is the credential and the membership row; the contents
+  // arrive on the first tool call, which the server makes happen for
+  // every call after it too.
+  await book.refresh();
 
   return {
     book,
+    /**
+     * Call a tool the way the server calls it: pull first, then run. Any
+     * test that goes straight to `tool.run` is testing a path no host
+     * takes.
+     */
+    call: async (tool, args = {}) => {
+      await book.refresh();
+      return tool.run(book, args);
+    },
     win,
     api,
     sent,
@@ -78,6 +101,27 @@ async function agentBook({ recipes = [], archive = () => [], role = "agent" } = 
     /** Take the network away, the way a train tunnel does. */
     breakNetwork: (why = "network") => {
       broken = why;
+    },
+    /** Give all of it back. */
+    mendNetwork: () => {
+      broken = brokenPlans = brokenRecipePush = brokenPlanPush = null;
+    },
+    /**
+     * Break only the plan half of a sync, which is the shape that made
+     * `add_recipe` lie: the recipes go up first and succeed, and the
+     * trip fails afterwards.
+     */
+    breakPlanHalf: (why = "network") => {
+      brokenPlans = why;
+    },
+    /** Only the recipe push fails: the book stays readable, so a tool
+     *  asking what became of a recipe gets a straight answer. */
+    breakRecipePush: (why = "network") => {
+      brokenRecipePush = why;
+    },
+    /** Only the plan push fails, the same way. */
+    breakPlanPush: (why = "network") => {
+      brokenPlanPush = why;
     },
   };
 }
