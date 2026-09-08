@@ -49,10 +49,12 @@ accounts and sync.
   say-so.
 - **Agents** — let a program read a book. An owner adds one from the
   Sharing list, names it, and gets a credential to paste into whatever
-  assistant they run; it can read the book, add recipes and work on the
-  plan, and it cannot edit or delete a recipe, favourite one, see the
-  photos, or finish a plan. It sits in the member list like anybody else
-  and is removed with the same ×. The credential is shown once.
+  assistant they run. It can read the book, add recipes and work on the
+  plan; it cannot edit or delete a recipe, favourite one, see the photos,
+  finish a plan, or invite anybody — and it has no book of its own and
+  cannot make one. It sits in the member list like anybody else, cannot
+  be promoted, and is removed with the same ×, which takes its account
+  with it. The credential is shown once.
 - **Copy and move** — copy a recipe into any book you can write to, which
   is how a book you only read is still worth being in. Moving one out of a
   book is the owner's, asks first, and leaves a tombstone so it does not
@@ -100,8 +102,8 @@ type in the search box, pick a photo, click Export, open an invite link.
 
 Every test name quotes a criterion from [`docs/journeys.md`](docs/journeys.md),
 so a failure points at behaviour that was agreed rather than at an
-implementation detail. **150 of the 164 criteria have a test naming
-them**; the fourteen that do not are listed at the end of the journeys,
+implementation detail. **146 of the 164 criteria have a test naming
+them**; the eighteen that do not are listed at the end of the journeys,
 along with the database, which is deliberately outside the net.
 
 The database is deliberately not covered — see the note at the end of the
@@ -131,25 +133,36 @@ design; all protection is row-level security). One-time setup:
 3. Sign in from the app's header. First sign-in auto-creates your profile
    and a personal "My recipes" book.
 4. **Agents** (optional — only needed to let a program read a book).
-   Turn on Authentication → Providers → **Anonymous sign-ins**: that is
-   what lets an agent have an identity with no email address. Then, so
-   that endpoint is not open to the world, create a **Cloudflare
-   Turnstile** widget, put its site key in `js/config.js` as
-   `turnstileSiteKey` and its secret key into Supabase → Authentication →
-   **Attack Protection → CAPTCHA protection** (provider: Turnstile).
+   Do these in this order; the middle step is what makes the first one
+   safe.
 
-   **In that order.** Supabase decides whether a token is required; the
-   app only sends one when a site key is set. Switch the CAPTCHA on
-   before filling in the site key and adding an agent stops working until
-   you do. The site key is public by design, like the publishable key
-   beside it — the half that verifies is the secret, and it never leaves
-   Supabase.
+   1. Create a **Cloudflare Turnstile** widget. It is a CAPTCHA — a
+      "prove you are a person" checkbox — and Cloudflare's is the one
+      Supabase accepts. Put its **site key** in `js/config.js` as
+      `turnstileSiteKey` (public, like the publishable key beside it) and
+      keep the secret key for the next step.
+   2. Supabase → Authentication → **Attack Protection → CAPTCHA
+      protection**: switch it on, provider Turnstile, and paste the
+      **secret key**. Check that signing in with Google still works
+      before going further.
+   3. Supabase → Authentication → Providers → **Anonymous sign-ins**:
+      turn it on. This is what lets an agent have an identity with no
+      email address, and it is also a public endpoint that creates
+      accounts — which is why the CAPTCHA goes on first.
 
-   The challenge is for the person adding the agent, once. The agent
-   itself signs up for nothing and is never asked.
+   **Why that order.** The app only sends a challenge answer once a site
+   key is set, and Supabase only demands one once its setting is on, so
+   filling in the key first is what avoids a window where adding an agent
+   fails. Turning on anonymous sign-ins first would open the
+   account-creating endpoint while nothing is in front of it.
 
-Signed out, the app shows a sign-in screen; recipes and preferences live
-with the account, not the browser.
+   The challenge is for the person adding the agent, once, in their
+   browser. The agent itself signs up for nothing and is never asked.
+   Note the checkbox in the dialog is not what protects the endpoint —
+   an abuser would call it directly and never open the page. The
+   server-side setting in step 2 is what does that; the checkbox is what
+   lets you switch it on without breaking the one place the app
+   legitimately creates an account.
 
 ### Recipe books and sync
 

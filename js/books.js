@@ -52,6 +52,18 @@
      * is worse than one that is not offered, and the database will refuse
      * anyway.
      */
+    /**
+     * May this book be written to at all, by anybody holding this
+     * session? Wider than `canEdit`, which answers the different question
+     * of whether to draw the controls: an agent writes (J16.3) and is
+     * still shown the read-only screen, because nothing an agent runs
+     * opens this dialog and a person who did should not be offered
+     * buttons the database would refuse.
+     */
+    canWriteTo(book) {
+      return this.canEdit(book) || Boolean(book && book.role === "agent");
+    }
+
     canEdit(book) {
       const b = book || this.currentBook();
       if (!b) return false;
@@ -310,14 +322,24 @@
       // that is not yours to press reads better absent than greyed.
       const agents = $("#agents-section");
       if (agents) agents.hidden = !iOwn;
-      if (iOwn) this.drawChallenge();
-      // A credential belongs to the moment it was made (J16.6). Switching
-      // books, or reopening the dialog, is a different moment.
+      // The challenge is drawn when the dialog opens, not here. This runs
+      // on every refresh — including the one at sign-in and the one a
+      // failing sync triggers — and a widget rendered into a dialog that
+      // is closed is rendered into `display: none`, once, for the life of
+      // the page.
+      if (iOwn && this.dialog && this.dialog.open) this.drawChallenge();
+      // A credential belongs to the moment it was made (J16.6), and this
+      // is every moment after it. Keyed on the book it was minted for, it
+      // survived closing and reopening the dialog on the same book —
+      // which is the thing somebody actually does, and which made "it is
+      // not shown again" false where it was easiest to disprove. It is
+      // cleared unless this very render is the one that drew it.
       const agentOut = $("#agent-out");
-      if (agentOut && agentOut.dataset.book !== this.sync.bookId) {
+      if (agentOut && !this.credentialJustShown) {
         agentOut.hidden = true;
         agentOut.textContent = "";
       }
+      this.credentialJustShown = false;
 
       this.renderInvites(iOwn);
     }
@@ -364,7 +386,13 @@
     async switchTo(bookId) {
       if (!bookId || bookId === this.sync.bookId) return;
       const book = this.books.find((b) => b.id === bookId);
-      this.sync.setBook(bookId, { readOnly: !this.canEdit(book) });
+      // Three answers, not two: a viewer pushes nothing, an agent pushes
+      // only what the server has never seen, everyone else pushes
+      // everything (J16.3).
+      this.sync.setBook(bookId, {
+        readOnly: !this.canWriteTo(book),
+        addOnly: Boolean(book && book.role === "agent"),
+      });
       if (this.app.setCanEdit) this.app.setCanEdit(this.canEdit(book));
       this.app.store.useBook(bookId);
       rememberSelection(this.sync.userId, bookId);
@@ -396,6 +424,10 @@
       $("#books-btn").addEventListener("click", async () => {
         this.dialog.showModal();
         await this.refresh();
+        // After the dialog is open and the section has been shown or
+        // hidden, so the widget is drawn into something with a size.
+        const current = this.currentBook();
+        if (current && current.isOwner) this.drawChallenge();
       });
       $("#books-close-btn").addEventListener("click", () => this.dialog.close());
       this.dialog.addEventListener("click", (event) => {
@@ -577,7 +609,14 @@
         );
         if (!ok) return;
         try {
-          await this.api.removeMember(this.sync.bookId, btn.dataset.remove);
+          // An agent's removal takes its account with it, which is what
+          // makes the promise above true (J16.7). A person's does not:
+          // they keep the account they signed in with.
+          if (isAgent) {
+            await this.api.removeAgent(this.sync.bookId, btn.dataset.remove);
+          } else {
+            await this.api.removeMember(this.sync.bookId, btn.dataset.remove);
+          }
           await this.refresh();
           if (isAgent) this.app.toast(`${who.name} can no longer see this book.`);
         } catch (err) {
@@ -620,20 +659,40 @@
             // it is shown exactly once (J16.6) — putting it straight on
             // the clipboard invites pasting it somewhere before reading
             // what it is, and the warning beside it is the point.
+            if (agentName) agentName.value = "";
+            // Before the refresh below, which is what redraws the dialog
+            // and would otherwise wipe the credential it is about to show.
+            this.credentialJustShown = true;
             const out = $("#agent-out");
             if (out) {
               out.hidden = false;
-              out.dataset.book = this.sync.bookId;
               out.innerHTML =
                 `<span class="agent-credential">Copy this now — it is not shown again</span>` +
                 esc(agent.credential);
             }
-            if (agentName) agentName.value = "";
-            await this.refresh();
+            // The agent exists and its credential is on screen, so a
+            // refresh that fails now must not report a failure to create
+            // it — the roster being stale is a smaller thing than telling
+            // somebody their credential is worthless while it is in front
+            // of them.
+            try {
+              await this.refresh();
+            } catch (err) {
+              console.warn("Recipe Friend: the agent was added but the list is stale.", err);
+            }
             this.app.toast(`${agent.name} can now read this book.`);
           } catch (err) {
             console.warn("Recipe Friend: could not add an agent.", err);
-            this.app.toast("Couldn't add that agent.");
+            // The two likely failures are "anonymous sign-ins are
+            // disabled" and a refused challenge, and both are exactly
+            // what somebody setting this up has got wrong. Saying
+            // "couldn't add that agent" to either is telling them
+            // nothing they did not already know.
+            this.app.toast(
+              err && err.message
+                ? `Couldn't add that agent — ${err.message}`
+                : "Couldn't add that agent."
+            );
           } finally {
             // Spent either way: a token answers once, and a refused
             // attempt has still used it up. Left alone, the second try

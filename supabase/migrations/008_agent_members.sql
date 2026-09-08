@@ -36,37 +36,45 @@
 -- tests — `docs/journeys.md` says so at the end, and this file is inside
 -- that gap. So after running this, in the dashboard:
 --
---   a. As an **agent**: select from recipes, live_plans and plans for its
---      book returns rows. `insert into recipes` succeeds. `update` and
---      `delete` on recipes are both refused — which is also what refuses
---      a favourite, since starring is an update (J16.3, and the boundary
---      note about an agent's taste). `insert` and `update` on live_plans
---      succeed.
---   b. As an **agent**: `insert into plans` is refused. This is J16.4 and
---      it is the one people will be tempted to "fix" — Done writes the
---      history the agent reads, so it stays a person's.
---   c. As an **agent**, against a book it is not in: every select returns
+--   a. As an **agent**, in its own book: select, insert, update and
+--      delete on recipes all succeed, and so do insert, update and delete
+--      on live_plans and insert and delete on plans. An agent writes what
+--      an editor writes (J16.3) — anything less and its own sync parks,
+--      which is what §3 explains.
+--   b. As an **agent**, against a book it is not in: every select returns
 --      nothing and every write is refused. No error, no rows — what a
 --      policy that does not match looks like.
---   d. As an **agent**: selecting storage.objects for its own book
+--   c. As an **agent**: selecting storage.objects for its own book
 --      returns nothing, and asking for a signed URL on a photo path it
 --      has been handed fails (J16.10).
---   e. As an **agent**: `insert into books (name, owner) values (…, auth.uid())`
+--   d. As an **agent**: `insert into books (name, owner) values (…, auth.uid())`
 --      is refused, and selecting books returns only the one it was placed
 --      in. The credential cannot make itself a library no member list
 --      will ever show.
---   f. As a **person**: creating a book still works. Check this one even
+--   e. As a **person**: creating a book still works. Check this one even
 --      though it sounds absurd — the guard in §5 sits on the most
---      ordinary path in the app, and a guard that reads auth.users
---      instead of the token would refuse everybody.
---   g. `add_agent` called by a non-owner raises. Called with a *permanent*
---      user's id raises — the most important line in this file. Called
---      twice with the same agent, the second call is a quiet no-op.
---   h. The roster update still refuses `role = 'agent'`, and still
---      refuses moving an agent to 'editor' (J16.8).
+--      ordinary path in the app, and a guard that read auth.users instead
+--      of the token would refuse everybody.
+--   f. `add_agent` called by a non-owner raises. Called with a *permanent*
+--      user's id raises. Called twice with the same agent and book, the
+--      second is a quiet no-op. **Called by a second book's owner with an
+--      agent that is already somebody's, it raises** — that one is §6's
+--      whole point, and the roster hands every member the id it needs to
+--      try it.
+--   g. **Update an agent's membership row to 'editor'. It must raise.**
+--      The policy alone allows this; the trigger in §6c is what refuses
+--      it, and without that clause the role is worth nothing (J16.8).
+--      Setting a person's role to 'agent' must raise too.
+--   h. **Sign in anonymously and redeem a live invite code. It must
+--      raise.** Anonymous sign-ins are on for this feature, and §6d is
+--      what stops that turning every invite link into a way in for
+--      anybody who holds one (J7.4, J7.5). Then redeem the same code as a
+--      Google user and confirm it still works.
 --   i. Deleting the agent's book_members row stops every read and write
 --      in (a) immediately.
---   j. Signed out (anon): unchanged, nothing.
+--   j. `discard_orphan_agent` on an agent that is still in a book does
+--      nothing. On one removed from its book, it deletes the account.
+--   k. Signed out (anon): unchanged, nothing.
 --
 -- ---------------------------------------------------------------------
 -- 1. The role
@@ -90,7 +98,7 @@ as $$
   );
 $$;
 
-revoke execute on function public.is_book_agent(uuid) from anon;
+revoke execute on function public.is_book_agent(uuid) from anon, public;
 grant execute on function public.is_book_agent(uuid) to authenticated;
 
 -- ---------------------------------------------------------------------
@@ -101,6 +109,14 @@ grant execute on function public.is_book_agent(uuid) to authenticated;
 -- stops an agent editing a recipe somebody wrote — and, because a
 -- favourite is a property of the recipe (J3.6), what stops it starring
 -- one. Delete stays editor-only for the obvious reason.
+--
+-- This is the narrow half of J16.3 and it is the point of the role. It
+-- costs something on the client, and the cost is paid there rather than
+-- here: `pushRecipes` sends an upsert, which becomes an UPDATE the
+-- moment the row exists, so a client syncing as an agent has to push
+-- only rows the server has never seen. `js/sync.js` does exactly that,
+-- and `docs/journeys.md` J16.3 records why the alternative — widening
+-- this policy until nothing has to know — was refused.
 
 drop policy if exists "editor recipes insert" on public.recipes;
 create policy "editor recipes insert" on public.recipes
@@ -137,10 +153,21 @@ create policy "editor live plan update" on public.live_plans
   using (is_book_editor(book_id) or is_book_agent(book_id))
   with check (is_book_editor(book_id) or is_book_agent(book_id));
 
--- `plans` is deliberately untouched. An agent does not finish a plan
+-- `live_plans` delete is left editor-only. Nothing in the app deletes
+-- that row — clearing a plan writes an empty one over it — so an agent
+-- has no use for it.
+--
+-- `plans` is left alone entirely. An agent does not finish a plan
 -- (J16.4) and does not undo one: the archive is the record it reads to
 -- decide what to suggest, and a thing that writes its own evidence can
 -- talk itself into anything. Both policies stay is_book_editor.
+--
+-- This one also costs the client something. `syncPlans` archives a
+-- finished plan and replaces it in one pass, local half first, so a
+-- client syncing as an agent must not take that branch — it would empty
+-- its own live plan and then fail the push for ever. `js/sync.js` leaves
+-- a finished plan alone for an agent and lets a person's device record
+-- it, which is the same thing it already does for a viewer.
 
 -- ---------------------------------------------------------------------
 -- 4. Photos: the one read that was not free
@@ -236,15 +263,29 @@ begin
     raise exception 'an agent is not a person''s account';
   end if;
 
-  -- A retried create lands here with the row already saying 'agent',
-  -- which is the answer rather than an error. A row saying anything
-  -- else is an identity somebody added another way; leave it alone and
-  -- say so, rather than quietly narrowing what it may do.
+  -- An agent belongs to one book, and this is what makes that true
+  -- rather than merely intended.
+  --
+  -- Every member of a book can read its roster, so every member can read
+  -- an agent's id out of it. Without this, any of them could call this
+  -- function against a book of their own — everybody owns the one their
+  -- signup made — and attach somebody else's agent to it. The credential
+  -- would then reach a book its owner cannot see and cannot revoke, and
+  -- `resolveBook` picks between books by whatever order the server
+  -- returns, so the household's recipes could sync into a stranger's.
+  --
+  -- Scoped to *any* book rather than this one on purpose. A retried
+  -- create is the one case that lands here harmlessly, so it is answered
+  -- first and separately: already in this book as an agent is the result
+  -- this call wanted.
   if exists (
     select 1 from book_members
-    where book_id = book and user_id = agent_id and role <> 'agent'
+    where book_id = book and user_id = agent_id and role = 'agent'
   ) then
-    raise exception 'that account already belongs to this book';
+    return;
+  end if;
+  if exists (select 1 from book_members where user_id = agent_id) then
+    raise exception 'that agent already belongs to a book';
   end if;
 
   insert into book_members (book_id, user_id, role)
@@ -263,13 +304,50 @@ grant execute on function public.add_agent(uuid, uuid) to authenticated;
 -- lets the owner delete any membership row in their book, and an agent's
 -- is a membership row like any other (J16.7).
 --
--- Changing one's role needs nothing new either, and that is the point.
--- "owner sets a member's role" constrains the new role to 'editor' or
--- 'viewer', so it already refuses 'agent' — and an agent moved to
--- 'editor' would be a credential silently widened past what it was
--- handed over for. J16.8 is implemented by leaving that policy exactly
--- as it is, which is worth a sentence because the temptation on reading
--- this file is to add 'agent' to that list.
+-- Changing one's role does need something new, and this file said the
+-- opposite for a while. The claim was that "owner sets a member's role"
+-- (006) already refuses it, because its `with check` constrains the new
+-- role to 'editor' or 'viewer'. That is half the sentence: a `with
+-- check` describes the row being written and cannot see the row being
+-- replaced. So `update book_members set role = 'editor'` on an agent
+-- satisfies `using` (the caller owns the book, it is not their own row)
+-- and satisfies `with check` ('editor' is on the list), and succeeds.
+--
+-- What that gave away is the whole point of the role: a credential
+-- handed to a program, widened in one request into a full editor — and
+-- once the role is no longer 'agent', `is_book_agent` goes false and §4's
+-- photo exclusion goes with it. The dialog offers no such control, but
+-- this file has said from the top that the app hiding a button is a
+-- courtesy and the database is the gate.
+--
+-- A policy is the wrong tool, because the question is about the old row.
+-- The trigger 006 wrote for exactly that reason is the right one, so it
+-- gains a clause. An agent is not a rung on the ladder in either
+-- direction: changing one is removing it and adding another (J16.8).
+
+create or replace function public.book_members_role_only()
+returns trigger
+language plpgsql
+set search_path = public, pg_temp
+as $$
+begin
+  if new.book_id is distinct from old.book_id
+     or new.user_id is distinct from old.user_id then
+    raise exception 'a membership row is one person in one book; only their role may change'
+      using errcode = 'check_violation';
+  end if;
+  if old.role = 'agent' or new.role = 'agent' then
+    raise exception 'an agent is not a role you change; remove it and add another'
+      using errcode = 'check_violation';
+  end if;
+  return new;
+end;
+$$;
+
+drop trigger if exists book_members_role_only on public.book_members;
+create trigger book_members_role_only
+  before update on public.book_members
+  for each row execute function public.book_members_role_only();
 
 -- ---------------------------------------------------------------------
 -- 6b. Clearing up after ourselves
@@ -306,6 +384,88 @@ revoke execute on function public.discard_orphan_agent(uuid) from anon, public;
 grant execute on function public.discard_orphan_agent(uuid) to authenticated;
 
 -- ---------------------------------------------------------------------
+-- 6d. An invite is for a person
+-- ---------------------------------------------------------------------
+--
+-- This one is not about agents at all; it is the bill this feature ran
+-- up elsewhere and has to pay before it ships.
+--
+-- Turning on anonymous sign-ins is a project-wide setting, and it is a
+-- prerequisite for everything above. After it, anybody at all can call
+-- signInAnonymously with the publishable key and be `authenticated` with
+-- a real auth.uid(). `redeem_invite` (005, 006) asks only that the caller
+-- is signed in — which, from the day it was written until now, meant a
+-- person with a Google account.
+--
+-- So without this, an invite link stops being "good for one person" and
+-- becomes good for anyone who has it, with no Google account and no
+-- trail: sign in anonymously, redeem, and be an editor. That is J7.4 and
+-- J7.5 undone by a setting in a different part of the dashboard, and it
+-- would be undone for every book in the project, not only books with
+-- agents in them.
+--
+-- An agent is placed by an owner (J16.2). Nothing anonymous joins a book
+-- by holding a link.
+
+create or replace function public.redeem_invite(invite_code text)
+returns table (book_id uuid, book_name text)
+language plpgsql security definer
+set search_path = public, pg_temp
+as $$
+declare
+  inv record;
+begin
+  if auth.uid() is null then
+    raise exception 'sign in first';
+  end if;
+
+  -- An invite is something a person accepts (J7.5). A program is placed
+  -- in a book by its owner and never arrives holding a link.
+  if exists (
+    select 1 from auth.users where id = auth.uid() and is_anonymous is true
+  ) then
+    raise exception 'sign in first';
+  end if;
+
+  -- Lock the row: two people opening the last use of a link at the same
+  -- moment must not both get in.
+  select * into inv from invites
+    where code = invite_code and expires_at > now()
+    for update;
+  if not found then
+    raise exception 'invalid or expired invite';
+  end if;
+
+  -- Already a member — re-opening your own link, or a second device.
+  -- Hand back the book without spending a use.
+  if exists (
+    select 1 from book_members m
+    where m.book_id = inv.book_id and m.user_id = auth.uid()
+  ) then
+    return query select b.id, b.name from books b where b.id = inv.book_id;
+    return;
+  end if;
+
+  if inv.used_count >= inv.max_uses then
+    raise exception 'this invite has already been used';
+  end if;
+
+  insert into book_members (book_id, user_id, role)
+    values (inv.book_id, auth.uid(), inv.role);
+  update invites set used_count = used_count + 1 where code = inv.code;
+
+  return query select b.id, b.name from books b where b.id = inv.book_id;
+end;
+$$;
+
+revoke execute on function public.redeem_invite(text) from anon, public;
+grant execute on function public.redeem_invite(text) to authenticated;
+
+-- `preview_invite` is left alone. It reads a name and a role and joins
+-- nobody to anything, so an anonymous caller learning that a link is live
+-- costs nothing that redeeming it would not have cost more.
+
+-- ---------------------------------------------------------------------
 -- 7. No book for an anonymous signup
 -- ---------------------------------------------------------------------
 --
@@ -323,7 +483,7 @@ grant execute on function public.discard_orphan_agent(uuid) to authenticated;
 create or replace function public.handle_new_user()
 returns trigger
 language plpgsql security definer
-set search_path = public
+set search_path = public, pg_temp
 as $$
 declare
   person text;

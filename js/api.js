@@ -490,6 +490,23 @@
      * which is what puts an agent in the member list under a name
      * somebody chose (J16.2).
      */
+    /**
+     * Throw away an account that never made it into a book.
+     *
+     * `rpc` resolves with `{data, error}` and does not throw on a
+     * PostgREST error, which is why this reads the error rather than
+     * wrapping the call in a try/catch — a catch here would never fire
+     * and the failure would go by in silence.
+     */
+    async discardOrphan(agentId) {
+      const { error } = await this.client.rpc("discard_orphan_agent", {
+        agent_id: agentId,
+      });
+      if (error) {
+        console.warn("Recipe Friend: left an unused agent account behind.", error);
+      }
+    }
+
     async createAgent(bookId, name, makeClient, coords, captchaToken) {
       const label = String(name || "").trim().slice(0, 80);
       if (!label) throw new Error("an agent needs a name");
@@ -501,6 +518,10 @@
       if (error) throw error;
       const session = data && data.session;
       if (!session || !session.refresh_token) {
+        // The account exists by now even though the session does not, so
+        // this path owes the same clean-up as a refused placing does.
+        const made = data && data.user && data.user.id;
+        if (made) await this.discardOrphan(made);
         throw new Error("that agent could not be given a credential");
       }
 
@@ -514,11 +535,7 @@
         agent_id: session.user.id,
       });
       if (placeErr) {
-        try {
-          await this.client.rpc("discard_orphan_agent", { agent_id: session.user.id });
-        } catch (tidyErr) {
-          console.warn("Recipe Friend: left an unused agent account behind.", tidyErr);
-        }
+        await this.discardOrphan(session.user.id);
         throw placeErr;
       }
 
@@ -535,12 +552,33 @@
     }
 
     /**
-     * Take an agent out of a book (J16.7). The same delete that removes a
-     * person, because it is the same row — and the moment it goes, every
-     * policy stops matching and the credential is worth nothing.
+     * Take an agent out of a book (J16.7), and take the account with it.
+     *
+     * Removing the membership row is what stops it reading the book —
+     * every policy stops matching the moment it goes. It is not what
+     * stops the credential working: the account and its session outlive
+     * the row, and an account with no book can still do the small number
+     * of things any signed-in caller can. "Its credential stops working
+     * straight away" is what the dialog promises, so the account goes
+     * too.
+     *
+     * In that order. An account deleted first would leave a membership
+     * row pointing at nothing if the second call failed; a row deleted
+     * first leaves at worst an orphan, which is exactly what
+     * `discard_orphan_agent` is for and refuses to touch until the row
+     * is gone.
      */
     async removeAgent(bookId, userId) {
-      return this.removeMember(bookId, userId);
+      await this.removeMember(bookId, userId);
+      const { error } = await this.client.rpc("discard_orphan_agent", {
+        agent_id: userId,
+      });
+      // The book access is already gone, which is the part that matters.
+      // A surviving account is worth saying out loud and not worth
+      // failing the removal over.
+      if (error) {
+        console.warn("Recipe Friend: the agent's account is still there.", error);
+      }
     }
 
     // --- photos in Storage ----------------------------------------------

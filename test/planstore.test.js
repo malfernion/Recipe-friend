@@ -110,7 +110,7 @@ function fakeCloud() {
 }
 
 /** One phone: its own caches, its own sync, pointed at a shared cloud. */
-function device(cloud, { bookId = BOOK, readOnly = false } = {}) {
+function device(cloud, { bookId = BOOK, readOnly = false, addOnly = false } = {}) {
   const win = loadApp("units.js", "scale.js", "storage.js", "plan.js", "shoplist.js", "planstore.js", "sync.js");
   const store = new win.RecipeStore();
   const planStore = new win.RecipePlanStore();
@@ -118,7 +118,7 @@ function device(cloud, { bookId = BOOK, readOnly = false } = {}) {
   const api = new win.RecipeApi(cloud.client);
   const sync = new win.RecipeSync(store, api, (s) => statuses.push(s), planStore);
   sync.userId = "u1";
-  sync.setBook(bookId, { readOnly });
+  sync.setBook(bookId, { readOnly, addOnly });
   store.useBook(bookId);
   planStore.onChange = () => sync.schedulePush();
   return { win, store, planStore, sync, statuses, plan: win.RecipePlan };
@@ -891,4 +891,73 @@ test("a plan and its meals carry real uuids, because an archived plan's id is a 
   const plan = d.plan.addMeal(d.plan.emptyPlan(1000), recipe, 2000);
   assert.match(plan.id, uuid);
   assert.match(plan.meals[0].id, uuid);
+});
+
+// ---------------------------------------------------------------------
+// J16.4 · an agent works on the plan and never on the record
+// ---------------------------------------------------------------------
+
+test("J16.4 · an agent leaves a finished plan alone rather than parking its sync", async () => {
+  const cloud = fakeCloud();
+  joinBook(cloud, { role: "agent" });
+  const recipe = shareRecipe(cloud);
+  const agent = device(cloud, { addOnly: true });
+
+  // Somebody pressed Done on their phone, so the row the agent pulls is
+  // a plan carrying completedAt. A person's device archives it and puts
+  // an empty one in its place. An agent may write the live plan and not
+  // the archive, so doing half of that would clear its own plan and then
+  // be refused the record — a week that never happened, and a sync
+  // parked for ever on a book that is perfectly well.
+  let finished = agent.plan.addMeal(agent.plan.emptyPlan(Date.now() - 2000), recipe, Date.now() - 2000);
+  finished = { ...finished, completedAt: Date.now() - 1000 };
+  cloud.db.live_plans.push({
+    book_id: BOOK,
+    data: finished,
+    updated_at: new Date().toISOString(),
+  });
+
+  await agent.sync.syncNow();
+
+  assert.equal(agent.planStore.archive.length, 0, "it records nothing");
+  assert.equal(cloud.db.plans.length, 0, "and nothing reaches the archive");
+  assert.equal(agent.statuses[agent.statuses.length - 1], "synced",
+    "and the sync finishes rather than parking");
+  assert.ok(agent.planStore.plan.completedAt, "the finished plan is left as it was found");
+});
+
+test("J16.4 · an agent refuses to finish or undo a plan", async () => {
+  const cloud = fakeCloud();
+  joinBook(cloud, { role: "agent" });
+  const recipe = shareRecipe(cloud);
+  const agent = device(cloud, { addOnly: true });
+  agent.planStore.setPlan(
+    agent.plan.addMeal(agent.plan.emptyPlan(Date.now()), recipe, Date.now())
+  );
+
+  await assert.rejects(() => agent.sync.completePlan(), /does not finish a plan/);
+
+  // And Undo, given something to undo — it pulls a record off the
+  // archive, which is the write an agent has no policy for.
+  const done = { ...agent.plan.emptyPlan(Date.now() - 5000), completedAt: Date.now() - 4000 };
+  agent.planStore.archivePlan(done);
+  await assert.rejects(() => agent.sync.undoComplete(done.id), /does not finish a plan/);
+
+  assert.equal(cloud.db.plans.length, 0);
+});
+
+test("J16.3 · an agent still settles a line and pushes the live plan", async () => {
+  const cloud = fakeCloud();
+  joinBook(cloud, { role: "agent" });
+  const recipe = shareRecipe(cloud);
+  const agent = device(cloud, { addOnly: true });
+
+  // The whole point of the role: it plans. Only the record is barred.
+  agent.planStore.setPlan(
+    agent.plan.addMeal(agent.plan.emptyPlan(Date.now()), recipe, Date.now())
+  );
+  await agent.sync.syncNow();
+
+  assert.equal(cloud.db.live_plans.length, 1, "the plan it built goes up");
+  assert.equal(cloud.db.live_plans[0].data.meals.length, 1);
 });

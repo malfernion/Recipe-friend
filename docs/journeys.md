@@ -333,7 +333,17 @@ Covers a share link someone sent, and a recipe an assistant wrote out.
    owner and agrees to nothing (J16.2), which is only safe because there
    is nobody there to disagree: the identity behind an agent has no
    account, no email and no other book, so placing one takes nothing from
-   anyone. Consent is owed to a person, and an agent is not one.
+   anyone. Consent is owed to a person, and an agent is not one. Each
+   half of that is enforced and not merely intended — an agent cannot be
+   added to a second book, and cannot have one of its own (J16.1) — because
+   the argument only holds while they are all true.
+
+   **And an invite is still something only a person can accept.** Agents
+   need anonymous accounts to exist at all (J16), which would otherwise
+   have made every invite link redeemable by anybody who held one, with
+   no Google account and no trail. Redeeming is closed to anonymous
+   callers for that reason. It is the one place where letting a program
+   in reached back and touched a rule about people, and the rule won.
 6. A member can leave a book; its recipes stay with the book.
 7. An owner cannot leave a book. Their exits are to keep it or to delete it.
 8. An owner can delete a book, which destroys its recipes for every member.
@@ -843,6 +853,19 @@ not somebody.
    `book_members` with the role `agent`, so every read the book already
    allows a member, it allows an agent, by the policies that were
    already there. It has no email address, because it is not anybody.
+
+   **An agent has no book of its own and cannot make one.** It is not
+   given the book every new account gets (J1.3), and creating one is
+   refused outright — so the one book it was placed in is the only book
+   it will ever have, and everything it can reach is something an owner
+   handed it. A credential that could make itself a library nobody can
+   see would be an account, which is the thing this criterion says it is
+   not.
+
+   **An agent belongs to one book and cannot be added to a second.**
+   Every member of a book can read its roster, and therefore an agent's
+   id; without this, anybody in the household could attach it to a book
+   of their own, where its owner could neither see it nor revoke it.
 2. **Only an owner may add one**, from the Sharing list, and it is named
    when it is added. That name is what the member list shows — an agent
    nobody named is an agent nobody can recognise later. Adding one makes
@@ -852,14 +875,34 @@ not somebody.
    what the app does before its keys exist and if the challenge cannot be
    reached.
 3. **An agent may read the book, add recipes, and work on the plan.** It
-   may not edit or delete a recipe, favourite one, move one, invite
-   anybody, change a role, or touch the book itself. Narrower than an
-   editor (J7.3), wider than a viewer (J7.17).
-4. **An agent does not finish a plan.** Done is what records that a week
-   was planned (J14.1), and that record is what an agent reads to decide
-   what to suggest next (J14.9). Something that can write its own
-   evidence can talk itself into anything, so Done stays a person's, and
-   so does the Undo beside it.
+   may not edit or delete a recipe — which is also what stops it
+   favouriting one, a favourite being a property of the recipe (J3.6) —
+   and it may not move one, invite anybody, change a role, or touch the
+   book itself. Narrower than an editor (J7.3), wider than a viewer
+   (J7.17).
+
+   **The narrowness costs the client something, and the client pays it.**
+   Recipes go up as an upsert, which is an insert that becomes an update
+   the moment the row exists — so an agent pushing the way an editor does
+   would be refused on the first recipe it had already sent, and one
+   refusal fails the whole batch, taking every good insert with it. So a
+   device syncing as an agent pushes what the server has never seen and
+   leaves the rest alone. There are three answers to "may this device
+   write", not two, and pretending otherwise is what makes an agent's
+   sync park on a book that is perfectly well.
+4. **An agent does not finish a plan, and does not undo one.** Done is
+   what records that a week was planned (J14.1), and that record is what
+   an agent reads to decide what to suggest next (J14.9). Something that
+   can write its own evidence can talk itself into anything.
+
+   **It also does not finish somebody else's.** A plan carrying
+   `completedAt` is a Done that landed half way, and any device that may
+   write is expected to complete it — archive it, and put an empty one in
+   its place. An agent may do neither half, so it must attempt neither:
+   clearing its own copy and then being refused the record would lose a
+   week nothing could recover. It leaves the plan exactly as it found it
+   and lets a person's device finish the job, which is what a viewer's
+   device already does.
 5. **An agent may clear the plan**, because Clear records nothing
    (J14.4) — the meals can go back and no history is written. It is the
    reversible half of finishing, and it comes with the same write that
@@ -878,10 +921,21 @@ not somebody.
    into a person. One that should be something else is removed and
    replaced, because a role change would silently widen a credential
    that was handed over for something narrower.
-9. **A credential does not expire.** An invite is short-lived because it
-   is in transit and might go astray on the way (J7.4); this one is
-   pasted into a configuration file and lives there, so it is revoked
-   rather than waited out.
+9. **A credential is not given a lifetime.** An invite is short-lived
+   because it is in transit and might go astray on the way (J7.4); this
+   one is pasted into a configuration file and lives there, so nothing
+   here counts down against it and the way it ends is being revoked
+   (J16.7).
+
+   **That is not the same as saying it lasts for ever**, and the
+   difference is the agent's to handle. What the credential carries is a
+   refresh token, and a refresh token is spent when it is used: the
+   server hands back a new one each time, and replaying a spent one is
+   treated as a stolen one and ends the session. So an agent has to store
+   what it is given back, and an agent that restarts from the original
+   string in its configuration file will find it dead. Said here because
+   it is the one promise on this list that the app cannot keep on its
+   own.
 10. **An agent gets no stored photos.** It cannot read a photo out of
     private storage and cannot put one there, so it can neither see the
     pictures in the book nor add one. A picture *linked* by public URL is
@@ -932,26 +986,39 @@ accident:
   a day or a date (J12.1). An assistant that thinks in dates keeps them
   on its own side; the app is asked for meals and portions, and the
   calendar stays where the calendar is.
-- **An agent is per book** (J16.1). One credential reaches one book. The
-  same identity can be placed in a second book by *that* book's owner —
-  one program serving two households — and each owner revokes their own
-  half.
+- **One credential, one book, and no book of its own** (J16.1). An agent
+  cannot be added to a second book, cannot create one, and is not given
+  the one a new account gets. All three are enforced rather than
+  intended, and the reason is the same each time: everything an agent can
+  reach should be something an owner handed it and can take back.
 - **An agent does not star.** A favourite is a property of the recipe and
   shared by the book (J3.6), so starring is an edit, and J16.3 does not
   give an agent edits. A program's taste is not the household's.
+- **An agent has one narrowing that is not a permission**: it sees no
+  photos (J16.10). Everything else about what it may do is a policy, and
+  the client is written to stay inside them rather than to discover them
+  by being refused.
 - **Read-only is not confidential, and neither is an agent's read**
   (J7.17). Anything an agent can read it can copy out. Removing it stops
   it reading more; it does not retrieve what it already has.
-- **Enabling agents costs the whole project something.** The identity
-  behind an agent is an anonymous account, and offering those at all is a
-  project-wide setting rather than a per-agent one — so the endpoint that
-  makes them is open to anybody, and could be used to fill a free
-  database with accounts nobody asked for. A challenge in front of adding
-  an agent is what answers that (J16.2), and it is the app's **only**
-  third-party script: it cannot be vendored, because a challenge that
-  ships with the page is not a challenge. The cost is paid whether or not
-  anybody adds an agent, which is why it is written down here rather than
-  under J16.
+- **Enabling agents costs the whole project something, and the cost is
+  paid in two places.** The identity behind an agent is an anonymous
+  account, and offering those at all is a project-wide setting rather
+  than a per-agent one. So the endpoint that makes them is open to
+  anybody who has the publishable key, and could be used to fill a free
+  database with accounts nobody asked for. **The challenge in the app's
+  own dialog (J16.2) does not answer that** — an abuser calls the
+  endpoint directly and never opens the page. Only the server-side
+  setting does, and the challenge is what lets that setting be switched
+  on without breaking the one place the app legitimately creates an
+  account. The second cost is that an invite link would otherwise become
+  a way in for anybody at all, which is why redeeming one is closed to
+  anonymous callers (J7.5). Both are paid whether or not anybody adds an
+  agent, which is why they are written down here rather than under J16.
+- **The challenge is the app's only third-party script.** It cannot be
+  vendored the way supabase-js is, because a challenge that ships with
+  the page is not a challenge — so the content security policy names
+  Cloudflare, and if the challenge ever goes those entries go with it.
 - **The challenge is for the person, never for the agent.** It is drawn
   in the owner's browser, once, on the one control that creates an
   account. An agent signs up for nothing — it is handed a credential and
@@ -1005,16 +1072,25 @@ recipe is, what it says on screen, and what survives a round trip. Those
 are the failures that would be silent — a recipe quietly losing its tags is
 worse than a page that will not load.
 
-Fourteen of the 164 criteria have no test naming them — J4.15, J4.16,
-J4.25, J5.10, J11.1 to J11.4, J12.12, J15.11, and four of J16: J16.4,
-J16.5, J16.9 and J16.10, which are policies or the absence of one and
-belong with the database below. The rest of J16 is held by tests,
-including two that looked like the database's and are not: that
-`add_agent` refuses a person's account (J16.1) is the check the whole
-design rests on and the fake server enforces it, and that an agent
-pushes while the books UI still draws read-only (J16.3) is two helpers
-disagreeing on purpose, which is exactly the kind of thing that decays
-into a bug once nobody remembers it was meant. Six more things the tests do not reach, recorded so the
+**Eighteen of the 164 criteria have no test naming them** — J4.15,
+J4.16, J4.19, J4.25, J5.10, J6.3, J10.4, J11.1 to J11.5, J12.12, J15.9,
+J15.11, J16.5, J16.9 and J16.10.
+
+Five of those are a correction rather than a change. J4.19, J6.3, J10.4,
+J11.5 and J15.9 had been counted as covered for a long time and are not:
+each is named in a comment or an assertion message somewhere, never in a
+test title, and the total had been kept by arithmetic — adding new
+criteria and new tests to the old figures — rather than by counting.
+Counting is the only reason the number moved. **The convention is that a
+test title quotes its criterion**, and that is what is measured here.
+
+The J16 entries are the ordinary kind of gap. J16.5 and J16.10 are
+policies and belong with the database below. J16.9 is a promise the app
+does not keep on its own: it describes what a refresh token does once an
+agent holds it, which is the agent's business and not something a stub
+DOM can be asked about.
+
+Six more things the tests do not reach, recorded so the
 gap is visible:
 
 - **The 48-hour lifetime and single use of an invite** are the database's,

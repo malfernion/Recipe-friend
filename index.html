@@ -27,13 +27,23 @@
     It cannot be vendored the way supabase-js is: a challenge that ships
     with the page is not a challenge. So challenges.cloudflare.com is
     allowed to run a script and to frame the widget, and nothing else is.
-    If it is ever removed, these three entries go with it.
+    If it is ever removed, these entries go with it.
+
+    `style-src` gains 'unsafe-inline' for the same reason and it is the
+    part worth being unhappy about: the widget styles itself inline, so
+    there is no host to name — it is inline styles for the whole
+    document or no challenge. What it costs is the second line behind
+    the escaping, for inline *styles* only; script-src is untouched, so
+    injected markup still cannot execute. Weighed against leaving the
+    account-creating endpoint open, this is the cheaper of the two, and
+    it is written down here so the trade is visible rather than
+    discovered.
   -->
   <meta http-equiv="Content-Security-Policy" content="
     default-src 'none';
     script-src 'self' https://challenges.cloudflare.com;
     frame-src https://challenges.cloudflare.com;
-    style-src 'self' https://fonts.googleapis.com;
+    style-src 'self' 'unsafe-inline' https://fonts.googleapis.com;
     font-src https://fonts.gstatic.com;
     img-src 'self' data: blob: https:;
     connect-src 'self' https://dveyxesgwohokenoomsf.supabase.co wss://dveyxesgwohokenoomsf.supabase.co https://challenges.cloudflare.com;
