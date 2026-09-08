@@ -2106,10 +2106,8 @@ test("J16.6 · the credential is shown once, and is not shown again", async () =
 
   await addAgent(h, "Meal planner");
 
-  const out = h.el("agent-out");
-  assert.equal(out.hidden, false);
-  assert.match(out.innerHTML, /rfa1\./, "the credential itself");
-  assert.match(out.innerHTML, /not shown again/i, "and what that means, beside it");
+  assert.equal(h.el("agent-out").hidden, false);
+  assert.match(h.el("agent-secret").textContent, /^rfa1\./, "the credential itself");
   assert.equal(h.clipboard.length, 0,
     "a password in all but name is read before it is copied, not copied before it is read");
 
@@ -2118,7 +2116,36 @@ test("J16.6 · the credential is shown once, and is not shown again", async () =
   await openBooks(h);
 
   assert.equal(h.el("agent-out").hidden, true, "gone, and not recoverable from the dialog");
-  assert.equal(h.el("agent-out").textContent, "");
+  assert.equal(h.el("agent-secret").textContent, "", "and the secret itself is gone with it");
+});
+
+test("J16.6 · Copy puts the credential on the clipboard, and says so", async () => {
+  const h = harness();
+  await h.books.refresh();
+  await addAgent(h, "Meal planner");
+  const shown = h.el("agent-secret").textContent;
+
+  await h.el("agent-copy-btn").fire("click", {});
+  await flush();
+
+  assert.deepEqual(h.clipboard, [shown], "the whole of it, not what a thumb managed to select");
+  assert.match(h.el("agent-copied").textContent, /copied/i);
+});
+
+test("J16.6 · a refused clipboard leaves the credential on screen and says how", async () => {
+  const h = harness();
+  await h.books.refresh();
+  await addAgent(h, "Meal planner");
+  const shown = h.el("agent-secret").textContent;
+  h.win.navigator = { clipboard: { writeText: async () => { throw new Error("denied"); } } };
+  globalThis.navigator = h.win.navigator;
+
+  await h.el("agent-copy-btn").fire("click", {});
+  await flush();
+
+  assert.equal(h.el("agent-secret").textContent, shown,
+    "a clipboard that refuses is not a credential that is lost");
+  assert.match(h.el("agent-copied").textContent, /by hand/i);
 });
 
 test("J16.6 · the credential is escaped where it is rendered", async () => {
@@ -2135,9 +2162,11 @@ test("J16.6 · the credential is escaped where it is rendered", async () => {
 
   await addAgent(h, "Meal planner");
 
-  const html = h.el("agent-out").innerHTML;
-  assert.doesNotMatch(html, /<img/, "no tag reaches the markup");
-  assert.match(html, /&lt;img/, "it is shown as text instead");
+  // textContent, so there is no markup for a tag to become in the first
+  // place — the escaping is structural rather than a call somebody has
+  // to remember.
+  assert.equal(h.el("agent-secret").textContent, '"><img src=x onerror=alert(1)>');
+  assert.doesNotMatch(h.el("agent-out").innerHTML || "", /<img/, "and no tag reaches the markup");
 });
 
 test("J16.6 · the credential carries the book it is for", async () => {
@@ -2145,7 +2174,7 @@ test("J16.6 · the credential carries the book it is for", async () => {
   await h.books.refresh();
   await addAgent(h, "Meal planner");
 
-  const packed = /rfa1\.([A-Za-z0-9_-]+)/.exec(h.el("agent-out").innerHTML)[1];
+  const packed = /rfa1\.([A-Za-z0-9_-]+)/.exec(h.el("agent-secret").textContent)[1];
   const parts = JSON.parse(Buffer.from(packed, "base64url").toString("utf8"));
 
   assert.equal(parts.book, MINE,

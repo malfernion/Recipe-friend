@@ -440,11 +440,20 @@
       <div id="agent-turnstile" class="agent-turnstile" hidden></div>
       <!--
         The credential, shown once and never again (J16.6). It is a
-        password in everything but name, so it is not put in the clipboard
-        without being seen first: it is rendered, selectable, with the
-        warning beside it rather than under it.
+        password in everything but name, so it is never put on the
+        clipboard on its own: it is shown first, with the warning above
+        it, and copying is a button somebody presses. The parts are
+        markup rather than a string built in JS because two of the three
+        never change, and the one that does is the one worth escaping.
       -->
-      <p id="agent-out" class="invite-out" hidden></p>
+      <div id="agent-out" class="agent-out" hidden>
+        <p class="agent-credential">Copy this now — it is not shown again</p>
+        <code id="agent-secret" class="agent-secret"></code>
+        <div class="agent-out-actions">
+          <button type="button" class="btn btn-ghost" id="agent-copy-btn">Copy</button>
+          <span id="agent-copied" class="agent-copied" role="status" aria-live="polite"></span>
+        </div>
+      </div>
       <p class="books-hint">An agent is a program you let read this book — an assistant that
          suggests what to cook, or files a recipe you liked. It can read the book, add
          recipes and work on the plan. It cannot edit or delete a recipe, favourite one,

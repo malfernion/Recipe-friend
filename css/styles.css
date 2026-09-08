@@ -2835,15 +2835,55 @@ body.gated .view {
   (J16.6), so it says so where it is read rather than in the hint
   underneath — which is where the eye goes second.
 */
+/*
+  The credential, shown once (J16.6): a warning, the secret, and a way to
+  take it. Laid out as a block rather than a line because 250 characters
+  of base64 wrap to several rows on a phone and the button has to stay
+  findable underneath them.
+*/
+.agent-out {
+  margin: 0.75rem 0 0;
+  padding: 0.6rem 0.7rem;
+  background: var(--paper);
+  border: 1px solid var(--rule);
+}
+
 .agent-credential {
-  display: block;
-  margin-bottom: 0.4rem;
+  margin: 0 0 0.4rem;
   font-family: var(--sans);
   font-size: 0.68rem;
   font-weight: 600;
   letter-spacing: 0.14em;
   text-transform: uppercase;
   color: var(--accent);
+}
+
+.agent-secret {
+  display: block;
+  font-family: var(--mono, ui-monospace, monospace);
+  font-size: 0.72rem;
+  line-height: 1.5;
+  word-break: break-all;
+  color: var(--ink-soft);
+  /* Selectable by hand as well, for a browser that refuses the clipboard. */
+  user-select: all;
+}
+
+.agent-out-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin-top: 0.6rem;
+  flex-wrap: wrap;
+}
+
+/* Said where the eye already is, rather than as a toast over the dialog. */
+.agent-copied {
+  font-size: 0.64rem;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
 }
 
 /* ---------- Legal pages (privacy, terms) ---------- */
