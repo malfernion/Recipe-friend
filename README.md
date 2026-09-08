@@ -92,13 +92,16 @@ Or just open `index.html` directly in a browser.
 ## Tests
 
 ```bash
+npm install          # only for the MCP server's tests; the app needs nothing
 node --test test/*.test.js
 ```
 
-No dependencies and no build step — the tests load the app's own modules
-into a fake `window` and call them directly, and the `app-*` files go
-further and drive `app.js`, `books.js` and `account.js` through a stub DOM:
-type in the search box, pick a photo, click Export, open an invite link.
+No build step. The app's own tests need no dependencies at all — they
+load its modules into a fake `window` and call them directly, and the
+`app-*` files go further and drive `app.js`, `books.js` and `account.js`
+through a stub DOM: type in the search box, pick a photo, click Export,
+open an invite link. The `mcp-*` files test the MCP server, which has two
+dependencies, so `npm install` comes first if you want to run everything.
 
 Every test name quotes a criterion from [`docs/journeys.md`](docs/journeys.md),
 so a failure points at behaviour that was agreed rather than at an
@@ -278,6 +281,62 @@ test/                          Tests, named for the criteria they check
 .github/workflows/test.yml           Tests on every pull request
 .claude/skills/recipe-share-link/     Agent skill: recipe -> share link
 ```
+
+## The MCP server
+
+`mcp/` is a [Model Context Protocol](https://modelcontextprotocol.io)
+server: a small program an assistant runs as a subprocess and talks to
+over stdin and stdout. It holds one agent's credential, opens the one
+book that credential names, and offers nine tools — what is in the book,
+what can I cook from these, what else uses chicken, what have we not had
+in ages, what does the plan add up to, and the three that add a recipe or
+change the plan.
+
+It is here rather than in a repository of its own because it is an API
+onto this app: it runs the app's own modules, so the shopping list it
+computes is the list the phone computes, and it is bounded by the same
+policies (migration 008) that the app is. A change to either can break
+it, and one repository finds that out in the same test run.
+
+**Add an agent first** — Books → Sharing → Agents — and keep the
+credential it shows you. Then point your assistant at this, however it
+takes MCP server configuration:
+
+```json
+{
+  "recipe-friend": {
+    "command": "npx",
+    "args": ["-y", "github:malfernion/Recipe-friend"],
+    "env": { "RECIPE_FRIEND_CREDENTIAL": "rfa1..." }
+  }
+}
+```
+
+The `-y` is not optional: without it `npx` asks before installing and
+there is no terminal to answer, so the server hangs with no error. On
+Windows the command generally needs wrapping as `cmd /c npx`. The first
+launch installs and can be slow enough to hit a host's startup timeout;
+after that it is cached.
+
+**One server, one credential, one book.** The credential names the book,
+so a household with two books runs two of these under two names.
+
+What it will not do is what an agent may not do (J16.3, J16.4): no
+editing, no deleting, no favouriting, no finishing a week, and no
+photos. There is no tool for any of them, because a tool that is always
+refused is worse than one that is not there. `add_recipe` is the one
+call that cannot be undone from the assistant's side — an agent cannot
+delete even the recipe it just added — so it is marked destructive for
+the host and says so in words for the model.
+
+Run it by hand to check a credential:
+
+```bash
+RECIPE_FRIEND_CREDENTIAL='rfa1...' node mcp/index.js
+```
+
+It will say it is ready on stderr and then wait for JSON-RPC on stdin.
+Nothing but protocol messages ever goes to stdout — that is the wire.
 
 ## Getting a recipe in with AI's help
 

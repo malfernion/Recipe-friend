@@ -2,6 +2,9 @@
   "name": "recipe-friend",
   "version": "1.0.0",
   "private": true,
+  "bin": {
+    "recipe-friend-mcp": "./mcp/index.js"
+  },
   "description": "A recipe box that syncs across the devices you cook from, and an MCP server that lets a household's assistant read the book and help with the week's plan (J16). The site is plain HTML/CSS/JS with no build step; the dependencies below are the server's alone.",
   "files": [
     "js",
