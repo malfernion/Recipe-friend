@@ -149,6 +149,15 @@ design; all protection is row-level security). One-time setup:
       turn it on. This is what lets an agent have an identity with no
       email address, and it is also a public endpoint that creates
       accounts — which is why the CAPTCHA goes on first.
+   4. Supabase → Authentication → **Advanced Settings**: switch **off**
+      "Detect and revoke potentially compromised refresh tokens". A
+      credential is a refresh token, and the program holding it cannot
+      promise to be the only copy of itself — one that is restarted, or
+      launched twice by whatever runs it, would present a token the
+      server has already seen and lose the session. Off, the pasted
+      credential keeps working. Order does not matter for this one, but
+      it is project-wide and costs every session the same protection;
+      the journeys' Boundaries section says why that is accepted.
 
    **Why that order.** The app only sends a challenge answer once a site
    key is set, and Supabase only demands one once its setting is on, so

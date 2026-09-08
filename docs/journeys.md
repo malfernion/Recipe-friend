@@ -927,15 +927,16 @@ not somebody.
    here counts down against it and the way it ends is being revoked
    (J16.7).
 
-   **That is not the same as saying it lasts for ever**, and the
-   difference is the agent's to handle. What the credential carries is a
-   refresh token, and a refresh token is spent when it is used: the
-   server hands back a new one each time, and replaying a spent one is
-   treated as a stolen one and ends the session. So an agent has to store
-   what it is given back, and an agent that restarts from the original
-   string in its configuration file will find it dead. Said here because
-   it is the one promise on this list that the app cannot keep on its
-   own.
+   **Nor does it quietly expire.** What the credential carries is a
+   refresh token, and the server hands back a new one on every exchange.
+   By default it also watches for the old one coming back and reads a
+   replay as theft, which would mean a credential that died the first
+   time an agent was restarted from the string in its configuration
+   file. Nothing that runs as somebody's assistant can promise to be the
+   only copy of itself, so this project turns that check off and the
+   pasted string goes on working. The Boundaries section records what
+   that costs and why it is accepted; said here because it is the one
+   promise on this list the app keeps by a setting rather than by code.
 10. **An agent gets no stored photos.** It cannot read a photo out of
     private storage and cannot put one there, so it can neither see the
     pictures in the book nor add one. A picture *linked* by public URL is
@@ -1015,6 +1016,20 @@ accident:
   a way in for anybody at all, which is why redeeming one is closed to
   anonymous callers (J7.5). Both are paid whether or not anybody adds an
   agent, which is why they are written down here rather than under J16.
+- **Refresh token reuse detection is off, and it is the third cost of
+  agents.** A credential is a refresh token (J16.9), the server issues a
+  new one on every exchange, and by default it treats the old one coming
+  back as a stolen one and ends the session. A program somebody runs as
+  their assistant cannot promise to be the only copy of itself — it is
+  restarted, and it is often started twice by whatever launches it — so
+  the check is switched off and the pasted credential stays good. **The
+  cost falls on every session in the project**, not only on books with
+  agents in them, and it is accepted for three reasons: what a stolen
+  token reaches is a recipe book, this app has never put a token through
+  the address bar (PKCE rather than the implicit flow), and an agent's
+  copy lives in a configuration file rather than anywhere a log would
+  pick it up. If any of those stops being true, the way back is a
+  credential that is not a refresh token — not a setting.
 - **The challenge is the app's only third-party script.** It cannot be
   vendored the way supabase-js is, because a challenge that ships with
   the page is not a challenge — so the content security policy names
@@ -1086,9 +1101,10 @@ test title quotes its criterion**, and that is what is measured here.
 
 The J16 entries are the ordinary kind of gap. J16.5 and J16.10 are
 policies and belong with the database below. J16.9 is a promise the app
-does not keep on its own: it describes what a refresh token does once an
-agent holds it, which is the agent's business and not something a stub
-DOM can be asked about.
+does not keep in code at all: it describes what a refresh token does once
+an agent holds it, and what it does is settled by a project setting
+recorded in the Boundaries above. Neither half is something a stub DOM
+can be asked about.
 
 Six more things the tests do not reach, recorded so the
 gap is visible:
