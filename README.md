@@ -314,9 +314,14 @@ takes MCP server configuration:
 
 The `-y` is not optional: without it `npx` asks before installing and
 there is no terminal to answer, so the server hangs with no error. On
-Windows the command generally needs wrapping as `cmd /c npx`. The first
-launch installs and can be slow enough to hit a host's startup timeout;
-after that it is cached.
+Windows the command generally needs wrapping as `cmd /c npx`.
+
+Measured on a cold machine with an empty npm cache: **12 seconds** from
+launch to answering the protocol, and **4 seconds** once the cache is
+warm. The four is not nothing — `npx` re-resolves the git ref on every
+start, which is a network round trip — and it is the price of always
+running the latest push rather than a pinned tag. Pin one in the host's
+config if you would rather not pay it.
 
 **One server, one credential, one book.** The credential names the book,
 so a household with two books runs two of these under two names.
