@@ -10,12 +10,10 @@
 
 const { test } = require("node:test");
 const assert = require("node:assert/strict");
-const { loadApp } = require("./helpers/load.js");
-const { openBook } = require("../mcp/book.js");
+const { agentBook, BOOK } = require("./helpers/agent.js");
 const tools = require("../mcp/tools-read.js");
 const { NO_PHOTO } = require("../mcp/digest.js");
 
-const BOOK = "11111111-1111-4111-8111-111111111111";
 const by = (name) => tools.find((t) => t.name === name);
 
 const RECIPES = [
@@ -59,47 +57,9 @@ const RECIPES = [
   },
 ];
 
-/** A book holding those three, with whatever archive a test asks for. */
-async function aBook({ archive = () => [], extra = [] } = {}) {
-  const win = loadApp("units.js", "storage.js", "plan.js", "planstore.js");
-  const rows = [...RECIPES, ...extra].map((raw, i) => {
-    const recipe = win.RecipeStore.sanitizeRecipe(raw);
-    return { id: recipe.id, data: recipe, updated_at: new Date(1000 + i).toISOString(), deleted_at: null };
-  });
-  // The archive names recipe ids, so it is built from the rows above
-  // rather than handed in already wrong.
-  const idFor = (name) => rows.find((r) => r.data.name === name).id;
-  const plans = () => archive(idFor, win);
-
-  const api = {
-    userId: null,
-    pushed: [],
-    async listBooks() {
-      return [{ id: BOOK, role: "agent", name: "Ours", isOwner: false }];
-    },
-    async fetchRecipes() {
-      return rows;
-    },
-    async pushRecipes(list) {
-      this.pushed.push(...list);
-    },
-    async fetchLivePlan() {
-      return null;
-    },
-    async pushLivePlan() {},
-    async fetchArchivedPlanIds() {
-      return plans().map((p) => p.id);
-    },
-    async fetchArchivedPlans() {
-      return plans().map((p) => ({ id: p.id, data: p, completed_at: new Date(p.completedAt).toISOString() }));
-    },
-    async insertArchivedPlan() {
-      return true;
-    },
-  };
-  const book = await openBook({ credential: { book: BOOK }, open: async () => ({ client: {}, userId: "agent-1" }) }, { api });
-  return { book, win, api, idOf: (name) => book.recipes.find((r) => r.name === name).id };
-}
+/** The three above, plus whatever a test adds. */
+const aBook = ({ archive, extra = [] } = {}) =>
+  agentBook({ recipes: [...RECIPES, ...extra], archive });
 
 test("list_recipes answers in digests, because sixty recipes in full is a conversation", async () => {
   const { book } = await aBook();
