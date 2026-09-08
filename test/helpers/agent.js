@@ -27,6 +27,7 @@ async function agentBook({ recipes = [], archive = () => [], role = "agent" } = 
   const plans = () => archive(idFor, win);
 
   const sent = { recipes: [], livePlans: [], archived: [] };
+  let pulls = 0;
   let live = null;
   let broken = null;
   let brokenPlans = null;
@@ -40,6 +41,7 @@ async function agentBook({ recipes = [], archive = () => [], role = "agent" } = 
     },
     async fetchRecipes() {
       if (broken) throw new Error(broken);
+      pulls++;
       return rows;
     },
     async pushRecipes(list) {
@@ -94,6 +96,19 @@ async function agentBook({ recipes = [], archive = () => [], role = "agent" } = 
     api,
     sent,
     idOf: (name) => book.recipes.find((r) => r.name === name).id,
+    /** Somebody else adds a recipe to the book while the server runs. */
+    addRemoteRecipe: (raw) => {
+      const recipe = win.RecipeStore.sanitizeRecipe(raw);
+      rows.push({
+        id: recipe.id,
+        data: recipe,
+        updated_at: new Date(Date.now()).toISOString(),
+        deleted_at: null,
+      });
+      return recipe;
+    },
+    /** How many times the book has been read. */
+    pulls: () => pulls,
     /** What the server holds as the live plan, for a test about merging. */
     setRemotePlan: (plan) => {
       live = plan && { book_id: BOOK, data: plan, updated_at: new Date(5000).toISOString() };

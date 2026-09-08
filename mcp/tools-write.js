@@ -90,38 +90,40 @@ const addToPlan = {
     additionalProperties: false,
   },
   async run(book, args) {
-    const win = book.win;
-    // The plan was pulled a moment ago, by the server, before this ran
-    // (J17.9) — so the stamp goes here, after it. Stamped before the
-    // pull it can be older than a plan body that arrived during it, and
-    // then `newerBody` hands the whole plan to the other side and this
-    // edit is dropped on the way out.
-    const now = Date.now();
-    const refuseIfFinished = finished(book);
-    if (refuseIfFinished) return refuseIfFinished;
+    return book.write(async () => {
+      const win = book.win;
+      // The plan was pulled a moment ago, by the server, before this ran
+      // (J17.9) — so the stamp goes here, after it. Stamped before the
+      // pull it can be older than a plan body that arrived during it, and
+      // then `newerBody` hands the whole plan to the other side and this
+      // edit is dropped on the way out.
+      const now = Date.now();
+      const refuseIfFinished = finished(book);
+      if (refuseIfFinished) return refuseIfFinished;
 
-    const before = book.plan;
-    let plan = before;
-    const wanted = [];
-    const missing = [];
+      const before = book.plan;
+      let plan = before;
+      const wanted = [];
+      const missing = [];
 
-    for (const meal of args.meals) {
-      const recipe = book.store.getById(meal.recipeId);
-      if (!recipe) {
-        missing.push(meal.recipeId);
-        continue;
+      for (const meal of args.meals) {
+        const recipe = book.store.getById(meal.recipeId);
+        if (!recipe) {
+          missing.push(meal.recipeId);
+          continue;
+        }
+        plan = win.RecipePlan.addMeal(plan, recipe, now);
+        const added = plan.meals[plan.meals.length - 1];
+        if (meal.portions) plan = toPortions(win, plan, added.id, recipe, meal.portions, now);
+        // The name travels with the id: a meal dropped on the way out is
+        // in neither the plan we started from nor the one we ended with,
+        // and "something was dropped" is not a useful sentence.
+        wanted.push({ id: added.id, name: added.name });
       }
-      plan = win.RecipePlan.addMeal(plan, recipe, now);
-      const added = plan.meals[plan.meals.length - 1];
-      if (meal.portions) plan = toPortions(win, plan, added.id, recipe, meal.portions, now);
-      // The name travels with the id: a meal dropped on the way out is
-      // in neither the plan we started from nor the one we ended with,
-      // and "something was dropped" is not a useful sentence.
-      wanted.push({ id: added.id, name: added.name });
-    }
 
-    if (!wanted.length) return { added: [], missing, plan: planNow(book) };
-    return settle(book, { before, plan, wanted, verb: "added", missing });
+      if (!wanted.length) return { added: [], missing, plan: planNow(book) };
+      return settle(book, { before, plan, wanted, verb: "added", missing });
+    });
   },
 };
 
@@ -147,27 +149,29 @@ const removeFromPlan = {
     additionalProperties: false,
   },
   async run(book, args) {
-    const win = book.win;
-    const now = Date.now();
-    const refuseIfFinished = finished(book);
-    if (refuseIfFinished) return refuseIfFinished;
+    return book.write(async () => {
+      const win = book.win;
+      const now = Date.now();
+      const refuseIfFinished = finished(book);
+      if (refuseIfFinished) return refuseIfFinished;
 
-    const before = book.plan;
-    let plan = before;
-    const wanted = [];
-    const missing = [];
+      const before = book.plan;
+      let plan = before;
+      const wanted = [];
+      const missing = [];
 
-    for (const id of args.mealIds) {
-      if (!plan.meals.some((m) => m.id === id)) {
-        missing.push(id);
-        continue;
+      for (const id of args.mealIds) {
+        if (!plan.meals.some((m) => m.id === id)) {
+          missing.push(id);
+          continue;
+        }
+        plan = win.RecipePlan.removeMeal(plan, id, now);
+        wanted.push({ id, name: (before.meals.find((m) => m.id === id) || {}).name || "" });
       }
-      plan = win.RecipePlan.removeMeal(plan, id, now);
-      wanted.push({ id, name: (before.meals.find((m) => m.id === id) || {}).name || "" });
-    }
 
-    if (!wanted.length) return { removed: [], missing, plan: planNow(book) };
-    return settle(book, { before, plan, wanted, verb: "removed", missing });
+      if (!wanted.length) return { removed: [], missing, plan: planNow(book) };
+      return settle(book, { before, plan, wanted, verb: "removed", missing });
+    });
   },
 };
 
@@ -221,39 +225,41 @@ const addRecipe = {
     additionalProperties: false,
   },
   async run(book, args) {
-    // A picture arrives as a link or not at all (J16.10). `sanitizeImage`
-    // would accept an inline `data:` image, which is not in storage and
-    // so is not what the policies refuse — but "it can neither see the
-    // pictures in the book nor add one" is the sentence, and a megabyte
-    // of base64 from a program is not what the rest of that sentence
-    // has in mind.
-    const image = /^https?:\/\//i.test(String(args.image || "")) ? args.image : "";
+    return book.write(async () => {
+      // A picture arrives as a link or not at all (J16.10). `sanitizeImage`
+      // would accept an inline `data:` image, which is not in storage and
+      // so is not what the policies refuse — but "it can neither see the
+      // pictures in the book nor add one" is the sentence, and a megabyte
+      // of base64 from a program is not what the rest of that sentence
+      // has in mind.
+      const image = /^https?:\/\//i.test(String(args.image || "")) ? args.image : "";
 
-    // `add` sanitises exactly as a pasted recipe is sanitised, and
-    // returns null for one that does not clear the floor every recipe is
-    // held to (J2.1, J16.11). Being a program earns no latitude.
-    const recipe = book.store.add({ ...args, image, favorite: false, imagePath: "" });
-    if (!recipe) {
-      return {
-        error:
-          "That recipe was refused. A recipe needs a name, at least one ingredient and at " +
-          "least one step, and it is held to that whoever sends it.",
-      };
-    }
+      // `add` sanitises exactly as a pasted recipe is sanitised, and
+      // returns null for one that does not clear the floor every recipe is
+      // held to (J2.1, J16.11). Being a program earns no latitude.
+      const recipe = book.store.add({ ...args, image, favorite: false, imagePath: "" });
+      if (!recipe) {
+        return {
+          error:
+            "That recipe was refused. A recipe needs a name, at least one ingredient and at " +
+            "least one step, and it is held to that whoever sends it.",
+        };
+      }
 
-    try {
-      await book.refresh();
-    } catch (err) {
-      // The push and the plan half of a sync share one try/catch inside
-      // `syncNow`, so a failure here does not say whether the recipe
-      // landed — and the recipes go up first. Guessing wrong in one
-      // direction files the same recipe twice, which nothing on this
-      // side can undo (J16.3); guessing wrong in the other loses it
-      // silently. So ask.
-      return await whatBecameOfIt(book, recipe, err);
-    }
+      try {
+        await book.refresh();
+      } catch (err) {
+        // The push and the plan half of a sync share one try/catch inside
+        // `syncNow`, so a failure here does not say whether the recipe
+        // landed — and the recipes go up first. Guessing wrong in one
+        // direction files the same recipe twice, which nothing on this
+        // side can undo (J16.3); guessing wrong in the other loses it
+        // silently. So ask.
+        return await whatBecameOfIt(book, recipe, err);
+      }
 
-    return filed(recipe);
+      return filed(recipe);
+    });
   },
 };
 
@@ -354,9 +360,17 @@ async function settle(book, { before, plan, wanted, verb, missing }) {
   if (missing.length) report.missing = missing;
   if (dropped.length) {
     report.dropped = dropped.map((m) => m.name);
-    report.note =
-      "Somebody wrote to this plan from another device at the same moment, and the plan " +
-      "they wrote is the one the book kept. Read it again and decide what is still wanted.";
+    // Two reasons a meal can fail to survive, and they need different
+    // sentences: the plan is full, or somebody else's write landed
+    // between this one's read and its push. Blaming another device for
+    // a plan that simply has no room is a diagnosis nobody can act on.
+    const full = book.plan.meals.length >= book.win.RecipePlanStore.limits.MAX_MEALS;
+    report.note = full
+      ? "The plan is full — it holds " +
+        book.win.RecipePlanStore.limits.MAX_MEALS +
+        " meals — so there was no room. Take something out of it first."
+      : "Somebody wrote to this plan from another device at the same moment, and the plan " +
+        "they wrote is the one the book kept. Read it again and decide what is still wanted.";
   }
   report.plan = planNow(book);
   return report;

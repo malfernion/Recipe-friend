@@ -165,6 +165,48 @@ test("J17.10 · a plan write that could not be sent is taken back out, not left 
   assert.deepEqual(sent.livePlans.at(-1).meals.map((m) => m.name), ["Lentil soup"]);
 });
 
+test("J17.10 · two plan writes at once, both failing, leave nothing behind between them", async () => {
+  const { book, idOf, breakPlanPush, mendNetwork, sent } = await aBook();
+  await book.refresh();
+  breakPlanPush();
+
+  // Two tool calls in one model turn is ordinary, and this is where the
+  // undo used to go wrong: it restored the whole plan as it was at the
+  // top of the call, so the second call's idea of "as it was" already
+  // contained the first call's meal — and putting that back after the
+  // first had rolled it back left a meal both calls had reported as
+  // failed, for the next call to push.
+  const both = await Promise.allSettled([
+    ADD.run(book, { meals: [{ recipeId: idOf("Chicken pie") }] }),
+    ADD.run(book, { meals: [{ recipeId: idOf("Lentil soup") }] }),
+  ]);
+
+  assert.deepEqual(both.map((r) => r.status), ["rejected", "rejected"]);
+  assert.deepEqual(book.plan.meals, [], "nothing survived a failure both callers were told about");
+
+  mendNetwork();
+  await book.refresh();
+  assert.deepEqual(sent.livePlans, [], "and no later call pushes what nobody asked for");
+});
+
+test("a plan with no room says so, rather than blaming another device", async () => {
+  const { book, win, idOf } = await aBook();
+  await book.refresh();
+  const pie = book.recipes.find((r) => r.name === "Chicken pie");
+  let full = book.plan;
+  for (let i = 0; i < win.RecipePlanStore.limits.MAX_MEALS; i++) {
+    full = win.RecipePlan.addMeal(full, pie, Date.now() + i);
+  }
+  book.planStore.setPlan(full);
+
+  const out = await ADD.run(book, { meals: [{ recipeId: idOf("Lentil soup") }] });
+
+  assert.deepEqual(out.added, []);
+  assert.deepEqual(out.dropped, ["Lentil soup"]);
+  assert.match(out.note, /plan is full/);
+  assert.ok(!/another device/.test(out.note), "a full plan is not somebody else's write");
+});
+
 test("J16.4 · a week that has been finished is not one an agent adds to", async () => {
   const { call, idOf, win, setRemotePlan, sent } = await aBook();
   // A Done that landed half way: on the record, and the empty plan that

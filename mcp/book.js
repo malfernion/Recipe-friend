@@ -95,6 +95,7 @@ async function openBook(session, { api: injected } = {}) {
 
 class Book {
   constructor(win, api, store, planStore, sync, book) {
+    this.writes = Promise.resolve();
     this.win = win;
     this.api = api;
     this.store = store;
@@ -118,6 +119,27 @@ class Book {
    * queue on the same promise and every one of them gets the same
    * answer, rather than one of them being told the network is down.
    */
+  /**
+   * One write at a time, whatever the host asks for at once.
+   *
+   * A write here is read-modify-write against a plan that is one row for
+   * the whole book, and its undo is the plan as it was before. Both of
+   * those are only true if nothing else changed the plan in between —
+   * so two writes overlapping would take each other's work as their own
+   * starting point, and the second one's undo would put the first one
+   * back after it had been rolled back and reported as failed. A meal
+   * nobody asked for, arriving on the next call that syncs.
+   *
+   * Reads do not queue here: they share the sync above, which is enough
+   * for them.
+   */
+  write(task) {
+    const attempt = this.writes.then(task, task);
+    // The lane must not stay broken because one write failed.
+    this.writes = attempt.then(() => {}, () => {});
+    return attempt;
+  }
+
   refresh() {
     if (!this.syncing) {
       this.syncing = this.syncOnce().finally(() => {

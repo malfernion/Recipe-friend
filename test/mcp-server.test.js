@@ -37,12 +37,19 @@ const SOUP = {
 };
 
 /** A client wired to the server through memory, with the book stubbed. */
-async function connect({ openBook } = {}) {
-  const opened = openBook || (async () => (await agentBook({ recipes: [SOUP] })).book);
+async function connect({ openBook, recipes = [SOUP] } = {}) {
+  let harness = null;
+  const opened =
+    openBook ||
+    (async () => {
+      harness = await agentBook({ recipes });
+      return harness.book;
+    });
   const server = makeServer({ session: {}, version: "1.0.0", openBook: opened });
   const client = new Client({ name: "test", version: "1.0.0" });
   const [clientSide, serverSide] = InMemoryTransport.createLinkedPair();
   await Promise.all([server.connect(serverSide), client.connect(clientSide)]);
+  client.harness = () => harness;
   return client;
 }
 
@@ -80,6 +87,26 @@ test("J17.4 · listing the tools opens no book, so a host may spawn this and thi
   await client.callTool({ name: "list_recipes", arguments: {} });
   await client.callTool({ name: "get_plan", arguments: {} });
   assert.equal(opened, 1, "and once opened, it is shared");
+});
+
+test("J17.9 · every call reads the book again, so an answer is never an hour old", async () => {
+  const client = await connect();
+  await client.callTool({ name: "list_recipes", arguments: {} });
+  const pullsAfterFirst = client.harness().pulls();
+
+  // Somebody adds a recipe from a phone while the session is open. A
+  // server that answered from the snapshot it took at the first call
+  // would go on saying the book has one recipe for as long as it ran.
+  client.harness().addRemoteRecipe({
+    name: "Dal",
+    ingredients: [{ amount: 200, unit: "g", item: "red lentils" }],
+    steps: ["Simmer it."],
+  });
+
+  const out = await client.callTool({ name: "list_recipes", arguments: {} });
+
+  assert.deepEqual(JSON.parse(out.content[0].text).recipes.map((r) => r.name).sort(), ["Dal", "Lentil soup"]);
+  assert.equal(client.harness().pulls(), pullsAfterFirst + 1, "one more trip, for one more question");
 });
 
 test("a tool answers with the thing itself, as json a model can read", async () => {

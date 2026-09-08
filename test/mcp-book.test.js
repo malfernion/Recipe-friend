@@ -199,9 +199,15 @@ test("J16.3 · only rows the server has never seen go up", async () => {
   const api = fakeApi({ rows: [{ id: held.id, data: held, updated_at: new Date(1000).toISOString(), deleted_at: null }] });
 
   const book = await openBook(session(), { api });
-  // A recipe the agent files, beside one the server already holds. An
-  // upsert carrying the held row would be an UPDATE no policy matches,
-  // and one refusal fails the whole batch — taking the new one with it.
+  await book.refresh();
+
+  // The held row has to be *in* the push for the filter to mean
+  // anything, so it is edited locally until it is newer than the
+  // server's — which is what a book that was read, then changed, looks
+  // like. An upsert carrying it would be an UPDATE no policy matches,
+  // and one refusal fails the whole batch, taking the new recipe with
+  // it. Without this edit the test passes with the filter deleted.
+  book.store.update(held.id, { description: "changed on this device" });
   book.store.add(aRecipe({ name: "Filed" }));
   await book.refresh();
 
