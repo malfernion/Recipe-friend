@@ -23,7 +23,8 @@ Someone opens the site having never used it.
 1. Signed out, the app shows a sign-in screen and no recipes, controls or
    navigation.
 2. The only way in is Sign in with Google. There is no email or password
-   option.
+   option. That is a statement about people; a program let into a book by
+   its owner gets in another way and never sees this screen (J16).
 3. Signing in for the first time creates a profile and one book named after
    the person — "Dave's recipes".
 4. A new account has **no recipes at all**. Nothing is seeded.
@@ -327,6 +328,12 @@ Covers a share link someone sent, and a recipe an assistant wrote out.
    adding and editing alongside everyone else, or reading and copying out
    and nothing more (J7.17) — and waits to be accepted. Membership is
    something you agree to, not something you can be given.
+
+   That is a rule about people. An agent is *placed* in a book by its
+   owner and agrees to nothing (J16.2), which is only safe because there
+   is nobody there to disagree: the identity behind an agent has no
+   account, no email and no other book, so placing one takes nothing from
+   anyone. Consent is owed to a person, and an agent is not one.
 6. A member can leave a book; its recipes stay with the book.
 7. An owner cannot leave a book. Their exits are to keep it or to delete it.
 8. An owner can delete a book, which destroys its recipes for every member.
@@ -476,8 +483,9 @@ Covers a share link someone sent, and a recipe an assistant wrote out.
    (J9.3). A recipe id means the same thing on both paths: an older backup
    never undoes newer work, and a newer backup restores it.
 4. **An export carries recipes, not photos.** A stored photo is referenced
-   by a path that only members of its book can read, so a recipe imported
-   into another account or book arrives without its picture. Photos held on
+   by a path that only members of its book can read — bar one kind of
+   member, an agent, which cannot (J16.10) — so a recipe imported into
+   another account or book arrives without its picture. Photos held on
    the recipe itself — from a public URL, or from a device while signed out
    — do travel.
 5. The app says so rather than leaving it to be discovered: exporting a
@@ -824,6 +832,62 @@ ages" being the one this journey is named for.
     (J4.19): they open to something big enough to hit, and they do not
     push the recipes off the screen while they are open.
 
+## J16 · Letting a program help
+
+Someone wants an assistant — a program, running somewhere else — to read
+their book and help with the week's plan. It is not a person and has no
+Google account, so the app has to be able to let something in that is
+not somebody.
+
+1. **An agent is a member, not an account.** It holds a row in
+   `book_members` with the role `agent`, so every read the book already
+   allows a member, it allows an agent, by the policies that were
+   already there. It has no email address, because it is not anybody.
+2. **Only an owner may add one**, from the Sharing list, and it is named
+   when it is added. That name is what the member list shows — an agent
+   nobody named is an agent nobody can recognise later.
+3. **An agent may read the book, add recipes, and work on the plan.** It
+   may not edit or delete a recipe, favourite one, move one, invite
+   anybody, change a role, or touch the book itself. Narrower than an
+   editor (J7.3), wider than a viewer (J7.17).
+4. **An agent does not finish a plan.** Done is what records that a week
+   was planned (J14.1), and that record is what an agent reads to decide
+   what to suggest next (J14.9). Something that can write its own
+   evidence can talk itself into anything, so Done stays a person's, and
+   so does the Undo beside it.
+5. **An agent may clear the plan**, because Clear records nothing
+   (J14.4) — the meals can go back and no history is written. It is the
+   reversible half of finishing, and it comes with the same write that
+   lets an agent settle a line at all.
+6. **The credential is shown once**, when the agent is added, and never
+   again. Losing it means removing that agent and adding another; the
+   app says so where the credential is shown, rather than leaving it to
+   be found out. Nothing is lost by starting again — no recipe, plan or
+   settled line records which member wrote it.
+7. **An agent appears in the member list by name** (J7.18), marked as an
+   agent, with the same × that removes a person. Removing it is
+   immediate and entire.
+8. **An agent's role cannot be changed, to it or from it.** An agent is
+   not a rung on the ladder that runs from viewer to editor: the roster
+   offers no control that turns a person into a program or a program
+   into a person. One that should be something else is removed and
+   replaced, because a role change would silently widen a credential
+   that was handed over for something narrower.
+9. **A credential does not expire.** An invite is short-lived because it
+   is in transit and might go astray on the way (J7.4); this one is
+   pasted into a configuration file and lives there, so it is revoked
+   rather than waited out.
+10. **An agent gets no stored photos.** It cannot read a photo out of
+    private storage and cannot put one there, so it can neither see the
+    pictures in the book nor add one. A picture *linked* by public URL is
+    a different thing and does travel, because it lives on the recipe
+    rather than in storage — the same line J6.2 already draws for a
+    share link.
+11. **What an agent writes is held to the floor every recipe is held to**
+    (J2.1) and validated exactly as a pasted one is (J5.7). Being a
+    program earns no latitude: a recipe with no name, no ingredient or no
+    step is refused from an agent as it is from anybody.
+
 ---
 
 ## Boundaries
@@ -860,7 +924,26 @@ accident:
   *with that tag on*, not the size of the list a tap would produce, and
   the two differ for a tag already chosen.
 - A plan is a bag of meals, not a calendar: nothing in it is assigned to
-  a day or a date (J12.1).
+  a day or a date (J12.1). An assistant that thinks in dates keeps them
+  on its own side; the app is asked for meals and portions, and the
+  calendar stays where the calendar is.
+- **An agent is per book** (J16.1). One credential reaches one book. The
+  same identity can be placed in a second book by *that* book's owner —
+  one program serving two households — and each owner revokes their own
+  half.
+- **An agent does not star.** A favourite is a property of the recipe and
+  shared by the book (J3.6), so starring is an edit, and J16.3 does not
+  give an agent edits. A program's taste is not the household's.
+- **Read-only is not confidential, and neither is an agent's read**
+  (J7.17). Anything an agent can read it can copy out. Removing it stops
+  it reading more; it does not retrieve what it already has.
+- **Enabling agents costs the whole project something.** The identity
+  behind an agent is an anonymous account, and offering those at all is
+  a project-wide setting rather than a per-agent one — so the sign-up
+  endpoint is open to being used to inflate the database, and is kept
+  behind a CAPTCHA for that reason (J11). The cost is paid whether or not
+  anybody adds an agent, which is why it is written down here rather than
+  under J16.
 - Plans are shared with the book, so a read-only member cannot plan or
   settle a line at all (J12.10).
 - The shopping list holds only what the planned recipes ask for. There is
@@ -909,9 +992,13 @@ recipe is, what it says on screen, and what survives a round trip. Those
 are the failures that would be silent — a recipe quietly losing its tags is
 worse than a page that will not load.
 
-Ten of the 153 criteria have no test naming them — J4.15, J4.16, J4.25,
-J5.10, J11.1 to J11.4, J12.12 and J15.11. Six more things the tests do
-not reach, recorded so the gap is visible:
+Sixteen of the 164 criteria have no test naming them — J4.15, J4.16,
+J4.25, J5.10, J11.1 to J11.4, J12.12, J15.11, and six of J16: J16.1,
+J16.3, J16.4, J16.5, J16.9 and J16.10, which are policies rather than
+behaviour and belong with the database below. The other five of J16 —
+J16.2, J16.6, J16.7, J16.8 and J16.11 — are markup and behaviour and are
+held by tests. Six more things the tests do not reach, recorded so the
+gap is visible:
 
 - **The 48-hour lifetime and single use of an invite** are the database's,
   not the app's (J7.4). The client asks only for links that have not
@@ -1118,10 +1205,13 @@ not reach, recorded so the gap is visible:
 
 **The database is deliberately outside the net.** The row-level security
 policies — including the ones on `live_plans` and `plans`, which are what
-stop a read-only member planning (J12.10) — `redeem_invite`,
-`preview_invite`, `move_recipe`, the three triggers that make a recipe's
-book, a membership row's subject and a plan's book immutable, and the
-Storage rules are the security model, and none of them
+stop a read-only member planning (J12.10), and the ones that hold an
+agent to reading, adding and planning (J16.3, J16.4) — `redeem_invite`,
+`preview_invite`, `move_recipe`, `add_agent` and the check that keeps it
+from conscripting a person (J16.1), the three triggers that make a
+recipe's book, a membership row's subject and a plan's book immutable,
+and the Storage rules, agents excepted from reading (J16.10), are the
+security model, and none of them
 are tested: doing so needs a live Postgres
 that CI has not got. They are verified by hand in the Supabase dashboard
 when a migration is applied. This is the largest untested surface in the

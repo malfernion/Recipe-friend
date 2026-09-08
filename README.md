@@ -94,9 +94,9 @@ type in the search box, pick a photo, click Export, open an invite link.
 
 Every test name quotes a criterion from [`docs/journeys.md`](docs/journeys.md),
 so a failure points at behaviour that was agreed rather than at an
-implementation detail. **143 of the 153 criteria have a test naming
-them**; the ten that do not are listed at the end of the journeys, along
-with the database, which is deliberately outside the net.
+implementation detail. **148 of the 164 criteria have a test naming
+them**; the sixteen that do not are listed at the end of the journeys,
+along with the database, which is deliberately outside the net.
 
 The database is deliberately not covered — see the note at the end of the
 journeys. Row-level security is verified by hand when a migration is run.
