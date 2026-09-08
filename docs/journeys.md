@@ -1028,8 +1028,23 @@ accident:
   token reaches is a recipe book, this app has never put a token through
   the address bar (PKCE rather than the implicit flow), and an agent's
   copy lives in a configuration file rather than anywhere a log would
-  pick it up. If any of those stops being true, the way back is a
-  credential that is not a refresh token — not a setting.
+  pick it up.
+
+  **The reuse interval is not the answer and was checked before this
+  was.** That setting lets a spent token be presented again for a few
+  seconds, for two tabs refreshing at once — and it allows only the one
+  generation immediately behind the current token. An agent restarted a
+  week later presents a token spent a week ago, which no width of window
+  covers; an agent whose session outlived an hour has refreshed in
+  memory since, which puts the pasted string several generations back
+  and fails the second test whatever the first says. It is a window, and
+  what a credential in a configuration file needs is a property.
+
+  If any of this stops being acceptable, the way back is a credential
+  that is not a refresh token — a long-lived key exchanged for a short
+  JWT by something holding the service key — and not a setting. That
+  would cost the app the thing it has never had and never wanted: a
+  server of its own.
 - **The planning modules carry no DOM, and that is load-bearing outside
   this app.** `plan.js`, `shoplist.js`, `search.js`, `scale.js`,
   `units.js` and `html.js` name nothing a browser provides; `storage.js`,
