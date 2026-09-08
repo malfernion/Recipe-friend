@@ -341,6 +341,20 @@ function fakeCloud() {
       if (!held) join(book, agent_id, "agent");
       return null;
     },
+    /**
+     * discard_orphan_agent: anonymous, and in no book at all. A person
+     * fails the first test and an agent in use fails the second, which
+     * is the whole of why this is safe to expose.
+     */
+    discard_orphan_agent({ agent_id }) {
+      const anon = db.anon_users.indexOf(agent_id);
+      if (anon < 0) return null;
+      if (db.book_members.some((m) => m.user_id === agent_id)) return null;
+      db.anon_users.splice(anon, 1);
+      const profile = db.profiles.findIndex((p) => p.user_id === agent_id);
+      if (profile >= 0) db.profiles.splice(profile, 1);
+      return null;
+    },
   };
 
   const client = {
@@ -2136,4 +2150,100 @@ test("J16.11 · a recipe from an agent is held to the floor every recipe is held
   assert.equal(ok.ingredients[0].unit, "g", "units are normalised, whoever wrote them");
   assert.deepEqual(ok.tags, ["quick"], "and a tag typed twice is one tag");
   assert.equal(ok.image, "", "and an image that is not an image does not survive");
+});
+
+/**
+ * Turnstile, as far as books.js is concerned: a thing on `window` that
+ * draws, answers and resets. Absent, everything below must still work —
+ * which is the state before a site key exists and the state when
+ * Cloudflare does not load.
+ */
+function fakeTurnstile(win, answer = "tick") {
+  const calls = { rendered: 0, resets: 0 };
+  let response = answer;
+  win.turnstile = {
+    render() { calls.rendered += 1; return "widget-1"; },
+    getResponse() { return response; },
+    reset() { calls.resets += 1; response = ""; },
+  };
+  // Only on the fake window, which is the `global` books.js closes over.
+  // Putting it on globalThis too would leave it there for the next test.
+  return { calls, unanswered: () => { response = ""; } };
+}
+
+test("J16.2 · with no challenge configured, adding an agent still works", async () => {
+  const h = harness();
+  h.win.RECIPE_FRIEND_CONFIG = { turnstileSiteKey: "" };
+  await h.books.refresh();
+
+  await addAgent(h, "Meal planner");
+
+  assert.equal(h.cloud.anonCalls().length, 1, "nothing is gated on a challenge nobody drew");
+  assert.equal(h.books.challengeId, undefined, "and none was drawn");
+});
+
+test("J16.2 · the challenge is drawn once, and answered before an agent is made", async () => {
+  const h = harness();
+  h.win.RECIPE_FRIEND_CONFIG = { turnstileSiteKey: "site-key" };
+  const turnstile = fakeTurnstile(h.win);
+
+  await h.books.refresh();
+  assert.equal(turnstile.calls.rendered, 1);
+  assert.equal(h.el("agent-turnstile").hidden, false);
+
+  // Drawn again on a second refresh would stack widgets in the dialog.
+  await h.books.refresh();
+  assert.equal(turnstile.calls.rendered, 1, "drawn once and kept");
+
+  await addAgent(h, "Meal planner");
+
+  assert.equal(h.cloud.anonCalls().length, 1);
+  assert.equal(turnstile.calls.resets, 1, "and the answer is spent");
+});
+
+test("J16.2 · an unanswered challenge stops the account being made at all", async () => {
+  const h = harness();
+  h.win.RECIPE_FRIEND_CONFIG = { turnstileSiteKey: "site-key" };
+  const turnstile = fakeTurnstile(h.win);
+  await h.books.refresh();
+  turnstile.unanswered();
+
+  await addAgent(h, "Meal planner");
+
+  assert.equal(h.cloud.anonCalls().length, 0, "nothing is created on the strength of no answer");
+  assert.match(h.lastToast(), /tick the box/i, "and the box under the thumb says why");
+});
+
+test("J16.1 · an agent that cannot be placed does not stay behind as an account", async () => {
+  const h = harness();
+  await h.books.refresh();
+  // The book is somebody else's: signing in succeeds, placing refuses.
+  h.sync.setBook(SHARED);
+
+  await addAgent(h, "Meal planner");
+
+  assert.equal(h.cloud.anonCalls().length, 1, "the account was made before we knew");
+  assert.equal(
+    h.cloud.rpcCalls("discard_orphan_agent").length, 1,
+    "and is cleared up in the moment rather than left lying about"
+  );
+  assert.deepEqual(h.cloud.db.anon_users, [], "the account really is gone, not just asked about");
+  assert.match(h.lastToast(), /Couldn't add that agent/);
+});
+
+test("J16.1 · clearing up never reaches an agent that is in a book", async () => {
+  const h = harness();
+  await h.books.refresh();
+  await addAgent(h, "Meal planner");
+  const agent = h.cloud.db.book_members.find((m) => m.role === "agent");
+
+  // The guard that makes the function safe to expose at all, asked
+  // directly: an agent in use is not an orphan, whoever calls.
+  await h.cloud.client.rpc("discard_orphan_agent", { agent_id: agent.user_id });
+
+  assert.deepEqual(h.cloud.db.anon_users, [agent.user_id], "still there");
+  assert.ok(
+    h.cloud.db.book_members.some((m) => m.user_id === agent.user_id),
+    "and still in the book"
+  );
 });

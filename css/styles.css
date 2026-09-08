@@ -2825,6 +2825,11 @@ body.gated .view {
   outline-offset: 1px;
 }
 
+/* Cloudflare draws its own box, so this only gives it room. */
+.agent-turnstile {
+  margin-top: 0.85rem;
+}
+
 /*
   The credential is a password in all but name and is shown once
   (J16.6), so it says so where it is read rather than in the hint

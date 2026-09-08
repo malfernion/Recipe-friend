@@ -121,6 +121,60 @@
       this.renderDialog();
     }
 
+    /**
+     * Draw the challenge in front of adding an agent, if there is one to
+     * draw (J16.2).
+     *
+     * Every part of this is allowed to be absent, and the absence is the
+     * same answer each time: no widget, no token, and `createAgent` sends
+     * nothing. That covers the state before a site key is configured, a
+     * Cloudflare that did not load, and the tests. Supabase is what
+     * decides whether a token is required — so its CAPTCHA setting goes
+     * on only once the key here is set, which is written down in
+     * js/config.js beside the key itself.
+     *
+     * Drawn once and kept. A challenge is answered per token, not per
+     * widget, so the widget is reset after a token is spent rather than
+     * being torn down and rebuilt.
+     */
+    drawChallenge() {
+      const cfg = global.RECIPE_FRIEND_CONFIG;
+      const key = cfg && cfg.turnstileSiteKey;
+      const box = $("#agent-turnstile");
+      const api = global.turnstile;
+      if (!key || !box || !api || this.challengeId !== undefined) return;
+      try {
+        this.challengeId = api.render(box, { sitekey: key });
+        box.hidden = false;
+      } catch (err) {
+        // A challenge that will not draw must not take the dialog with
+        // it. Adding an agent then fails at the server, which says why.
+        console.warn("Recipe Friend: could not draw the challenge.", err);
+      }
+    }
+
+    /** The answer to the challenge, or "" where there is no challenge. */
+    challengeToken() {
+      const api = global.turnstile;
+      if (!api || this.challengeId === undefined) return "";
+      try {
+        return api.getResponse(this.challengeId) || "";
+      } catch {
+        return "";
+      }
+    }
+
+    /** Spend it: a token answers once, so the next agent needs a new one. */
+    resetChallenge() {
+      const api = global.turnstile;
+      if (!api || this.challengeId === undefined) return;
+      try {
+        api.reset(this.challengeId);
+      } catch {
+        /* the next attempt will say so */
+      }
+    }
+
     /** Tell sync and the UI what this book allows, from one answer. */
     applyRole() {
       const editable = this.canEdit(this.currentBook());
@@ -256,6 +310,7 @@
       // that is not yours to press reads better absent than greyed.
       const agents = $("#agents-section");
       if (agents) agents.hidden = !iOwn;
+      if (iOwn) this.drawChallenge();
       // A credential belongs to the moment it was made (J16.6). Switching
       // books, or reopening the dialog, is a different moment.
       const agentOut = $("#agent-out");
@@ -545,12 +600,21 @@
           }
           const cloud = window.RecipeCloud;
           if (!cloud || !cloud.makeScratchClient) return;
+          // Where there is a challenge on screen it has to be answered
+          // first. Asked for and refused, the server's complaint is the
+          // unhelpful kind, so the box under the thumb is what says so.
+          const token = this.challengeToken();
+          if (this.challengeId !== undefined && !token) {
+            this.app.toast("Tick the box to say you're a person first.");
+            return;
+          }
           try {
             const agent = await this.api.createAgent(
               this.sync.bookId,
               name,
               cloud.makeScratchClient,
-              cloud.coords
+              cloud.coords,
+              token
             );
             // Shown, not copied. This is a password in all but name and
             // it is shown exactly once (J16.6) — putting it straight on
@@ -570,6 +634,11 @@
           } catch (err) {
             console.warn("Recipe Friend: could not add an agent.", err);
             this.app.toast("Couldn't add that agent.");
+          } finally {
+            // Spent either way: a token answers once, and a refused
+            // attempt has still used it up. Left alone, the second try
+            // fails on a stale answer and reads as the same failure.
+            this.resetChallenge();
           }
         });
       }

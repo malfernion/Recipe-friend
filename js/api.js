@@ -490,13 +490,13 @@
      * which is what puts an agent in the member list under a name
      * somebody chose (J16.2).
      */
-    async createAgent(bookId, name, makeClient, coords) {
+    async createAgent(bookId, name, makeClient, coords, captchaToken) {
       const label = String(name || "").trim().slice(0, 80);
       if (!label) throw new Error("an agent needs a name");
 
       const scratch = makeClient();
       const { data, error } = await scratch.auth.signInAnonymously({
-        options: { data: { name: label } },
+        options: { data: { name: label }, captchaToken: captchaToken || undefined },
       });
       if (error) throw error;
       const session = data && data.session;
@@ -504,15 +504,23 @@
         throw new Error("that agent could not be given a credential");
       }
 
-      // If this refuses — not the owner, or somebody's account passed off
-      // as an agent — the anonymous user just minted is an orphan: a
-      // member of nothing, able to see nothing. Migration 008 says what
-      // to do about those, and it is nothing urgent.
+      // Two steps, and the account exists after the first. If placing it
+      // fails — not the owner, a blip, a retry that raced itself — what
+      // is left is an account in no book, able to see nothing, and ours
+      // to clear up rather than leave lying about. Best effort: failing
+      // to tidy is not a reason to swallow the error that matters.
       const { error: placeErr } = await this.client.rpc("add_agent", {
         book: bookId,
         agent_id: session.user.id,
       });
-      if (placeErr) throw placeErr;
+      if (placeErr) {
+        try {
+          await this.client.rpc("discard_orphan_agent", { agent_id: session.user.id });
+        } catch (tidyErr) {
+          console.warn("Recipe Friend: left an unused agent account behind.", tidyErr);
+        }
+        throw placeErr;
+      }
 
       return {
         userId: session.user.id,

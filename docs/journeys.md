@@ -845,7 +845,12 @@ not somebody.
    already there. It has no email address, because it is not anybody.
 2. **Only an owner may add one**, from the Sharing list, and it is named
    when it is added. That name is what the member list shows — an agent
-   nobody named is an agent nobody can recognise later.
+   nobody named is an agent nobody can recognise later. Adding one makes
+   an account, so it is the one control in the app behind a challenge:
+   ticked by the person adding it, and never by anything else. Where no
+   challenge is configured none is drawn and none is required, which is
+   what the app does before its keys exist and if the challenge cannot be
+   reached.
 3. **An agent may read the book, add recipes, and work on the plan.** It
    may not edit or delete a recipe, favourite one, move one, invite
    anybody, change a role, or touch the book itself. Narrower than an
@@ -938,12 +943,20 @@ accident:
   (J7.17). Anything an agent can read it can copy out. Removing it stops
   it reading more; it does not retrieve what it already has.
 - **Enabling agents costs the whole project something.** The identity
-  behind an agent is an anonymous account, and offering those at all is
-  a project-wide setting rather than a per-agent one — so the sign-up
-  endpoint is open to being used to inflate the database, and is kept
-  behind a CAPTCHA for that reason (J11). The cost is paid whether or not
+  behind an agent is an anonymous account, and offering those at all is a
+  project-wide setting rather than a per-agent one — so the endpoint that
+  makes them is open to anybody, and could be used to fill a free
+  database with accounts nobody asked for. A challenge in front of adding
+  an agent is what answers that (J16.2), and it is the app's **only**
+  third-party script: it cannot be vendored, because a challenge that
+  ships with the page is not a challenge. The cost is paid whether or not
   anybody adds an agent, which is why it is written down here rather than
   under J16.
+- **The challenge is for the person, never for the agent.** It is drawn
+  in the owner's browser, once, on the one control that creates an
+  account. An agent signs up for nothing — it is handed a credential and
+  from then on only refreshes it — so nothing it does is ever gated on
+  proving it is human, which it is not.
 - Plans are shared with the book, so a read-only member cannot plan or
   settle a line at all (J12.10).
 - The shopping list holds only what the planned recipes ask for. There is

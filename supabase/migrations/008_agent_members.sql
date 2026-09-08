@@ -272,6 +272,40 @@ grant execute on function public.add_agent(uuid, uuid) to authenticated;
 -- this file is to add 'agent' to that list.
 
 -- ---------------------------------------------------------------------
+-- 6b. Clearing up after ourselves
+-- ---------------------------------------------------------------------
+--
+-- Making an agent is two steps: sign an anonymous account in, then place
+-- it in the book. If the second fails — not the owner, a network blip, a
+-- retry that raced itself — the first has already happened and there is
+-- an account sitting there belonging to nobody and able to see nothing.
+-- We made it, so we clear it up, in the moment rather than by a job that
+-- runs on a Sunday.
+--
+-- Deleting from auth.users needs rights the app does not have and must
+-- never be given, so this is definer and its scope is the whole of its
+-- safety: an account that is anonymous *and* in no book at all. A person
+-- has an identity and fails the first test. An agent in use fails the
+-- second. There is nothing else it can reach, which is why it is safe to
+-- let any signed-in caller ask for it.
+
+create or replace function public.discard_orphan_agent(agent_id uuid)
+returns void
+language plpgsql security definer
+set search_path = public, pg_temp
+as $$
+begin
+  delete from auth.users
+  where id = agent_id
+    and is_anonymous is true
+    and not exists (select 1 from book_members where user_id = agent_id);
+end;
+$$;
+
+revoke execute on function public.discard_orphan_agent(uuid) from anon, public;
+grant execute on function public.discard_orphan_agent(uuid) to authenticated;
+
+-- ---------------------------------------------------------------------
 -- 7. No book for an anonymous signup
 -- ---------------------------------------------------------------------
 --
@@ -330,14 +364,9 @@ $$;
 -- it was made. Run it as written and every household's assistant loses
 -- its credential on the same afternoon.
 --
--- If such a job is ever wanted, it needs no admin key to be safe, only
--- one more line:
+-- There is no such job here and there does not need to be: 6b clears up
+-- the only orphans this app makes, at the moment it makes them. If one
+-- is ever wanted anyway, the guard is the same one 6b uses — an agent in
+-- a book is in use:
 --
---   delete from auth.users
---   where is_anonymous is true
---     and created_at < now() - interval '30 days'
---     and id not in (select user_id from book_members);
---
--- An agent that is in a book is in use. One that is in no book is the
--- orphan a failed `add_agent` leaves behind, and is what such a job
--- should be for.
+--   and not exists (select 1 from book_members where user_id = auth.users.id)

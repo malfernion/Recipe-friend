@@ -130,6 +130,23 @@ design; all protection is row-level security). One-time setup:
    Configuration → Redirect URLs.
 3. Sign in from the app's header. First sign-in auto-creates your profile
    and a personal "My recipes" book.
+4. **Agents** (optional — only needed to let a program read a book).
+   Turn on Authentication → Providers → **Anonymous sign-ins**: that is
+   what lets an agent have an identity with no email address. Then, so
+   that endpoint is not open to the world, create a **Cloudflare
+   Turnstile** widget, put its site key in `js/config.js` as
+   `turnstileSiteKey` and its secret key into Supabase → Authentication →
+   **Attack Protection → CAPTCHA protection** (provider: Turnstile).
+
+   **In that order.** Supabase decides whether a token is required; the
+   app only sends one when a site key is set. Switch the CAPTCHA on
+   before filling in the site key and adding an agent stops working until
+   you do. The site key is public by design, like the publishable key
+   beside it — the half that verifies is the secret, and it never leaves
+   Supabase.
+
+   The challenge is for the person adding the agent, once. The agent
+   itself signs up for nothing and is never asked.
 
 Signed out, the app shows a sign-in screen; recipes and preferences live
 with the account, not the browser.
