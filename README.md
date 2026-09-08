@@ -258,6 +258,7 @@ supabase/migrations/           Additive schema changes, run in order
                                 the checks that keep an agent to reading,
                                 adding and planning)
 docs/journeys.md               What the app is meant to do, as criteria
+docs/mcp-server-design.md      Design for the MCP server an agent runs
 test/                          Tests, named for the criteria they check
 .github/workflows/deploy-pages.yml   GitHub Pages deployment
 .github/workflows/test.yml           Tests on every pull request
