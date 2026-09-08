@@ -210,15 +210,24 @@
           <li class="member-item">
             <span class="member-name">${esc(m.name)}${m.isMe ? " (you)" : ""}</span>
             ${
-              iOwn && !m.isMe
-                ? `<label class="member-role-field">
+              m.role === "agent"
+                ? // An agent is in the list like anybody else (J16.7), and
+                  // wears a marker rather than a control: what it may do
+                  // cannot be changed, to it or from it (J16.8). Offered a
+                  // select here it would have rendered as "Can add and
+                  // edit" — the first option, since it is not "viewer" —
+                  // and the next change would have silently widened a
+                  // credential handed over for something narrower.
+                  `<span class="agent-badge">agent</span>`
+                : iOwn && !m.isMe
+                  ? `<label class="member-role-field">
                      <span class="visually-hidden">What ${esc(m.name)} may do</span>
                      <select class="member-role-pick" data-role-for="${esc(m.userId)}">
                        <option value="editor"${m.role === "viewer" ? "" : " selected"}>Can add and edit</option>
                        <option value="viewer"${m.role === "viewer" ? " selected" : ""}>Can read only</option>
                      </select>
                    </label>`
-                : `<span class="member-role">${esc(m.role)}</span>`
+                  : `<span class="member-role">${esc(m.role)}</span>`
             }
             ${
               iOwn && !m.isMe
@@ -241,6 +250,19 @@
       // there would be nowhere to put new recipes.
       const deleteBtn = $("#delete-book-btn");
       if (deleteBtn) deleteBtn.hidden = !iOwn || this.books.length < 2;
+
+      // Agents are the owner's to hand out and take back (J16.2), so the
+      // whole block goes rather than being shown disabled — a control
+      // that is not yours to press reads better absent than greyed.
+      const agents = $("#agents-section");
+      if (agents) agents.hidden = !iOwn;
+      // A credential belongs to the moment it was made (J16.6). Switching
+      // books, or reopening the dialog, is a different moment.
+      const agentOut = $("#agent-out");
+      if (agentOut && agentOut.dataset.book !== this.sync.bookId) {
+        agentOut.hidden = true;
+        agentOut.textContent = "";
+      }
 
       this.renderInvites(iOwn);
     }
@@ -487,19 +509,70 @@
       $("#member-list").addEventListener("click", async (event) => {
         const btn = event.target.closest("[data-remove]");
         if (!btn) return;
-        const ok = await RecipeAsk.ask("Remove this person from the book?", {
-          confirmLabel: "Remove",
-          danger: true,
-        });
+        // The same × takes an agent out (J16.7), and the question has to
+        // know which it is asking about: "this person" over a program is
+        // the kind of wrong wording that makes somebody answer no.
+        const who = this.members.find((m) => m.userId === btn.dataset.remove);
+        const isAgent = Boolean(who && who.role === "agent");
+        const ok = await RecipeAsk.ask(
+          isAgent
+            ? `Remove ${who.name} from the book? Its credential stops working straight away.`
+            : "Remove this person from the book?",
+          { confirmLabel: "Remove", danger: true }
+        );
         if (!ok) return;
         try {
           await this.api.removeMember(this.sync.bookId, btn.dataset.remove);
           await this.refresh();
+          if (isAgent) this.app.toast(`${who.name} can no longer see this book.`);
         } catch (err) {
           console.warn("Recipe Friend: could not remove member.", err);
-          this.app.toast("Couldn't remove that person.");
+          this.app.toast(isAgent ? "Couldn't remove that agent." : "Couldn't remove that person.");
         }
       });
+
+      // --- agents (J16) ---------------------------------------------------
+
+      const agentName = $("#new-agent-name");
+      const addAgent = $("#create-agent-btn");
+      if (addAgent) {
+        addAgent.addEventListener("click", async () => {
+          const name = (agentName && agentName.value.trim()) || "";
+          if (!name) {
+            this.app.toast("Give the agent a name first.");
+            if (agentName) agentName.focus();
+            return;
+          }
+          const cloud = window.RecipeCloud;
+          if (!cloud || !cloud.makeScratchClient) return;
+          try {
+            const agent = await this.api.createAgent(
+              this.sync.bookId,
+              name,
+              cloud.makeScratchClient,
+              cloud.coords
+            );
+            // Shown, not copied. This is a password in all but name and
+            // it is shown exactly once (J16.6) — putting it straight on
+            // the clipboard invites pasting it somewhere before reading
+            // what it is, and the warning beside it is the point.
+            const out = $("#agent-out");
+            if (out) {
+              out.hidden = false;
+              out.dataset.book = this.sync.bookId;
+              out.innerHTML =
+                `<span class="agent-credential">Copy this now — it is not shown again</span>` +
+                esc(agent.credential);
+            }
+            if (agentName) agentName.value = "";
+            await this.refresh();
+            this.app.toast(`${agent.name} can now read this book.`);
+          } catch (err) {
+            console.warn("Recipe Friend: could not add an agent.", err);
+            this.app.toast("Couldn't add that agent.");
+          }
+        });
+      }
 
       $("#delete-book-btn").addEventListener("click", async () => {
         const current = this.currentBook();

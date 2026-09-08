@@ -47,6 +47,12 @@ accounts and sync.
   single-use, expire in 48 hours, can be revoked, say which kind they are
   before anyone accepts, and never join anyone to anything without their
   say-so.
+- **Agents** — let a program read a book. An owner adds one from the
+  Sharing list, names it, and gets a credential to paste into whatever
+  assistant they run; it can read the book, add recipes and work on the
+  plan, and it cannot edit or delete a recipe, favourite one, see the
+  photos, or finish a plan. It sits in the member list like anybody else
+  and is removed with the same ×. The credential is shown once.
 - **Copy and move** — copy a recipe into any book you can write to, which
   is how a book you only read is still worth being in. Moving one out of a
   book is the owner's, asks first, and leaves a tombstone so it does not
@@ -94,8 +100,8 @@ type in the search box, pick a photo, click Export, open an invite link.
 
 Every test name quotes a criterion from [`docs/journeys.md`](docs/journeys.md),
 so a failure points at behaviour that was agreed rather than at an
-implementation detail. **148 of the 164 criteria have a test naming
-them**; the sixteen that do not are listed at the end of the journeys,
+implementation detail. **150 of the 164 criteria have a test naming
+them**; the fourteen that do not are listed at the end of the journeys,
 along with the database, which is deliberately outside the net.
 
 The database is deliberately not covered — see the note at the end of the
@@ -218,7 +224,9 @@ supabase/migrations/           Additive schema changes, run in order
                                 moving one an owner's act, and adds the
                                 read-only member role; 007 adds the live
                                 plan a book keeps and the plans it has
-                                finished)
+                                finished; 008 adds the agent role, and
+                                the checks that keep an agent to reading,
+                                adding and planning)
 docs/journeys.md               What the app is meant to do, as criteria
 test/                          Tests, named for the criteria they check
 .github/workflows/deploy-pages.yml   GitHub Pages deployment

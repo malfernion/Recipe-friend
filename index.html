@@ -391,6 +391,39 @@
        everyone else, or reading and copying out and nothing more. Treat a link like a key:
        send it to one person, and revoke it if it goes astray.</p>
 
+    <!--
+      Agents are a separate block from the invite row above, and from the
+      member list, because they are a different question: not "who else is
+      in this book" but "what have I let read it". Owners only — the whole
+      block is hidden for everyone else (J16.2).
+    -->
+    <div id="agents-section" hidden>
+      <h3 class="books-heading">Agents</h3>
+      <!--
+        No list here: an agent holds a membership row, so it is already in
+        the Sharing list above, marked and with the same × (J16.7). This
+        block is the way to add one, and the one place its credential is
+        ever shown.
+      -->
+      <div class="agent-new">
+        <input type="text" id="new-agent-name" maxlength="80"
+               placeholder="What to call it — e.g. Meal planner">
+        <button type="button" class="btn btn-ghost" id="create-agent-btn">Add an agent</button>
+      </div>
+      <!--
+        The credential, shown once and never again (J16.6). It is a
+        password in everything but name, so it is not put in the clipboard
+        without being seen first: it is rendered, selectable, with the
+        warning beside it rather than under it.
+      -->
+      <p id="agent-out" class="invite-out" hidden></p>
+      <p class="books-hint">An agent is a program you let read this book — an assistant that
+         suggests what to cook, or files a recipe you liked. It can read the book, add
+         recipes and work on the plan. It cannot edit or delete a recipe, favourite one,
+         see the photos, or finish a plan. Its credential is shown once when you add it,
+         so keep it somewhere safe; if it goes astray, remove the agent and add another.</p>
+    </div>
+
     <div class="action-bar">
       <button type="button" class="btn btn-primary" id="books-close-btn">Done</button>
     </div>

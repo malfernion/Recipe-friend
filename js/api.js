@@ -17,6 +17,35 @@
 
   const PHOTO_BUCKET = "recipe-photos";
 
+  /**
+   * An agent's credential, as one thing to paste (J16.6).
+   *
+   * Four values, because an agent needs all four to reach the right book
+   * and none of them is guessable from the others: where the project is,
+   * the publishable key every caller sends, which book this credential is
+   * for, and the refresh token that says who is asking. Four fields to
+   * copy separately is three chances to copy one wrong.
+   *
+   * The book id is in here rather than left to the agent to discover:
+   * `resolveBook` prefers a book the session owns, and an agent that ever
+   * came to own one would otherwise sync that instead of the household's.
+   *
+   * Not encryption and not obfuscation — base64url so that a token, a URL
+   * and a key survive being pasted through a chat window, an env file and
+   * a YAML block without one of them being mangled. The prefix says what
+   * it is and which shape it has, so a later one can be told apart.
+   */
+  function packCredential(parts) {
+    const json = JSON.stringify(parts);
+    const bytes = new TextEncoder().encode(json);
+    let binary = "";
+    for (const b of bytes) binary += String.fromCharCode(b);
+    return (
+      "rfa1." +
+      global.btoa(binary).replaceAll("+", "-").replaceAll("/", "_").replace(/=+$/, "")
+    );
+  }
+
   class RecipeApi {
     constructor(client) {
       this.client = client;
@@ -433,6 +462,77 @@
         .eq("book_id", bookId)
         .eq("user_id", userId);
       if (error) throw error;
+    }
+
+    // --- agents (J16) ----------------------------------------------------
+
+    // Listing them needs nothing of its own: an agent holds a membership
+    // row, so `listMembers` already returns it with `role: "agent"`, and
+    // the roster draws it there (J16.7). A second list would be a second
+    // answer to "who can see this book".
+
+    /**
+     * Make an agent for a book and return the credential, once (J16.6).
+     *
+     * The identity is an anonymous Supabase user: a real row in
+     * auth.users with a real uuid and no email, so every policy already
+     * written governs it and there is no fiction in the member list.
+     * Supabase mints it and the session it comes back with; nothing is
+     * signed here.
+     *
+     * It is minted in a **second client**, holding its own storage and
+     * persisting nothing, because `signInAnonymously` on the app's own
+     * client would sign the owner out of their own account and into the
+     * agent's — in their own browser, mid-dialog.
+     *
+     * The name travels as sign-up metadata rather than being written
+     * afterwards: `handle_new_user` already reads it into the profile,
+     * which is what puts an agent in the member list under a name
+     * somebody chose (J16.2).
+     */
+    async createAgent(bookId, name, makeClient, coords) {
+      const label = String(name || "").trim().slice(0, 80);
+      if (!label) throw new Error("an agent needs a name");
+
+      const scratch = makeClient();
+      const { data, error } = await scratch.auth.signInAnonymously({
+        options: { data: { name: label } },
+      });
+      if (error) throw error;
+      const session = data && data.session;
+      if (!session || !session.refresh_token) {
+        throw new Error("that agent could not be given a credential");
+      }
+
+      // If this refuses — not the owner, or somebody's account passed off
+      // as an agent — the anonymous user just minted is an orphan: a
+      // member of nothing, able to see nothing. Migration 008 says what
+      // to do about those, and it is nothing urgent.
+      const { error: placeErr } = await this.client.rpc("add_agent", {
+        book: bookId,
+        agent_id: session.user.id,
+      });
+      if (placeErr) throw placeErr;
+
+      return {
+        userId: session.user.id,
+        name: label,
+        credential: packCredential({
+          url: coords.url,
+          key: coords.key,
+          book: bookId,
+          refresh_token: session.refresh_token,
+        }),
+      };
+    }
+
+    /**
+     * Take an agent out of a book (J16.7). The same delete that removes a
+     * person, because it is the same row — and the moment it goes, every
+     * policy stops matching and the credential is worth nothing.
+     */
+    async removeAgent(bookId, userId) {
+      return this.removeMember(bookId, userId);
     }
 
     // --- photos in Storage ----------------------------------------------

@@ -33,7 +33,19 @@
    * whole sync before the books UI gets round to it (J7.17).
    */
   function canWrite(book) {
-    return Boolean(book && (book.isOwner || book.role === "owner" || book.role === "editor"));
+    return Boolean(
+      book &&
+        (book.isOwner ||
+          book.role === "owner" ||
+          book.role === "editor" ||
+          // An agent adds recipes and works on the plan (J16.3), and this
+          // is the file that pushes both. `BooksUI.canEdit` deliberately
+          // does not agree: nothing an agent runs loads the books UI, and
+          // a browser opened with an agent's credential should draw the
+          // read-only screen rather than controls whose writes the
+          // database will refuse.
+          book.role === "agent")
+    );
   }
 
   /**

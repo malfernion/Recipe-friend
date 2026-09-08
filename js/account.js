@@ -29,8 +29,39 @@
   const client = window.supabase.createClient(cfg.supabaseUrl, cfg.supabaseKey, {
     auth: { flowType: "pkce" },
   });
+  /**
+   * A second client, holding nothing and remembering nothing.
+   *
+   * Making an agent means signing one in (J16), and `signInAnonymously`
+   * on the client above would sign the owner out of their own account and
+   * into the agent's — in their own browser, mid-dialog. This one has its
+   * own storage key and persists no session, so the sign-in happens
+   * beside the owner's rather than over it.
+   *
+   * It lives here because this is the file that knows the project
+   * coordinates; books.js is handed the factory rather than the config.
+   */
+  function makeScratchClient() {
+    return window.supabase.createClient(cfg.supabaseUrl, cfg.supabaseKey, {
+      auth: {
+        persistSession: false,
+        autoRefreshToken: false,
+        detectSessionInUrl: false,
+        storageKey: "recipe-friend:scratch",
+      },
+    });
+  }
+
   // Shared handle for later milestones (books, profiles) and tests.
-  window.RecipeCloud = { client, session: null, sync: null };
+  // `coords` goes out with the factory because an agent's credential
+  // carries them (J16.6) and books.js has no other way to know them.
+  window.RecipeCloud = {
+    client,
+    session: null,
+    sync: null,
+    makeScratchClient,
+    coords: { url: cfg.supabaseUrl, key: cfg.supabaseKey },
+  };
 
   const statusEl = document.getElementById("sync-status");
   let books = null;

@@ -2788,6 +2788,99 @@ body.gated .view {
   margin: 0.9rem 0 0;
 }
 
+/* ---------- Agents (J16) ----------
+   A roster like the member list, because an agent is a member — the
+   marker beside the name is what says which kind, and it wears the
+   accent so a program never reads as one of the household at a glance.
+*/
+.agent-list {
+  list-style: none;
+  margin: 0.75rem 0 0;
+  padding: 0;
+}
+
+.agent-item {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.4rem 0;
+  border-bottom: 1px solid var(--rule);
+}
+
+.agent-item:last-child {
+  border-bottom: none;
+}
+
+.agent-name {
+  flex: 1;
+  font-family: var(--serif);
+  font-size: 1rem;
+}
+
+.agent-badge {
+  font-size: 0.64rem;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--accent);
+}
+
+/* The same 44px target the rest of the app keeps (J4.19). */
+.agent-remove {
+  font-size: 1.05rem;
+  line-height: 1;
+  width: 1.6rem;
+  height: 1.6rem;
+  border: none;
+  background: none;
+  color: var(--ink-faint);
+  cursor: pointer;
+}
+
+.agent-remove:hover,
+.agent-remove:focus-visible {
+  color: var(--danger);
+}
+
+.agent-new {
+  display: flex;
+  gap: 0.5rem;
+  margin-top: 0.85rem;
+  flex-wrap: wrap;
+}
+
+.agent-new input {
+  flex: 1;
+  min-width: 12rem;
+  font-family: var(--sans);
+  font-size: 0.9rem;
+  padding: 0.5rem 0.65rem;
+  border: 1px solid var(--rule-strong);
+  background: var(--paper);
+  color: var(--ink);
+}
+
+.agent-new input:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+/*
+  The credential is a password in all but name and is shown once
+  (J16.6), so it says so where it is read rather than in the hint
+  underneath — which is where the eye goes second.
+*/
+.agent-credential {
+  display: block;
+  margin-bottom: 0.4rem;
+  font-family: var(--sans);
+  font-size: 0.68rem;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--accent);
+}
+
 /* ---------- Legal pages (privacy, terms) ---------- */
 .legal {
   max-width: 44rem;

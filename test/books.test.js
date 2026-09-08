@@ -104,6 +104,9 @@ function fakeCloud() {
     book_members: [],
     invites: [],
     recipes: [],
+    // auth.users, only as far as add_agent has to ask about it: whether
+    // an id belongs to somebody or to nobody (J16.1).
+    anon_users: [],
   };
   const calls = [];
   const failures = new Map(); // "table.op" or "storage.copy" -> Error
@@ -316,6 +319,28 @@ function fakeCloud() {
       }
       return [{ book_id: book.id, book_name: book.name }];
     },
+    /**
+     * add_agent: the owner of the book, and nobody's account. Both checks
+     * are here because the real one is security definer and so has to do
+     * its own — and the second is the one migration 008 rests on (J16.1).
+     */
+    add_agent({ book, agent_id }) {
+      const target = db.books.find((b) => b.id === book);
+      if (!target || target.owner !== ME) {
+        throw new Error("only the owner of a book may add an agent to it");
+      }
+      if (!db.anon_users.includes(agent_id)) {
+        throw new Error("an agent is not a person's account");
+      }
+      const held = db.book_members.find(
+        (m) => m.book_id === book && m.user_id === agent_id
+      );
+      if (held && held.role !== "agent") {
+        throw new Error("that account already belongs to this book");
+      }
+      if (!held) join(book, agent_id, "agent");
+      return null;
+    },
   };
 
   const client = {
@@ -333,9 +358,41 @@ function fakeCloud() {
     },
   };
 
+  /**
+   * The second client an agent is minted in (J16.6). The real one signs
+   * an anonymous user in; this one records that somebody did, hands back
+   * a session shaped like Supabase's, and — the part that matters — puts
+   * the new id in `anon_users`, so `add_agent` can tell it from a person.
+   */
+  let anonCount = 0;
+  const makeScratchClient = () => ({
+    auth: {
+      async signInAnonymously(opts) {
+        const failure = failures.get("auth.signInAnonymously");
+        if (failure) return { data: null, error: failure };
+        anonCount += 1;
+        const id = `agent-${anonCount}`;
+        db.anon_users.push(id);
+        db.profiles.push({
+          user_id: id,
+          // handle_new_user reads the sign-up metadata, which is what puts
+          // an agent in the roster under the name somebody chose.
+          display_name: (opts && opts.options && opts.options.data && opts.options.data.name) || "",
+        });
+        calls.push({ auth: "signInAnonymously" });
+        return {
+          data: { user: { id }, session: { user: { id }, refresh_token: `refresh-${id}` } },
+          error: null,
+        };
+      },
+    },
+  });
+
   return {
     db, client, calls, files,
     join,
+    makeScratchClient,
+    anonCalls: () => calls.filter((c) => c.auth === "signInAnonymously"),
     fail: (what, err) => failures.set(what, err || new Error("offline")),
     unfail: (what) => failures.delete(what),
     /** Every call to one table, or every storage call of one kind. */
@@ -410,6 +467,13 @@ function harness(opts = {}) {
     store,
     render: () => { renders.count++; },
     toast: (message) => toasts.push(message),
+  };
+
+  // What account.js puts on the shared handle: the throwaway client an
+  // agent is signed in with, and the coordinates its credential carries.
+  win.RecipeCloud = {
+    makeScratchClient: cloud.makeScratchClient,
+    coords: { url: "https://test.supabase.co", key: "sb_publishable_test" },
   };
 
   const src = fs.readFileSync(path.join(__dirname, "..", "js", "books.js"), "utf8");
@@ -1885,4 +1949,191 @@ test("J7.13 · a sync that starts failing is one of the moments it is checked", 
   assert.equal(h.win.localStorage.getItem(cacheKey), null, "and forgot the gone book");
   assert.match(h.lastToast(), /isn't available to you any more/);
   assert.doesNotMatch(h.lastToast(), /delet|remov/i);
+});
+
+// ---------------------------------------------------------------------
+// J16 · letting a program help
+// ---------------------------------------------------------------------
+
+/** Add an agent the way the dialog does, and let the click settle. */
+async function addAgent(h, name) {
+  h.el("new-agent-name").value = name;
+  h.el("create-agent-btn").fire("click", {});
+  await flush();
+  await flush();
+}
+
+test("J16.2 · only an owner is offered an agent", async () => {
+  const h = harness();
+  await h.books.refresh();
+  assert.equal(h.el("agents-section").hidden, false, "your own book: yours to hand out");
+
+  await h.books.switchTo(SHARED);
+  await flush();
+
+  assert.equal(h.el("agents-section").hidden, true,
+    "a book you were invited into is not yours to give a credential to");
+});
+
+test("J16.2 · an agent is named when it is added, and refuses to be nameless", async () => {
+  const h = harness();
+  await h.books.refresh();
+
+  await addAgent(h, "   ");
+
+  assert.equal(h.cloud.anonCalls().length, 0, "nothing is minted for a name nobody typed");
+  assert.match(h.lastToast(), /name/i);
+
+  await addAgent(h, "Meal planner");
+
+  assert.equal(h.cloud.anonCalls().length, 1);
+  const row = h.cloud.db.book_members.find((m) => m.role === "agent");
+  assert.ok(row, "it is placed in the book as a member");
+  assert.equal(row.book_id, MINE);
+});
+
+test("J16.1 · an agent is nobody: add_agent refuses a person's account", async () => {
+  const h = harness();
+  await h.books.refresh();
+
+  // The check migration 008 rests on, asked directly: Sam has an account,
+  // so Sam cannot be placed in a book as an agent by anybody.
+  const { error } = await h.cloud.client.rpc("add_agent", { book: MINE, agent_id: THEM });
+
+  assert.match(String(error.message), /not a person/);
+  assert.equal(h.cloud.db.book_members.filter((m) => m.role === "agent").length, 0);
+});
+
+test("J16.6 · the credential is shown once, and is not shown again", async () => {
+  const h = harness();
+  await h.books.refresh();
+
+  await addAgent(h, "Meal planner");
+
+  const out = h.el("agent-out");
+  assert.equal(out.hidden, false);
+  assert.match(out.innerHTML, /rfa1\./, "the credential itself");
+  assert.match(out.innerHTML, /not shown again/i, "and what that means, beside it");
+  assert.equal(h.clipboard.length, 0,
+    "a password in all but name is read before it is copied, not copied before it is read");
+
+  // Somewhere else and back again is a different moment.
+  await h.books.switchTo(SHARED);
+  await flush();
+  await h.books.switchTo(MINE);
+  await flush();
+
+  assert.equal(h.el("agent-out").hidden, true, "gone, and not recoverable from the dialog");
+  assert.equal(h.el("agent-out").textContent, "");
+});
+
+test("J16.6 · the credential carries the book it is for", async () => {
+  const h = harness();
+  await h.books.refresh();
+  await addAgent(h, "Meal planner");
+
+  const packed = /rfa1\.([A-Za-z0-9_-]+)/.exec(h.el("agent-out").innerHTML)[1];
+  const parts = JSON.parse(Buffer.from(packed, "base64url").toString("utf8"));
+
+  assert.equal(parts.book, MINE,
+    "pinned, so an agent never has to guess which book it was given");
+  assert.equal(parts.url, "https://test.supabase.co");
+  assert.equal(parts.key, "sb_publishable_test");
+  assert.match(parts.refresh_token, /^refresh-/, "and the thing that says who is asking");
+});
+
+test("J16.7 · an agent is in the member list, by name and marked as one", async () => {
+  const h = harness();
+  await h.books.refresh();
+  await addAgent(h, "Meal planner");
+
+  const html = h.el("member-list").innerHTML;
+  assert.match(html, /Meal planner/, "under the name somebody gave it");
+  assert.match(html, /class="agent-badge">agent</, "and said to be a program, not a person");
+  assert.match(html, /Dave/, "beside the people");
+});
+
+test("J16.8 · an agent's role is not a control, and cannot be changed", async () => {
+  const h = harness();
+  h.cloud.join(MINE, THEM, "editor");
+  await h.books.refresh();
+  await addAgent(h, "Meal planner");
+
+  const rows = h.el("member-list").innerHTML.split("<li");
+  const agentRow = rows.find((r) => r.includes("Meal planner"));
+  const personRow = rows.find((r) => r.includes("Sam"));
+
+  assert.doesNotMatch(agentRow, /member-role-pick/,
+    "no select: offered one it would have read 'Can add and edit' and widened on the next change");
+  assert.match(personRow, /member-role-pick/, "a person still has one");
+  assert.doesNotMatch(personRow, /value="agent"/, "and cannot be turned into a program");
+});
+
+test("J16.7 · the × that removes a person removes an agent, and says which", async () => {
+  const h = harness();
+  await h.books.refresh();
+  await addAgent(h, "Meal planner");
+  const agent = h.cloud.db.book_members.find((m) => m.role === "agent");
+
+  await h.el("member-list").fire("click", { target: control({ remove: agent.user_id }) });
+  await flush();
+
+  assert.match(h.confirms[h.confirms.length - 1], /Meal planner/,
+    "the question names it rather than calling a program 'this person'");
+  assert.match(h.confirms[h.confirms.length - 1], /credential stops working/);
+  assert.equal(
+    h.cloud.db.book_members.some((m) => m.user_id === agent.user_id), false,
+    "and the membership row is what goes"
+  );
+});
+
+test("J16.3 · sync pushes for an agent; the books UI still draws read-only", async () => {
+  const h = harness();
+
+  // The two helpers disagree about this one role on purpose. sync.js is in
+  // the agent's module set and has to push; books.js is not, and a browser
+  // opened with a credential should show the screen whose controls the
+  // database would allow, not the ones it would refuse.
+  //
+  // canWrite is private to sync.js, so it is asked the way the app asks
+  // it: resolveBook is what settles readOnly, one whole sync before the
+  // books UI gets round to the question (J7.17).
+  h.api.listBooks = async () => [{ id: SHARED, name: "Household", role: "agent", isOwner: false }];
+  await h.sync.resolveBook("agent-1", SHARED, "Meal planner");
+
+  assert.equal(h.sync.readOnly, false, "an agent pushes: adding a recipe is the point");
+  assert.equal(h.books.canEdit({ role: "agent" }), false, "and the books UI still says no");
+  assert.equal(h.books.canEdit({ role: "editor" }), true);
+  assert.equal(h.books.canEdit({ role: "viewer" }), false);
+});
+
+test("J16.3 · a viewer still cannot push, now that another role can", async () => {
+  const h = harness();
+  h.api.listBooks = async () => [{ id: SHARED, name: "Household", role: "viewer", isOwner: false }];
+
+  await h.sync.resolveBook(ME, SHARED, "Dave");
+
+  assert.equal(h.sync.readOnly, true, "J7.17 is unchanged by J16 existing");
+});
+
+test("J16.11 · a recipe from an agent is held to the floor every recipe is held to", () => {
+  const h = harness();
+
+  // The same sanitiser a pasted recipe meets (J5.7). Nothing about the
+  // writer being a program relaxes J2.1.
+  assert.equal(h.store.add({ name: "No ingredients", ingredients: [], steps: ["Cook."] }), null);
+  assert.equal(h.store.add({ name: "No steps", ingredients: [{ item: "onion" }], steps: [] }), null);
+  assert.equal(h.store.add({ name: "", ingredients: [{ item: "onion" }], steps: ["Cook."] }), null);
+
+  const ok = h.store.add({
+    name: "Curry",
+    ingredients: [{ amount: 2, unit: "Grams", item: "onion" }],
+    steps: ["Cook."],
+    tags: ["Quick", "quick"],
+    image: "javascript:alert(1)",
+  });
+
+  assert.equal(ok.ingredients[0].unit, "g", "units are normalised, whoever wrote them");
+  assert.deepEqual(ok.tags, ["quick"], "and a tag typed twice is one tag");
+  assert.equal(ok.image, "", "and an image that is not an image does not survive");
 });

@@ -992,12 +992,16 @@ recipe is, what it says on screen, and what survives a round trip. Those
 are the failures that would be silent — a recipe quietly losing its tags is
 worse than a page that will not load.
 
-Sixteen of the 164 criteria have no test naming them — J4.15, J4.16,
-J4.25, J5.10, J11.1 to J11.4, J12.12, J15.11, and six of J16: J16.1,
-J16.3, J16.4, J16.5, J16.9 and J16.10, which are policies rather than
-behaviour and belong with the database below. The other five of J16 —
-J16.2, J16.6, J16.7, J16.8 and J16.11 — are markup and behaviour and are
-held by tests. Six more things the tests do not reach, recorded so the
+Fourteen of the 164 criteria have no test naming them — J4.15, J4.16,
+J4.25, J5.10, J11.1 to J11.4, J12.12, J15.11, and four of J16: J16.4,
+J16.5, J16.9 and J16.10, which are policies or the absence of one and
+belong with the database below. The rest of J16 is held by tests,
+including two that looked like the database's and are not: that
+`add_agent` refuses a person's account (J16.1) is the check the whole
+design rests on and the fake server enforces it, and that an agent
+pushes while the books UI still draws read-only (J16.3) is two helpers
+disagreeing on purpose, which is exactly the kind of thing that decays
+into a bug once nobody remembers it was meant. Six more things the tests do not reach, recorded so the
 gap is visible:
 
 - **The 48-hour lifetime and single use of an invite** are the database's,
