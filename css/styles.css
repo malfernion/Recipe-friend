@@ -2789,57 +2789,17 @@ body.gated .view {
 }
 
 /* ---------- Agents (J16) ----------
-   A roster like the member list, because an agent is a member — the
-   marker beside the name is what says which kind, and it wears the
+   There is no list here: an agent is a member and is drawn in the member
+   list with everyone else (J16.7). What this section holds is the way to
+   add one and the one place its credential is shown. The badge wears the
    accent so a program never reads as one of the household at a glance.
 */
-.agent-list {
-  list-style: none;
-  margin: 0.75rem 0 0;
-  padding: 0;
-}
-
-.agent-item {
-  display: flex;
-  align-items: center;
-  gap: 0.75rem;
-  padding: 0.4rem 0;
-  border-bottom: 1px solid var(--rule);
-}
-
-.agent-item:last-child {
-  border-bottom: none;
-}
-
-.agent-name {
-  flex: 1;
-  font-family: var(--serif);
-  font-size: 1rem;
-}
-
 .agent-badge {
   font-size: 0.64rem;
   font-weight: 600;
   letter-spacing: 0.14em;
   text-transform: uppercase;
   color: var(--accent);
-}
-
-/* The same 44px target the rest of the app keeps (J4.19). */
-.agent-remove {
-  font-size: 1.05rem;
-  line-height: 1;
-  width: 1.6rem;
-  height: 1.6rem;
-  border: none;
-  background: none;
-  color: var(--ink-faint);
-  cursor: pointer;
-}
-
-.agent-remove:hover,
-.agent-remove:focus-visible {
-  color: var(--danger);
 }
 
 .agent-new {
