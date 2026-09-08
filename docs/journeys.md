@@ -1034,15 +1034,14 @@ accident:
   this app.** `plan.js`, `shoplist.js`, `search.js`, `scale.js`,
   `units.js` and `html.js` name nothing a browser provides; `storage.js`,
   `planstore.js` and `sync.js` reach no further than `localStorage`. It
-  is what lets an agent (J16) compute the household's shopping list with
-  the household's own code rather than a second implementation, which
-  would drift on exactly the things this app is careful about — promotion
-  to kilograms, plurals, and not guessing how big a tin is. Breaking it
-  costs nothing visible here: reach for the page in `plan.js` and the
-  site still works, and the list goes wrong somewhere else. So it is held
-  by a test rather than by anybody remembering, and a `package.json` with
-  no dependencies and no scripts is what lets that other program install
-  these files instead of copying them.
+  is what lets the server in `mcp/` — the thing an agent talks to (J16) —
+  compute the household's shopping list by running the household's own
+  code rather than a second implementation, which would drift on exactly
+  the things this app is careful about: promotion to kilograms, plurals,
+  and not guessing how big a tin is. Breaking it costs nothing visible in
+  the app: reach for the page in `plan.js` and the site still works, and
+  the list goes wrong in a supermarket. So it is held by a test rather
+  than by anybody remembering.
 - **The challenge is the app's only third-party script.** It cannot be
   vendored the way supabase-js is, because a challenge that ships with
   the page is not a challenge — so the content security policy names

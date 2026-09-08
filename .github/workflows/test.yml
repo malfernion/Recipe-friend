@@ -16,12 +16,18 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      # No dependencies and no build step: the tests load the app's own
-      # modules and run on node's built-in runner.
+      # The site has no dependencies and no build step. The MCP server
+      # has two, so they are installed before the tests that reach them;
+      # the app's own tests still load its modules directly and run on
+      # node's built-in runner.
       - name: Set up Node
         uses: actions/setup-node@v4
         with:
           node-version: '22'
+          cache: npm
+
+      - name: Install the server's dependencies
+        run: npm ci
 
       - name: Run tests
         run: node --test test/*.test.js
@@ -29,4 +35,4 @@ jobs:
       # Cheap insurance that a syntax error can never reach Pages: the
       # deploy workflow copies the repo as-is and would publish it.
       - name: Check every script parses
-        run: for f in js/*.js; do node --check "$f" || exit 1; done
+        run: for f in js/*.js mcp/*.js; do node --check "$f" || exit 1; done
