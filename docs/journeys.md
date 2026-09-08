@@ -1099,9 +1099,9 @@ recipe is, what it says on screen, and what survives a round trip. Those
 are the failures that would be silent — a recipe quietly losing its tags is
 worse than a page that will not load.
 
-**Eighteen of the 164 criteria have no test naming them** — J4.15,
+**Sixteen of the 164 criteria have no test naming them** — J4.15,
 J4.16, J4.19, J4.25, J5.10, J6.3, J10.4, J11.1 to J11.5, J12.12, J15.9,
-J15.11, J16.5, J16.9 and J16.10.
+J15.11 and J16.5.
 
 Five of those are a correction rather than a change. J4.19, J6.3, J10.4,
 J11.5 and J15.9 had been counted as covered for a long time and are not:
@@ -1111,12 +1111,18 @@ criteria and new tests to the old figures — rather than by counting.
 Counting is the only reason the number moved. **The convention is that a
 test title quotes its criterion**, and that is what is measured here.
 
-The J16 entries are the ordinary kind of gap. J16.5 and J16.10 are
-policies and belong with the database below. J16.9 is a promise the app
-does not keep in code at all: it describes what a refresh token does once
-an agent holds it, and what it does is settled by a project setting
-recorded in the Boundaries above. Neither half is something a stub DOM
-can be asked about.
+J16.5 is the last one left of that journey, and it is a policy — an
+agent may clear a plan — which belongs with the database below.
+
+Two of its neighbours were on this list until the MCP server arrived and
+came off it, which is the clearest thing that server earned. J16.9 —
+what a refresh token does once an agent holds it — is now what
+`mcp/session.js` does about it, and there is a test for the refusal it
+has to survive. J16.10 — no stored photos — is a policy at the database
+and a decision in `mcp/digest.js` about what a tool hands back, and the
+second half is tested. Neither was ever something a stub DOM could be
+asked about; both are something the program on the other end of the
+credential can be.
 
 Six more things the tests do not reach, recorded so the
 gap is visible:
