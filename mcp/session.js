@@ -24,6 +24,33 @@
  */
 "use strict";
 
+const { isAuthRetryableFetchError } = require("@supabase/supabase-js");
+
+/**
+ * Was that the world being unreachable, rather than the credential being
+ * finished?
+ *
+ * `refreshSession` does not throw when the network fails — it *returns*
+ * an `AuthRetryableFetchError` carrying `status: 0`, where a token the
+ * server actually refused comes back as a 400. Six reviews walked past
+ * this because the test that named it stubbed a throw the real library
+ * cannot produce, so the branch that told the two apart was dead code
+ * and every outage said the credential was dead.
+ *
+ * The library's own predicate first; the shape behind it after, because
+ * a stubbed client has no reason to import the library's error classes.
+ */
+function unreachable(error) {
+  if (!error) return false;
+  if (typeof isAuthRetryableFetchError === "function" && isAuthRetryableFetchError(error)) return true;
+  return error.status === 0 || error.name === "AuthRetryableFetchError";
+}
+
+/** One sentence for "wait", against DEAD's sentence for "start again". */
+function cannotReach(url, why) {
+  return `Could not reach ${url}${why ? `: ${why}` : ""}. That is the project or the network, not the credential — try again in a moment.`;
+}
+
 class SessionError extends Error {
   constructor(message) {
     super(message);
@@ -84,11 +111,16 @@ class Session {
     try {
       ({ data, error } = await client.auth.refreshSession({ refresh_token: refreshToken }));
     } catch (err) {
-      // A thrown error here is the network, not the credential, and
-      // saying "revoked" about a flaky connection sends somebody to
-      // delete a working agent.
-      throw new SessionError(`Could not reach ${url}: ${err && err.message}`);
+      // Kept for a client that throws rather than returns. The real one
+      // does not, which was the whole of this bug: see `unreachable`.
+      throw new SessionError(cannotReach(url, err && err.message));
     }
+    // Which kind of failure, asked of the answer rather than of whether
+    // there was one. Saying "revoked" about a flaky connection sends
+    // somebody to delete a working agent, and removing one is entire
+    // and one-way (J16.7) — the wrong answer here is the irreversible
+    // one, and this is the most network-exposed moment the server has.
+    if (unreachable(error)) throw new SessionError(cannotReach(url, error.message));
     if (error || !data || !data.session || !data.user) {
       throw new SessionError(DEAD);
     }

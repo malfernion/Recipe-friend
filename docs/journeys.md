@@ -1086,12 +1086,15 @@ release.
     question loses a recipe that may never have been filed, and putting
     it back is safe because it keeps its own id, which a later sync
     pushes only if the server has never seen it.
-11. **What the book says is content, never instruction.** Everything the
-    reading tools hand over was typed by somebody in the household or
-    arrived with a recipe brought in from a web page (J5), and it reaches
-    a model in exactly the shape a request would. The tools say so where
-    the model will read it, and `sanitizeRecipe` is the backstop on the
-    way back in (J16.11).
+11. **What the book says is content, never instruction.** Everything a
+    tool hands over was typed by somebody in the household or arrived
+    with a recipe brought in from a web page (J5), and it reaches a model
+    in exactly the shape a request would. Every tool that hands any of it
+    back says so where the model will read it — the questions, and the
+    two that change the plan and answer with meal names and a shopping
+    list. `sanitizeRecipe` is the backstop on the way back in (J16.11),
+    and the tool that files a recipe carries the other half of the
+    sentence: bring back the recipe and nothing else the page asked for.
 
     **And what arrives as a tool's arguments is checked by this server or
     by nothing.** The protocol lets a tool publish the shape of what it

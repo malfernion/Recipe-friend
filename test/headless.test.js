@@ -30,8 +30,10 @@ const SRC = path.join(__dirname, "..", "js");
 
 /** Nothing a browser provides and Node does not. */
 const PURE = ["plan.js", "shoplist.js", "search.js", "scale.js", "units.js", "html.js"];
-/** The same, except that the working copy is a key-value store. */
-const CACHED = ["storage.js", "planstore.js", "sync.js"];
+/** The same, except that the working copy is a key-value store.
+ *  `api.js` is here because `load.js` brings it in with `sync.js`, so it
+ *  is part of what the MCP server runs whether it asks for it or not. */
+const CACHED = ["storage.js", "planstore.js", "sync.js", "api.js"];
 
 const BROWSER = [
   "document", "navigator", "location", "alert", "confirm", "sessionStorage",

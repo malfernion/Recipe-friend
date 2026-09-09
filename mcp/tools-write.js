@@ -19,6 +19,9 @@
  */
 "use strict";
 
+const { asList, asStrings, asCount, tooMany } = require("./args.js");
+const { HOUSEHOLD_DATA } = require("./tools-read.js");
+
 const CHANGES_THE_PLAN = {
   readOnlyHint: false,
   // Nothing here destroys anything: a meal can go back, and clearing
@@ -62,7 +65,8 @@ const addToPlan = {
     "at. The plan is shared with the household and somebody may be editing it from a phone, " +
     "so this reads the plan and adds to what is there rather than replacing it. A plan is a " +
     "bag of meals: " +
-    "nothing in it belongs to a day or a date, so keep the calendar on your side.",
+    "nothing in it belongs to a day or a date, so keep the calendar on your side. " +
+    HOUSEHOLD_DATA,
   annotations: CHANGES_THE_PLAN,
   inputSchema: {
     type: "object",
@@ -101,12 +105,17 @@ const addToPlan = {
       const refuseIfFinished = finished(book);
       if (refuseIfFinished) return refuseIfFinished;
 
+      const asked = asList(args.meals);
+      const refuse = tooMany(asked, 20, "meals");
+      if (refuse) return refuse;
+
       const before = book.plan;
       let plan = before;
       const wanted = [];
       const missing = [];
 
-      for (const meal of args.meals) {
+      for (const one of asked) {
+        const meal = one && typeof one === "object" ? one : { recipeId: one };
         const recipe = book.store.getById(meal.recipeId);
         if (!recipe) {
           missing.push(meal.recipeId);
@@ -114,7 +123,9 @@ const addToPlan = {
         }
         plan = win.RecipePlan.addMeal(plan, recipe, now);
         const added = plan.meals[plan.meals.length - 1];
-        if (meal.portions) plan = toPortions(win, plan, added.id, recipe, meal.portions, now);
+        if (meal.portions !== undefined && meal.portions !== null) {
+          plan = toPortions(win, plan, added.id, recipe, asCount(meal.portions, 0), now);
+        }
         // The name travels with the id: a meal dropped on the way out is
         // in neither the plan we started from nor the one we ended with,
         // and "something was dropped" is not a useful sentence.
@@ -132,7 +143,8 @@ const removeFromPlan = {
   title: "Take meals back out of the plan",
   description:
     "Remove meals from the book's live plan by their mealId, which get_plan gives. Nothing is " +
-    "recorded by taking a meal out, so this is reversible: put it back and the week is as it was.",
+    "recorded by taking a meal out, so this is reversible: put it back and the week is as it was. " +
+    HOUSEHOLD_DATA,
   annotations: CHANGES_THE_PLAN,
   inputSchema: {
     type: "object",
@@ -155,12 +167,16 @@ const removeFromPlan = {
       const refuseIfFinished = finished(book);
       if (refuseIfFinished) return refuseIfFinished;
 
+      const asked = asStrings(args.mealIds);
+      const refuse = tooMany(asked, 20, "meals");
+      if (refuse) return refuse;
+
       const before = book.plan;
       let plan = before;
       const wanted = [];
       const missing = [];
 
-      for (const id of args.mealIds) {
+      for (const id of asked) {
         if (!plan.meals.some((m) => m.id === id)) {
           missing.push(id);
           continue;
@@ -339,7 +355,9 @@ async function whatBecameOfIt(book, recipe, err) {
     // After the await, not before: the window this function closes is
     // the one where the row sits in the cache while it is being asked
     // about, and there is nothing left to await between here and the
-    // return.
+    // return. Since the lane, nothing else can run during that ask at
+    // all — this is belt and braces, kept because this file has been
+    // wrong more than once about what is reachable.
     book.store.addShared(recipe);
     return {
       added: { id: recipe.id, name: recipe.name },
@@ -442,7 +460,10 @@ function planNow(book) {
   const list = win.RecipeShopList.build(plan, book.recipes, book.prefs);
   return {
     meals: plan.meals.map((m) => ({ mealId: m.id, recipeId: m.recipeId, name: m.name, portions: m.portions })),
-    toBuy: list.toBuy.map((line) => line.text),
+    // `shortfallText` for the reason get_plan gives at length: `text` is
+    // the whole requirement, not what is left to buy.
+    toBuy: list.toBuy.map((line) => line.shortfallText),
+    partlySorted: list.toBuy.filter((line) => line.partText).map((line) => line.partText),
   };
 }
 

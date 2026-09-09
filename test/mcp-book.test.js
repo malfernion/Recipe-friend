@@ -23,7 +23,7 @@ const CREDENTIAL = {
 };
 
 /** A supabase client that signs in and records how it was made. */
-function fakeSupabase({ fails = false, throws = null } = {}) {
+function fakeSupabase({ fails = false, throws = null, unreachable = false } = {}) {
   const made = [];
   const refreshed = [];
   const createClient = (url, key, options) => {
@@ -32,8 +32,22 @@ function fakeSupabase({ fails = false, throws = null } = {}) {
       auth: {
         refreshSession: async ({ refresh_token }) => {
           refreshed.push(refresh_token);
-          if (throws) throw new Error(throws);
-          if (fails) return { data: null, error: { message: "Invalid Refresh Token" } };
+            if (throws) throw new Error(throws);
+          // How the real library fails when the project cannot be
+          // reached: it does not throw, it returns this.
+          if (unreachable) {
+            return {
+              data: { session: null, user: null },
+              error: { name: "AuthRetryableFetchError", status: 0, message: "fetch failed" },
+            };
+          }
+          // And how it fails when the token is genuinely refused.
+          if (fails) {
+            return {
+              data: { session: null, user: null },
+              error: { name: "AuthApiError", status: 400, message: "Invalid Refresh Token" },
+            };
+          }
           return { data: { session: { access_token: "jwt" }, user: { id: "agent-1" } }, error: null };
         },
       },
@@ -115,14 +129,21 @@ test("J16.9 · a refused exchange sends somebody to the Books dialog", async () 
   });
 });
 
-test("a network that is down is not a revoked credential", async () => {
-  // The two failures look alike from here and mean opposite things: one
-  // is "wait a moment", the other is "delete the agent and start again".
-  const s = new Session(CREDENTIAL, { createClient: fakeSupabase({ throws: "fetch failed" }).createClient });
+test("J17.5 · a network that is down is not a revoked credential", async () => {
+  // The two look alike from here and mean opposite things: one is "wait
+  // a moment", the other is "delete the agent and start again" — and
+  // removing an agent is entire and one-way (J16.7), so the wrong answer
+  // is the irreversible one.
+  //
+  // The library does not throw when the network fails; it returns an
+  // error carrying status 0. A stub that throws instead tests a failure
+  // that cannot happen, which is how this went six reviews unnoticed.
+  const s = new Session(CREDENTIAL, { createClient: fakeSupabase({ unreachable: true }).createClient });
 
   await assert.rejects(() => s.open(), (err) => {
     assert.match(err.message, /Could not reach/);
-    assert.ok(!/revoked|no longer works/.test(err.message));
+    assert.match(err.message, /not the credential/);
+    assert.ok(!/Books dialog|remove the agent/i.test(err.message), "nobody is sent to delete anything");
     return true;
   });
 });
