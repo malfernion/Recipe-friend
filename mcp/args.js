@@ -48,6 +48,20 @@ function asCount(value, fallback, min = 1) {
 }
 
 /**
+ * One of a known set, the fallback for nothing at all, or null for
+ * something that is not on the list.
+ *
+ * Null rather than the fallback, because `applySort` quietly returns the
+ * list untouched for an order it does not recognise: asking for
+ * "Quickest" and getting the book's own order is a plausible answer to a
+ * different question, and nothing in the reply says which question.
+ */
+function asChoice(value, allowed, fallback) {
+  if (value === null || value === undefined || value === "") return fallback;
+  return allowed.includes(value) ? value : null;
+}
+
+/**
  * Refuse a list longer than the schema said, rather than doing the work.
  * `add_to_plan` holds the write lane while it runs and the plan copies
  * itself per meal, so twenty thousand of them is minutes of a book
@@ -58,4 +72,4 @@ function tooMany(list, max, what) {
   return { error: `That is ${list.length} ${what}; this tool takes at most ${max} at a time.` };
 }
 
-module.exports = { asList, asStrings, asCount, tooMany };
+module.exports = { asList, asStrings, asCount, asChoice, tooMany };

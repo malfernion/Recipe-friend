@@ -11,7 +11,7 @@
 const { test } = require("node:test");
 const assert = require("node:assert/strict");
 const { loadApp, aRecipe } = require("./helpers/load.js");
-const { Session, SessionError } = require("../mcp/session.js");
+const { Session, SessionError, DEAD } = require("../mcp/session.js");
 const { openBook, BookError } = require("../mcp/book.js");
 
 const BOOK = "11111111-1111-4111-8111-111111111111";
@@ -146,6 +146,34 @@ test("J17.5 · a network that is down is not a revoked credential", async () => 
     assert.ok(!/Books dialog|remove the agent/i.test(err.message), "nobody is sent to delete anything");
     return true;
   });
+});
+
+test("J17.5 · only a status the auth server refused the token with means start again", async () => {
+  // The two answers are not equally costly. Waiting is free and wrong
+  // once; removing an agent is entire and one-way (J16.7). So the
+  // irreversible sentence is reserved for a refusal, and everything else
+  // — a rate limiter, a bad gateway, a captive portal that answers with
+  // no status at all — is the world, which is worth waiting for.
+  const answer = async (error) => {
+    const createClient = () => ({
+      auth: { refreshSession: async () => ({ data: { session: null, user: null }, error }) },
+    });
+    try {
+      await new Session(CREDENTIAL, { createClient }).open();
+      return "opened";
+    } catch (err) {
+      return err.message === DEAD ? "start again" : "wait";
+    }
+  };
+
+  assert.equal(await answer({ name: "AuthApiError", status: 400, message: "Invalid Refresh Token" }), "start again");
+  assert.equal(await answer({ name: "AuthApiError", status: 401, message: "no" }), "start again");
+  assert.equal(await answer({ name: "AuthApiError", status: 403, message: "no" }), "start again");
+
+  assert.equal(await answer({ name: "AuthApiError", status: 429, message: "over_request_rate_limit" }), "wait");
+  assert.equal(await answer({ name: "AuthApiError", status: 503, message: "unavailable" }), "wait");
+  assert.equal(await answer({ name: "AuthRetryableFetchError", status: 0, message: "fetch failed" }), "wait");
+  assert.equal(await answer({ name: "AuthUnknownError", message: "Unexpected token <" }), "wait");
 });
 
 test("a failed exchange is not remembered, so the next call tries again", async () => {

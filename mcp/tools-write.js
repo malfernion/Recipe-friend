@@ -113,6 +113,7 @@ const addToPlan = {
       let plan = before;
       const wanted = [];
       const missing = [];
+      const notScaled = [];
 
       for (const one of asked) {
         const meal = one && typeof one === "object" ? one : { recipeId: one };
@@ -125,6 +126,12 @@ const addToPlan = {
         const added = plan.meals[plan.meals.length - 1];
         if (meal.portions !== undefined && meal.portions !== null) {
           plan = toPortions(win, plan, added.id, recipe, asCount(meal.portions, 0), now);
+          // A recipe that does not say what it serves is planned by a
+          // multiplier rather than by portions (J12.4), so a portion
+          // count cannot be honoured — and a report that just showed
+          // `portions: null` left the model to infer the refusal.
+          const settled = plan.meals.find((m) => m.id === added.id);
+          if (!(Number(settled.portions) > 0)) notScaled.push(added.name);
         }
         // The name travels with the id: a meal dropped on the way out is
         // in neither the plan we started from nor the one we ended with,
@@ -133,7 +140,14 @@ const addToPlan = {
       }
 
       if (!wanted.length) return { added: [], missing, plan: planNow(book) };
-      return settle(book, { before, plan, wanted, verb: "added", missing });
+      const done = await settle(book, { before, plan, wanted, verb: "added", missing });
+      if (notScaled.length) {
+        done.notScaled = notScaled;
+        done.scalingNote =
+          "These recipes do not say what they serve, so they go in as one batch and a portion " +
+          "count cannot be set on them — the app scales them by a multiplier instead.";
+      }
+      return done;
     });
   },
 };
@@ -167,7 +181,7 @@ const removeFromPlan = {
       const refuseIfFinished = finished(book);
       if (refuseIfFinished) return refuseIfFinished;
 
-      const asked = asStrings(args.mealIds);
+      const asked = asList(args.mealIds);
       const refuse = tooMany(asked, 20, "meals");
       if (refuse) return refuse;
 
@@ -176,9 +190,10 @@ const removeFromPlan = {
       const wanted = [];
       const missing = [];
 
-      for (const id of asked) {
-        if (!plan.meals.some((m) => m.id === id)) {
-          missing.push(id);
+      for (const raw of asked) {
+        const id = typeof raw === "string" ? raw.trim() : "";
+        if (!id || !plan.meals.some((m) => m.id === id)) {
+          missing.push(id || String(raw));
           continue;
         }
         plan = win.RecipePlan.removeMeal(plan, id, now);
@@ -463,7 +478,9 @@ function planNow(book) {
     // `shortfallText` for the reason get_plan gives at length: `text` is
     // the whole requirement, not what is left to buy.
     toBuy: list.toBuy.map((line) => line.shortfallText),
-    partlySorted: list.toBuy.filter((line) => line.partText).map((line) => line.partText),
+    partlySorted: list.toBuy
+      .filter((line) => line.partText)
+      .map((line) => `${line.item}: ${line.partText}`),
   };
 }
 

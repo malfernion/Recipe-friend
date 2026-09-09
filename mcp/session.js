@@ -40,10 +40,22 @@ const { isAuthRetryableFetchError } = require("@supabase/supabase-js");
  * The library's own predicate first; the shape behind it after, because
  * a stubbed client has no reason to import the library's error classes.
  */
+const REFUSED = new Set([400, 401, 403]);
+
 function unreachable(error) {
   if (!error) return false;
   if (typeof isAuthRetryableFetchError === "function" && isAuthRetryableFetchError(error)) return true;
-  return error.status === 0 || error.name === "AuthRetryableFetchError";
+  // Asked the other way round on purpose: only a status the auth server
+  // itself used to refuse this token means the credential is finished.
+  // Everything else is the world — a 429 from a rate limiter (two agents
+  // behind one address, or a host that spawns a server per session), a
+  // 5xx, a fetch that never arrived and carries status 0, or a reply
+  // from a captive portal or proxy that carries no status at all.
+  //
+  // The default belongs on this side because the two answers are not
+  // equally costly: waiting is free and wrong once, while removing an
+  // agent is entire and one-way (J16.7) and cannot be taken back.
+  return !REFUSED.has(Number(error.status));
 }
 
 /** One sentence for "wait", against DEAD's sentence for "start again". */

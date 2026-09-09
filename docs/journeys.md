@@ -1024,6 +1024,13 @@ release.
    it was last planned — and a second tool reads in full the few that
    turn out to matter. A book handed over whole is a book nobody can
    think about.
+
+   **What it says is what the household wrote.** Matching an ingredient
+   uses a stem, so that "tomatoes" finds "tomato purée" (J3.4) — but the
+   stem is a key and never a name. Printing it hands a model "ric",
+   "chees" and "win" to read back to somebody, and the app never shows
+   one: every line on screen says the word that was typed, which is what
+   makes an over-eager match visible (J13.7).
 9. **The book is read before every question and before every change.**
    Not only before a write: an answer about the plan computed from a
    snapshot taken an hour ago is the same wrong shopping list as one
@@ -1104,6 +1111,13 @@ release.
     on what it was handed: the app has always built a recipe that way,
     and the sentence in a description asking for a recipe and nothing
     else the page wanted is a courtesy, not the gate.
+
+    **The bar for the rest is that a tool answers or says why it cannot,
+    and never answers wrongly.** A type nobody expected is worth a
+    sentence; an order nobody offers is worth a refusal rather than the
+    book's own order returned as though it were the answer; a list longer
+    than the schema allowed is worth refusing rather than working
+    through, because a change holds the book while it runs.
 
 ---
 

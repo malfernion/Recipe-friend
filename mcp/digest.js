@@ -25,15 +25,26 @@ function minutesFor(recipe) {
   return (prep || 0) + (cook || 0);
 }
 
-/** The things this recipe is about, one word each, deduplicated. */
+/**
+ * The things this recipe is about: stem to written word.
+ *
+ * The stem is the right thing to match on and the wrong thing to print.
+ * In `js/shoplist.js` it is only ever a key — what a line displays is
+ * the word somebody typed, which is what makes an over-eager join
+ * visible (J13.7). Printing the stem instead gives a model "ric",
+ * "chees" and "win" to read back to the household.
+ *
+ * So: keyed by stem, valued by the first spelling seen, and callers take
+ * whichever they need.
+ */
 function ingredientKeys(win, recipe) {
-  const seen = new Set();
+  const seen = new Map();
   for (const ing of recipe.ingredients || []) {
     const written = String(ing.item || "").trim() || win.RecipeUnits.normalizeLabel(ing.unit);
-    const key = written && win.RecipeShopList.stemWord(written);
-    if (key) seen.add(key);
+    const stem = written && win.RecipeShopList.stemWord(written);
+    if (stem && !seen.has(stem)) seen.set(stem, written);
   }
-  return [...seen];
+  return seen;
 }
 
 function digest(win, recipe, planned) {
@@ -44,7 +55,7 @@ function digest(win, recipe, planned) {
     tags: recipe.tags,
     servings: recipe.servings,
     minutes: minutesFor(recipe),
-    ingredients: ingredientKeys(win, recipe),
+    ingredients: [...ingredientKeys(win, recipe).values()],
     lastPlanned: entry && entry.lastPlannedAt ? new Date(entry.lastPlannedAt).toISOString() : null,
     timesPlanned: entry ? entry.count : 0,
   };

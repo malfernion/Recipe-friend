@@ -255,6 +255,61 @@ test("a plan with no room says so, rather than blaming another device", async ()
   assert.ok(!/another device/.test(out.note), "a full plan is not somebody else's write");
 });
 
+test("J13.10 · a plan write answers with what is left to buy, like get_plan does", async () => {
+  const { book, win, idOf, call } = await aBook();
+  await call(ADD, { meals: [{ recipeId: idOf("Lentil soup") }] });
+
+  // Somebody says one of the two onions is already in.
+  const built = win.RecipeShopList.build(book.plan, book.recipes, book.prefs);
+  const onions = built.lines.find((l) => l.text.includes("onion"));
+  book.planStore.setPlan(win.RecipePlan.settle(book.plan, onions.key, "have", 1, Date.now()));
+
+  const out = await call(REMOVE, { mealIds: ["not-a-meal"] });
+
+  // The same field get_plan uses, for the same reason: the whole
+  // requirement would buy two to get one.
+  assert.ok(out.plan.toBuy.includes("1 onions"), out.plan.toBuy.join(" · "));
+  assert.ok(!out.plan.toBuy.includes("2 onions"), "not the total");
+  assert.deepEqual(out.plan.partlySorted, ["onions: 1 sorted, 1 to get"]);
+});
+
+test("J12.4 · a recipe that does not say what it serves cannot take a portion count, and says so", async () => {
+  const { book, call, api } = await aBook();
+  // A recipe with no servings is planned by a multiplier, not portions.
+  const batch = book.win.RecipeStore.sanitizeRecipe({
+    name: "Big batch chilli",
+    ingredients: [{ amount: 2, unit: "kg", item: "beef mince" }],
+    steps: ["Cook it."],
+  });
+  api.rows = undefined;
+  book.store.add(batch);
+  const filed = book.recipes.find((r) => r.name === "Big batch chilli");
+
+  const out = await call(ADD, { meals: [{ recipeId: filed.id, portions: 8 }] });
+
+  assert.equal(out.added[0].portions, null);
+  assert.deepEqual(out.notScaled, ["Big batch chilli"]);
+  assert.match(out.scalingNote, /do not say what they serve/);
+});
+
+test("a mealId that could never be a meal is reported, not quietly dropped", async () => {
+  const { book, call } = await aBook();
+
+  const out = await call(REMOVE, { mealIds: [42, null, "  "] });
+
+  assert.deepEqual(out.removed, []);
+  assert.equal(out.missing.length, 3, "three were asked about and three are accounted for");
+});
+
+test("more meals than the schema allows is refused rather than worked through", async () => {
+  const { book, call, idOf, sent } = await aBook();
+
+  const out = await call(ADD, { meals: new Array(21).fill({ recipeId: idOf("Chicken pie") }) });
+
+  assert.match(out.error, /at most 20/);
+  assert.deepEqual(sent.livePlans, [], "and the write lane was not held while it happened");
+});
+
 test("J16.4 · a week that has been finished is not one an agent adds to", async () => {
   const { call, idOf, win, setRemotePlan, sent } = await aBook();
   // A Done that landed half way: on the record, and the empty plan that

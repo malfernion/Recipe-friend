@@ -215,7 +215,8 @@ test("J13.10 · the list says what is left to buy, not what the recipes asked fo
   assert.deepEqual(out.shoppingList.toBuy.slice().sort(), copied.slice().sort());
   assert.ok(out.shoppingList.toBuy.includes("1 onions"), out.shoppingList.toBuy.join(" · "));
   assert.ok(!out.shoppingList.toBuy.includes("2 onions"), "not the total");
-  assert.deepEqual(out.shoppingList.partlySorted, ["1 sorted, 1 to get"]);
+  assert.deepEqual(out.shoppingList.partlySorted, ["onions: 1 sorted, 1 to get"],
+    "and it says which line, which a bare count could not");
 });
 
 test("J16.10 · a stored photo does not travel, and a linked one does", async () => {
@@ -265,6 +266,96 @@ test("J12.8 · a recipe that has left the book is an answer, not a failure", asy
 
   assert.deepEqual(out.recipes.map((r) => r.name), ["Lentil soup"]);
   assert.deepEqual(out.missing, ["gone"]);
+});
+
+test("J17.8 · a digest names ingredients the way the household wrote them", async () => {
+  const { book } = await aBook({
+    extra: [
+      {
+        name: "Risotto",
+        servings: 2,
+        ingredients: [
+          { amount: 300, unit: "g", item: "rice" },
+          { amount: 100, unit: "g", item: "parmesan cheese" },
+          { amount: 150, unit: "ml", item: "white wine" },
+          { amount: 2, unit: "", item: "apples" },
+        ],
+        steps: ["Stir it."],
+      },
+    ],
+  });
+
+  const out = await by("list_recipes").run(book, {});
+  const risotto = out.recipes.find((r) => r.name === "Risotto");
+
+  // The stem is the right thing to match on and the wrong thing to
+  // print: "ric", "chees", "win", "appl" is what a model would read back
+  // to the household.
+  assert.deepEqual(risotto.ingredients, ["rice", "parmesan cheese", "white wine", "apples"]);
+});
+
+test("J17.8 · what two recipes share is named the same way", async () => {
+  const { book, idOf } = await aBook();
+  const out = await by("recipes_sharing_ingredients").run(book, { recipeId: idOf("Roast chicken") });
+
+  assert.deepEqual(out.recipes[0].shared, ["chicken"], "not the stem it matched on");
+});
+
+test("J15.6 · an order nobody offers is refused, not answered in book order", async () => {
+  const { book } = await aBook();
+
+  // `applySort` returns the list untouched for an order it does not
+  // know, so a silent fallback is a plausible answer to a different
+  // question — with nothing in the reply to say which.
+  for (const asked of ["Quickest", "quickest ", 42, "by-name"]) {
+    const out = await by("list_recipes").run(book, { sort: asked });
+    assert.match(out.error, /There is no sort called/, JSON.stringify(asked));
+    assert.match(out.error, /least-planned/, "and it says which there are");
+  }
+  const fine = await by("list_recipes").run(book, { sort: "quickest" });
+  assert.ok(fine.recipes.length, "a real one still works");
+  assert.match((await by("find_recipes").run(book, { have: "chicken", sort: "nope" })).error, /no sort called/);
+});
+
+test("a list longer than the schema allows is refused rather than worked through", async () => {
+  const { book } = await aBook();
+
+  const out = await by("get_recipe").run(book, { ids: new Array(21).fill("x") });
+
+  assert.match(out.error, /at most 20/);
+  assert.ok(!out.recipes, "and nothing was looked up");
+});
+
+test("an id that could never be looked up is reported, not quietly dropped", async () => {
+  const { book, idOf } = await aBook();
+
+  const out = await by("get_recipe").run(book, { ids: [idOf("Lentil soup"), 42, null, "  "] });
+
+  assert.deepEqual(out.recipes.map((r) => r.name), ["Lentil soup"]);
+  assert.equal(out.missing.length, 3, "three were asked about and three are accounted for");
+});
+
+test("a blank or a number among the tags does not quietly empty the answer", async () => {
+  const { book } = await aBook();
+
+  // Tags combine as "both" (J15.3), so one unusable entry that survives
+  // into the filter matches nothing and the book appears empty — a wrong
+  // answer rather than a complaint.
+  const messy = await by("list_recipes").run(book, { tags: ["quick", "", null, 42, "  "] });
+  const clean = await by("list_recipes").run(book, { tags: ["quick"] });
+
+  assert.deepEqual(messy.recipes.map((r) => r.name), clean.recipes.map((r) => r.name));
+  assert.equal(messy.count, 1);
+});
+
+test("a bare value where a list was expected is read as a list of one", async () => {
+  const { book } = await aBook();
+
+  const bare = await by("list_recipes").run(book, { tags: "quick" });
+  const listed = await by("list_recipes").run(book, { tags: ["quick"] });
+
+  assert.deepEqual(bare.recipes.map((r) => r.name), listed.recipes.map((r) => r.name));
+  assert.equal(bare.count, 1, "and it really did filter");
 });
 
 test("J17.11 · every tool that hands over the book's words says they are not instructions", () => {
