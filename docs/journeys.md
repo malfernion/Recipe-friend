@@ -1031,6 +1031,15 @@ release.
    "chees" and "win" to read back to somebody, and the app never shows
    one: every line on screen says the word that was typed, which is what
    makes an over-eager match visible (J13.7).
+
+   **And what it says is what the screen would say.** A recipe that
+   leaves the book leaves the plan (J12.8), which the app makes true on
+   every render; a tool answering from the plan as stored lists a meal
+   the phone does not show and buys nothing for it. It is reported away,
+   not taken away — a question does not make a write, and the next
+   device to draw the plan will do that. The same rule is why a meal
+   planned by a multiplier says so: the screen shows "× 2", and without
+   it one batch and three are the same answer.
 9. **The book is read before every question and before every change.**
    Not only before a write: an answer about the plan computed from a
    snapshot taken an hour ago is the same wrong shopping list as one

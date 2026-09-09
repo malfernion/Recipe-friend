@@ -219,6 +219,59 @@ test("J13.10 · the list says what is left to buy, not what the recipes asked fo
     "and it says which line, which a bare count could not");
 });
 
+test("J12.8 · a recipe that has left the book leaves the plan the tools report", async () => {
+  const { book, win, api } = await aBook();
+  let plan = win.RecipePlan.emptyPlan(1);
+  for (const recipe of book.recipes) plan = win.RecipePlan.addMeal(plan, recipe, Date.now());
+  book.planStore.setPlan(plan);
+  const gone = book.recipes.find((r) => r.name === "Lentil soup");
+
+  // Somebody deletes it from a phone: the row comes back tombstoned.
+  const rows = book.recipes.map((r) => ({
+    id: r.id,
+    data: r,
+    updated_at: new Date(1000).toISOString(),
+    deleted_at: r.id === gone.id ? new Date(Date.now() + 1000).toISOString() : null,
+  }));
+  api.fetchRecipes = async () => rows;
+  await book.refresh();
+
+  const out = await by("get_plan").run(book);
+
+  // The app prunes on every render and the shopping list skips such a
+  // meal, so reporting it lists a meal the phone does not show and buys
+  // nothing for it — one answer contradicting itself.
+  assert.ok(!book.recipes.some((r) => r.id === gone.id), "it really has gone");
+  assert.ok(!out.meals.some((m) => m.recipeId === gone.id), out.meals.map((m) => m.name).join(" · "));
+  assert.ok(out.meals.length, "and the rest of the plan is still reported");
+  assert.ok(!out.shoppingList.toBuy.some((line) => line.includes("lentils")));
+});
+
+test("J12.4 · a meal planned by multiplier says how much of it there is", async () => {
+  const { book, win } = await aBook({
+    extra: [
+      {
+        name: "Big batch chilli",
+        ingredients: [{ amount: 2, unit: "kg", item: "beef mince" }],
+        steps: ["Cook it."],
+      },
+    ],
+  });
+  const batch = book.recipes.find((r) => r.name === "Big batch chilli");
+  let plan = win.RecipePlan.addMeal(win.RecipePlan.emptyPlan(1), batch, Date.now());
+  const mealId = plan.meals[0].id;
+  plan = win.RecipePlan.stepPortions(plan, mealId, "up", batch, Date.now());
+  book.planStore.setPlan(plan);
+
+  const out = await by("get_plan").run(book);
+
+  // A recipe with no servings carries its amount in a multiplier, which
+  // the screen shows as "× 1.5". Without it, one batch and three are the
+  // same two lines of JSON.
+  assert.equal(out.meals[0].portions, null);
+  assert.equal(out.meals[0].multiplier, 1.5);
+});
+
 test("J16.10 · a stored photo does not travel, and a linked one does", async () => {
   const { book } = await aBook({
     extra: [
@@ -236,6 +289,15 @@ test("J16.10 · a stored photo does not travel, and a linked one does", async ()
         steps: ["Fry it."],
         image: "https://example.com/egg.jpg",
       },
+      {
+        name: "Pasted photo",
+        servings: 1,
+        ingredients: [{ amount: 1, unit: "", item: "egg" }],
+        steps: ["Fry it."],
+        image:
+          "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJ" +
+          "AAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==",
+      },
     ],
   });
   const stored = book.recipes.find((r) => r.name === "Stored photo");
@@ -246,6 +308,15 @@ test("J16.10 · a stored photo does not travel, and a linked one does", async ()
   assert.equal(out.recipes[0].image, NO_PHOTO, "a path it can never open is not handed over");
   assert.ok(!JSON.stringify(out.recipes[0]).includes(".jpg"), "nor is the path itself");
   assert.equal(out.recipes[1].image, "https://example.com/egg.jpg");
+
+  // The middle branch, which the code's own comment calls the trap: an
+  // inline image is on the recipe rather than in storage, so no policy
+  // refuses it — and a megabyte of base64 eats the conversation and
+  // tells nobody anything.
+  const pasted = book.recipes.find((r) => r.name === "Pasted photo");
+  const third = await by("get_recipe").run(book, { ids: [pasted.id] });
+  assert.equal(third.recipes[0].image, NO_PHOTO);
+  assert.ok(!JSON.stringify(third).includes("base64"), "not one byte of it travels");
 });
 
 test("J8.1 · amounts come back as they were written, an agent having no preferences", async () => {

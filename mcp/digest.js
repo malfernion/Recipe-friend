@@ -96,4 +96,36 @@ function full(win, recipe, planned) {
   };
 }
 
-module.exports = { digest, full, ingredientKeys, minutesFor, NO_PHOTO };
+/**
+ * The meals in a plan whose recipe is still in the book (J12.8).
+ *
+ * A recipe that leaves the book leaves the plan, and the app makes that
+ * true on every render: `prunePlan` runs before it draws anything, and
+ * the shopping list independently skips a meal whose recipe has gone so
+ * it cannot "invent a blank line for it". A tool reporting the plan raw
+ * lists a meal the phone does not show and buys nothing for it — one
+ * answer contradicting itself.
+ *
+ * Reported, not pruned: taking the meal out is a write, and a question
+ * must not make one. The next device that draws the plan will do it.
+ */
+function mealsInBook(book) {
+  const have = new Set(book.recipes.map((recipe) => recipe.id));
+  return book.plan.meals.filter((meal) => have.has(meal.recipeId));
+}
+
+/** How much of a recipe a meal is, said the way the screen says it. */
+function mealAmount(meal) {
+  return {
+    mealId: meal.id,
+    recipeId: meal.recipeId,
+    name: meal.name,
+    portions: meal.portions,
+    // A recipe that does not say what it serves is planned by a
+    // multiplier (J12.4), and the screen shows "× 2". Without this a
+    // meal at ×1 and the same meal at ×3 are the same two lines of JSON.
+    ...(Number(meal.portions) > 0 ? {} : { multiplier: meal.multiplier || 1 }),
+  };
+}
+
+module.exports = { digest, full, ingredientKeys, minutesFor, mealsInBook, mealAmount, NO_PHOTO };

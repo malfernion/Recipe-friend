@@ -21,6 +21,7 @@
 
 const { asList, asStrings, asCount, tooMany } = require("./args.js");
 const { HOUSEHOLD_DATA } = require("./tools-read.js");
+const { mealsInBook, mealAmount } = require("./digest.js");
 
 const CHANGES_THE_PLAN = {
   readOnlyHint: false,
@@ -474,7 +475,7 @@ function planNow(book) {
   const plan = book.plan;
   const list = win.RecipeShopList.build(plan, book.recipes, book.prefs);
   return {
-    meals: plan.meals.map((m) => ({ mealId: m.id, recipeId: m.recipeId, name: m.name, portions: m.portions })),
+    meals: mealsInBook(book).map(mealAmount),
     // `shortfallText` for the reason get_plan gives at length: `text` is
     // the whole requirement, not what is left to buy.
     toBuy: list.toBuy.map((line) => line.shortfallText),

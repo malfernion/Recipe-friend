@@ -17,7 +17,7 @@
  */
 "use strict";
 
-const { digest, full, ingredientKeys } = require("./digest.js");
+const { digest, full, ingredientKeys, mealsInBook, mealAmount } = require("./digest.js");
 const { asList, asStrings, asCount, asChoice, tooMany } = require("./args.js");
 
 /** The orders the app offers (J15.6), named once for the schema and the check. */
@@ -301,12 +301,7 @@ const getPlan = {
     const plan = book.plan;
     const list = win.RecipeShopList.build(plan, book.recipes, book.prefs);
     return {
-      meals: plan.meals.map((meal) => ({
-        mealId: meal.id,
-        recipeId: meal.recipeId,
-        name: meal.name,
-        portions: meal.portions,
-      })),
+      meals: mealsInBook(book).map(mealAmount),
       shoppingList: {
         // `shortfallText`, not `text`: what is left to buy, which is what
         // the phone's Copy hands to a shop (J13.10, J13.13). `text` is
