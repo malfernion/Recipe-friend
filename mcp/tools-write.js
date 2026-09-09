@@ -58,6 +58,35 @@ function toPortions(win, plan, mealId, recipe, target, now) {
   return next;
 }
 
+/**
+ * Step a meal to the multiplier asked for, the way the screen's own
+ * control does.
+ *
+ * A recipe that does not say what it serves is planned by a multiplier
+ * rather than by portions (J12.4), and the app scales it with the same
+ * `stepPortions` — half-steps, floored at 0.5 and capped at 8. Without
+ * this the server had no way to express an amount the screen has a
+ * control for, so a batch cook taken out of the plan and put back came
+ * back at one batch and the shopping list halved.
+ */
+function toMultiplier(win, plan, mealId, recipe, target, now) {
+  const wanted = Math.round(Number(target) * 2) / 2;
+  if (!Number.isFinite(wanted) || wanted <= 0) return plan;
+  let next = plan;
+  for (let guard = 0; guard < 200; guard++) {
+    const meal = next.meals.find((m) => m.id === mealId);
+    if (!meal || Number(meal.portions) > 0) return next;
+    const current = Number(meal.multiplier) > 0 ? Number(meal.multiplier) : 1;
+    if (current === wanted) return next;
+    const stepped = win.RecipePlan.stepPortions(
+      next, mealId, current < wanted ? "up" : "down", recipe, now
+    );
+    if (stepped === next) return next;
+    next = stepped;
+  }
+  return next;
+}
+
 const addToPlan = {
   name: "add_to_plan",
   title: "Put meals in the plan",
@@ -83,7 +112,18 @@ const addToPlan = {
             portions: {
               type: "integer",
               minimum: 1,
-              description: "How many portions to cook. Defaults to what the recipe serves.",
+              description:
+                "How many portions to cook, for a recipe that says what it serves. " +
+                "Defaults to what it serves.",
+            },
+            multiplier: {
+              type: "number",
+              minimum: 0.5,
+              maximum: 8,
+              description:
+                "How many batches, for a recipe that does not say what it serves — the app " +
+                "scales those by a multiplier instead, in halves. get_plan reports whichever " +
+                "of the two a meal uses.",
             },
           },
           required: ["recipeId"],
@@ -115,6 +155,7 @@ const addToPlan = {
       const wanted = [];
       const missing = [];
       const notScaled = [];
+      const wrongControl = [];
 
       for (const one of asked) {
         const meal = one && typeof one === "object" ? one : { recipeId: one };
@@ -125,14 +166,18 @@ const addToPlan = {
         }
         plan = win.RecipePlan.addMeal(plan, recipe, now);
         const added = plan.meals[plan.meals.length - 1];
+        // Two controls, and a recipe has exactly one of them: portions
+        // when it says what it serves, a multiplier when it does not
+        // (J12.4). Asking with the wrong one is worth a sentence rather
+        // than a silently unscaled meal.
+        const byPortions = Number(added.portions) > 0;
         if (meal.portions !== undefined && meal.portions !== null) {
-          plan = toPortions(win, plan, added.id, recipe, asCount(meal.portions, 0), now);
-          // A recipe that does not say what it serves is planned by a
-          // multiplier rather than by portions (J12.4), so a portion
-          // count cannot be honoured — and a report that just showed
-          // `portions: null` left the model to infer the refusal.
-          const settled = plan.meals.find((m) => m.id === added.id);
-          if (!(Number(settled.portions) > 0)) notScaled.push(added.name);
+          if (byPortions) plan = toPortions(win, plan, added.id, recipe, asCount(meal.portions, 0), now);
+          else notScaled.push(added.name);
+        }
+        if (meal.multiplier !== undefined && meal.multiplier !== null) {
+          if (byPortions) wrongControl.push(added.name);
+          else plan = toMultiplier(win, plan, added.id, recipe, meal.multiplier, now);
         }
         // The name travels with the id: a meal dropped on the way out is
         // in neither the plan we started from nor the one we ended with,
@@ -145,8 +190,14 @@ const addToPlan = {
       if (notScaled.length) {
         done.notScaled = notScaled;
         done.scalingNote =
-          "These recipes do not say what they serve, so they go in as one batch and a portion " +
-          "count cannot be set on them — the app scales them by a multiplier instead.";
+          "These recipes do not say what they serve, so a portion count cannot be set on them " +
+          "— ask again with `multiplier` (in halves) to say how many batches.";
+      }
+      if (wrongControl.length) {
+        done.notScaled = [...(done.notScaled || []), ...wrongControl];
+        done.scalingNote =
+          (done.scalingNote ? done.scalingNote + " " : "") +
+          "And these do say what they serve, so they are scaled by `portions`, not `multiplier`.";
       }
       return done;
     });
@@ -158,7 +209,8 @@ const removeFromPlan = {
   title: "Take meals back out of the plan",
   description:
     "Remove meals from the book's live plan by their mealId, which get_plan gives. Nothing is " +
-    "recorded by taking a meal out, so this is reversible: put it back and the week is as it was. " +
+    "recorded by taking a meal out, so this is reversible — and what comes back says the amount " +
+    "it was at, so putting it back at that amount restores the week exactly. " +
     HOUSEHOLD_DATA,
   annotations: CHANGES_THE_PLAN,
   inputSchema: {
@@ -197,8 +249,17 @@ const removeFromPlan = {
           missing.push(id || String(raw));
           continue;
         }
+        // The amount travels with the name: "put it back and the week is
+        // as it was" is only true if what came out said how much it was.
+        const meal = before.meals.find((m) => m.id === id) || {};
         plan = win.RecipePlan.removeMeal(plan, id, now);
-        wanted.push({ id, name: (before.meals.find((m) => m.id === id) || {}).name || "" });
+        wanted.push({
+          id,
+          name: meal.name || "",
+          was: Number(meal.portions) > 0
+            ? { portions: meal.portions }
+            : { multiplier: meal.multiplier || 1 },
+        });
       }
 
       if (!wanted.length) return { removed: [], missing, plan: planNow(book) };
@@ -441,9 +502,11 @@ async function settle(book, { before, plan, wanted, verb, missing }) {
   const dropped = wanted.filter((m) => !wantedIn(m.id));
 
   const report = {
-    [verb]: landed.map(({ id, name }) => {
+    [verb]: landed.map(({ id, name, was }) => {
       const meal = book.plan.meals.find((m) => m.id === id);
-      return meal ? { mealId: id, name: meal.name, portions: meal.portions } : { mealId: id, name };
+      // The same shape get_plan reports, so an added meal says how much
+      // of it there is by whichever control it uses.
+      return meal ? mealAmount(meal) : { mealId: id, name, ...(was ? { was } : {}) };
     }),
   };
   if (missing.length) report.missing = missing;

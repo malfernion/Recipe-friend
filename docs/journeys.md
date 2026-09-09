@@ -1072,6 +1072,16 @@ release.
    against a plan it never got into: reported as landed when it never
    went, or blamed on another device when there was no other device.
 
+   **Both controls, or the promise is not kept.** A recipe that says what
+   it serves is planned by portions and one that does not by a
+   multiplier (J12.4), and the screen has a control for each. A server
+   with only the first cannot put a batch cook back the size it came
+   out at — the meal returns as one batch and the shopping list halves,
+   under a tool that says taking a meal out is reversible. So both are
+   offered, asking with the wrong one is a sentence rather than a
+   silently unscaled meal, and what comes out of the plan says how much
+   of it there was.
+
    **A week that has been finished is not one to add to.** A live plan
    carrying a completion is a Done that landed half way, waiting for a
    person's device to file it away (J16.4). Writing into it would put

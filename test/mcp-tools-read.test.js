@@ -319,6 +319,45 @@ test("J16.10 · a stored photo does not travel, and a linked one does", async ()
   assert.ok(!JSON.stringify(third).includes("base64"), "not one byte of it travels");
 });
 
+test("J13.13 · a settled line reports the amount that was settled, not what is left of it", async () => {
+  const { book, win } = await aBook();
+  const soup = book.recipes.find((r) => r.name === "Lentil soup");
+  let plan = win.RecipePlan.addMeal(win.RecipePlan.emptyPlan(1), soup, 1000);
+  const built = win.RecipeShopList.build(plan, book.recipes, book.prefs);
+  const onions = built.lines.find((l) => l.text.includes("onion"));
+  // Both onions are in the cupboard, so the line is settled whole.
+  plan = win.RecipePlan.settle(plan, onions.key, "have", 2, Date.now());
+  book.planStore.setPlan(plan);
+
+  const out = await by("get_plan").run(book);
+
+  // `toBuy` says what is left; these two say what was settled, which is
+  // the total — a settled line's shortfall is nothing, and "onions"
+  // with no amount is not what the screen shows.
+  assert.deepEqual(out.shoppingList.alreadyHave, ["2 onions"]);
+  assert.ok(!out.shoppingList.toBuy.some((line) => line.includes("onion")));
+});
+
+test("a recipe that says only how long it bakes still says how long it takes", async () => {
+  const { book } = await aBook({
+    extra: [
+      {
+        name: "Bread",
+        servings: 1,
+        cookMinutes: 40,
+        ingredients: [{ amount: 500, unit: "g", item: "flour" }],
+        steps: ["Bake it."],
+      },
+    ],
+  });
+
+  const out = await by("list_recipes").run(book, {});
+  const bread = out.recipes.find((r) => r.name === "Bread");
+
+  // Only both being absent means there is no time to report.
+  assert.equal(bread.minutes, 40);
+});
+
 test("J8.1 · amounts come back as they were written, an agent having no preferences", async () => {
   const { book, idOf } = await aBook();
   const out = await by("get_recipe").run(book, { ids: [idOf("Roast chicken")] });

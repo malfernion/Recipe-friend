@@ -309,8 +309,8 @@ recipe is not.
 
 | Tool | Takes | Does |
 | --- | --- | --- |
-| `add_to_plan` | recipes, with portions | puts meals in the book's plan, reading it first and reporting what survived |
-| `remove_from_plan` | meal ids from `get_plan` | takes them out again; nothing is recorded either way |
+| `add_to_plan` | recipes, with portions or a multiplier | puts meals in the book's plan, reading it first and reporting what survived |
+| `remove_from_plan` | meal ids from `get_plan` | takes them out again, saying the amount each was at so it can go back the same; nothing is recorded either way |
 | `add_recipe` | a recipe | files it into the book — **one way**, see below |
 
 Answers come from the app's own modules, so the shopping list the

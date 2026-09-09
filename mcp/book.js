@@ -64,7 +64,15 @@ async function openBook(session, { api: injected } = {}) {
   api.userId = userId;
 
   const bookId = session.credential.book;
-  const books = await api.listBooks();
+  // The one read between the exchange and the first sync. Both of those
+  // say "try again in a moment" when the network is down (J17.5); left
+  // bare, this one handed the driver's own words to the model instead.
+  let books;
+  try {
+    books = await api.listBooks();
+  } catch (err) {
+    throw new BookError(`Could not reach the book just now (${err && err.message}). Ask again in a moment.`);
+  }
   const book = books.find((b) => b.id === bookId);
 
   // The membership row is the whole of an agent's access, so its absence

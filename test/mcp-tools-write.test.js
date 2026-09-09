@@ -292,6 +292,77 @@ test("J12.4 · a recipe that does not say what it serves cannot take a portion c
   assert.match(out.scalingNote, /do not say what they serve/);
 });
 
+test("J12.5 · a batch cook comes back the size it went out at", async () => {
+  const { book, win, call } = await aBook();
+  // A recipe with no servings is scaled by a multiplier, which is the
+  // control the screen has and the server had not.
+  const batch = book.win.RecipeStore.sanitizeRecipe({
+    name: "Batch chilli",
+    ingredients: [{ amount: 2, unit: "kg", item: "beef mince" }],
+    steps: ["Cook it."],
+  });
+  book.store.add(batch);
+  const filed = book.recipes.find((r) => r.name === "Batch chilli");
+
+  const added = await call(ADD, { meals: [{ recipeId: filed.id, multiplier: 1.5 }] });
+  assert.equal(added.added[0].multiplier, 1.5, "the amount asked for");
+  const beforeList = (await call(by("get_plan"), {})).shoppingList.toBuy;
+  assert.ok(beforeList.includes("3 kg beef mince"), beforeList.join(" · "));
+
+  // Taken out, and what comes out says how much it was.
+  const removed = await call(REMOVE, { mealIds: [added.added[0].mealId] });
+  assert.deepEqual(removed.removed[0].was, { multiplier: 1.5 });
+
+  // Put back at that amount, the week is as it was — which is what the
+  // tool's own description promises. Without a multiplier control it
+  // came back at one batch and the list halved to 2 kg.
+  const back = await call(ADD, { meals: [{ recipeId: filed.id, ...removed.removed[0].was }] });
+  assert.equal(back.added[0].multiplier, 1.5);
+  assert.deepEqual((await call(by("get_plan"), {})).shoppingList.toBuy, beforeList);
+});
+
+test("J12.4 · asking with the wrong one of the two controls is a sentence, not a shrug", async () => {
+  const { book, call, idOf } = await aBook();
+  const batch = book.win.RecipeStore.sanitizeRecipe({
+    name: "Batch chilli",
+    ingredients: [{ amount: 2, unit: "kg", item: "beef mince" }],
+    steps: ["Cook it."],
+  });
+  book.store.add(batch);
+  const filed = book.recipes.find((r) => r.name === "Batch chilli");
+
+  // Portions on a recipe that does not say what it serves...
+  const one = await call(ADD, { meals: [{ recipeId: filed.id, portions: 8 }] });
+  assert.deepEqual(one.notScaled, ["Batch chilli"]);
+  assert.match(one.scalingNote, /ask again with `multiplier`/);
+
+  // ...and a multiplier on one that does.
+  const two = await call(ADD, { meals: [{ recipeId: idOf("Chicken pie"), multiplier: 2 }] });
+  assert.deepEqual(two.notScaled, ["Chicken pie"]);
+  assert.match(two.scalingNote, /scaled by `portions`, not `multiplier`/);
+  assert.equal(two.added[0].portions, 4, "and it went in at what the recipe serves");
+});
+
+test("J12.8 · a write reports the plan the phone would show, like get_plan does", async () => {
+  const { book, win, api, call, idOf } = await aBook();
+  await call(ADD, { meals: [{ recipeId: idOf("Chicken pie") }, { recipeId: idOf("Lentil soup") }] });
+  const gone = book.recipes.find((r) => r.name === "Lentil soup");
+
+  // Deleted from a phone while the plan still holds it.
+  const rows = book.recipes.map((r) => ({
+    id: r.id,
+    data: r,
+    updated_at: new Date(1000).toISOString(),
+    deleted_at: r.id === gone.id ? new Date(Date.now() + 1000).toISOString() : null,
+  }));
+  api.fetchRecipes = async () => rows;
+
+  const out = await call(REMOVE, { mealIds: ["not-a-meal"] });
+
+  assert.ok(!out.plan.meals.some((m) => m.recipeId === gone.id), out.plan.meals.map((m) => m.name).join(" · "));
+  assert.ok(out.plan.meals.length, "and the rest is still reported");
+});
+
 test("a mealId that could never be a meal is reported, not quietly dropped", async () => {
   const { book, call } = await aBook();
 
