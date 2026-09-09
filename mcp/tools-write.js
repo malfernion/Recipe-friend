@@ -234,10 +234,40 @@ const addRecipe = {
       // has in mind.
       const image = /^https?:\/\//i.test(String(args.image || "")) ? args.image : "";
 
-      // `add` sanitises exactly as a pasted recipe is sanitised, and
-      // returns null for one that does not clear the floor every recipe is
-      // held to (J2.1, J16.11). Being a program earns no latitude.
-      const recipe = book.store.add({ ...args, image, favorite: false, imagePath: "" });
+      // Field by field, never a spread of what arrived.
+      //
+      // The low-level MCP server does not check arguments against a
+      // tool's `inputSchema` — `additionalProperties: false` is
+      // advertised and unenforced — so anything at all can be in `args`.
+      // `sanitizeRecipe` accepts more fields than this schema declares,
+      // and one of them is `updatedAt`: reconciliation is last-write-wins
+      // on it (`js/sync.js`), so a recipe stamped far enough in the
+      // future outranks every later edit and every tombstone, on every
+      // device, for good. That is J16.3 undone through the one insert the
+      // policies do allow, which is why no policy could catch it.
+      //
+      // The app has never had this hole — `readRecipeForm` builds its
+      // input a field at a time, and a pasted recipe goes through that
+      // form. This does the same. Listing the fields is also what makes
+      // adding one to `sanitizeRecipe` later a decision rather than an
+      // accident.
+      //
+      // `add` then sanitises exactly as a pasted recipe is sanitised, and
+      // returns null for one that does not clear the floor every recipe
+      // is held to (J2.1, J16.11). Being a program earns no latitude.
+      const recipe = book.store.add({
+        name: args.name,
+        description: args.description,
+        servings: args.servings,
+        prepMinutes: args.prepMinutes,
+        cookMinutes: args.cookMinutes,
+        ingredients: args.ingredients,
+        steps: args.steps,
+        tags: args.tags,
+        image,
+        favorite: false,
+        imagePath: "",
+      });
       if (!recipe) {
         return {
           error:

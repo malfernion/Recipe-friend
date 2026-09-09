@@ -1093,6 +1093,15 @@ release.
     the model will read it, and `sanitizeRecipe` is the backstop on the
     way back in (J16.11).
 
+    **And what arrives as a tool's arguments is checked by this server or
+    by nothing.** The protocol lets a tool publish the shape of what it
+    takes and does not hold anybody to it, so a field the schema never
+    declared arrives exactly as easily as one it did. A write therefore
+    takes the fields it means to take, one at a time, rather than passing
+    on what it was handed: the app has always built a recipe that way,
+    and the sentence in a description asking for a recipe and nothing
+    else the page wanted is a courtesy, not the gate.
+
 ---
 
 ## Boundaries
@@ -1190,6 +1199,18 @@ accident:
   JWT by something holding the service key — and not a setting. That
   would cost the app the thing it has never had and never wanted: a
   server of its own.
+- **A week finished while an agent is mid-change can be reopened by it.**
+  An agent refuses to add to a plan that is already finished (J17.9), but
+  it can only refuse what it can see: it reads the plan, and the Done
+  arrives from somebody's phone in the round trip before it writes. What
+  it pushes then wins on the ordinary rule that the more recently touched
+  body wins whole (J12.11), and the completion goes with it. What does
+  *not* go is the thing J16.4 is actually guarding: a device records the
+  week before it clears the live row, and the archive is keyed by the
+  plan's own id, so the week stays on the record and the agent's meal
+  never joins it. The same rule governs a person's second phone, which is
+  why this is written here rather than answered with a special case for
+  agents.
 - **The planning modules carry no DOM, and that is load-bearing outside
   this app.** `plan.js`, `shoplist.js`, `search.js`, `scale.js`,
   `units.js` and `html.js` name nothing a browser provides; `storage.js`,

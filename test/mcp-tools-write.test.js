@@ -439,6 +439,38 @@ test("J17.9 · a question arriving while a change is in flight waits for it", as
   assert.deepEqual(order, ["read", "push", "read"], "the question waited its turn");
 });
 
+test("J16.3 · a field the schema never declared cannot ride in on a filed recipe", async () => {
+  const { call, book, sent } = await aBook();
+  const before = Date.now();
+
+  // Nothing checks `arguments` against `inputSchema` — the low-level MCP
+  // server advertises `additionalProperties: false` and does not enforce
+  // it — so a host that forwards extra fields, or a web page whose
+  // "recipe" asked for them, gets whatever it sends straight into the
+  // sanitiser. `updatedAt` is the dangerous one: reconciliation is
+  // last-write-wins on it, so a recipe stamped in the year 5138 outranks
+  // every later edit and every tombstone, on every device, for good —
+  // J16.3 undone through the one insert the policies do allow.
+  const out = await call(FILE, {
+    ...DAL,
+    updatedAt: Date.UTC(5138, 10, 16),
+    createdAt: Date.UTC(5138, 10, 16),
+    sharedFrom: "22222222-2222-4222-8222-222222222222",
+    favorite: true,
+    imagePath: `${BOOK}/33333333-3333-4333-8333-333333333333.jpg`,
+  });
+
+  assert.equal(out.added.name, "Dal");
+  const row = sent.recipes.find((r) => r.data.name === "Dal");
+  assert.ok(row.data.updatedAt >= before, "stamped now, whatever was asked for");
+  assert.ok(row.data.updatedAt < before + 60000, new Date(row.data.updatedAt).toISOString());
+  assert.ok(row.data.createdAt >= before);
+  assert.equal(row.data.sharedFrom, "", "it did not arrive from anywhere");
+  assert.equal(row.data.favorite, false, "an agent does not star (J3.6)");
+  assert.equal(row.data.imagePath, "", "and gets no stored photo (J16.10)");
+  assert.ok(book.recipes.some((r) => r.name === "Dal"));
+});
+
 test("J16.10 · a picture arrives as a link or not at all", async () => {
   const { call, book } = await aBook();
   const tiny = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==";

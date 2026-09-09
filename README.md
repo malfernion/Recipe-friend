@@ -319,8 +319,10 @@ kilograms, the same folding of plurals, the same refusal to guess how
 big a tin is.
 
 **Every call reads the book again** before answering, because the
-household goes on cooking while an assistant session is open. Two calls
-arriving together share one read; two changes queue.
+household goes on cooking while an assistant session is open. Two
+questions arriving together share one read; a change has the book to
+itself from its read to its write, and anything arriving during one —
+question or change — waits for it.
 
 **Amounts come back as they were written**, because unit preferences
 belong to a person and an agent is not one.

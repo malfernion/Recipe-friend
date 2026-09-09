@@ -283,6 +283,28 @@ test("J17.5 · a roster that cannot be read either is called a network, which is
   await assert.rejects(() => book.refresh(), /Could not reach the book/);
 });
 
+test("a failed question does not leave the lane broken behind it", async () => {
+  // Everything queues on one lane, so a rejection that is allowed to
+  // stay on it stops the book for the life of the process — every later
+  // question and every later change rejecting because one sync failed
+  // once. The write side of this guard is held by two tests; this is the
+  // read side.
+  const api = fakeApi();
+  const book = await openBook(session(), { api });
+  let down = true;
+  api.fetchRecipes = async () => {
+    if (down) throw new Error("network");
+    return [];
+  };
+
+  await assert.rejects(() => book.refresh(), /Could not reach the book/);
+
+  down = false;
+  const after = await book.refresh();
+  assert.ok(after, "the lane carried on");
+  assert.ok(await book.write(async () => true), "and so did the other half of it");
+});
+
 test("two tools called at once queue on one sync rather than one of them being told the network is down", async () => {
   // `syncNow` answers a re-entrant call by returning undefined and doing
   // nothing, which this layer cannot tell from a failure — so without a
