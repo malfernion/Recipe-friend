@@ -374,37 +374,69 @@ test("J17.10 · a recipe nobody can check on is not called filed and not called 
   assert.deepEqual(sent.recipes.map((r) => r.data.name), ["Dal"], "exactly once");
 });
 
-test("J17.10 · a call arriving while the book is being asked cannot push the row in question", async () => {
-  const { book, api, breakRecipePush, mendNetwork, sent } = await aBook();
+test("J17.9 · a change started while somebody else's sync is in flight still lands, and says so truly", async () => {
+  const { book, api, idOf, sent } = await aBook();
   await book.refresh();
-  breakRecipePush();
 
-  // Asking the book what became of a recipe is the one moment a write
-  // waits on the network without holding the sync it started. Inside
-  // `add_recipe` the first read is the push that fails and the second is
-  // the question — so a tool call arriving during that second read runs
-  // a sync of its own, and must find no uncommitted row to push. If it
-  // pushes one, the answer "not filed, safe to send again" invites a
-  // retry that files a second copy nobody on this side can delete.
-  let reads = 0;
-  let raced = null;
-  const real = api.fetchRecipes.bind(api);
-  api.fetchRecipes = async () => {
-    reads++;
-    if (reads === 2 && !raced) {
-      mendNetwork();
-      raced = book.refresh();
-      await raced;
+  // An ordinary read's sync, parked mid-flight at an await every sync
+  // makes. It has already read the plan it will apply and push.
+  let release;
+  const parked = new Promise((resume) => (release = resume));
+  const real = api.fetchArchivedPlanIds.bind(api);
+  let once = false;
+  api.fetchArchivedPlanIds = async () => {
+    if (!once) {
+      once = true;
+      await parked;
     }
     return real();
   };
+  const stranger = book.refresh();
+  await new Promise((resume) => setTimeout(resume, 5));
 
-  const out = await FILE.run(book, { ...DAL });
+  // A change starts. If it shares the book with that sync, the sync
+  // applies the plan it read over the top of this one and pushes what it
+  // read — and the change is judged against a plan it never got into.
+  const writing = ADD.run(book, { meals: [{ recipeId: idOf("Lentil soup") }] });
+  await new Promise((resume) => setTimeout(resume, 5));
+  release();
 
-  assert.ok(raced, "the second call really did arrive during the question");
-  assert.deepEqual(sent.recipes, [], "nothing went up behind the answer's back");
-  assert.match(out.error, /was not filed/);
-  assert.match(out.error, /safe to send again/);
+  const out = await writing;
+  await stranger.catch(() => {});
+
+  assert.deepEqual(out.added.map((m) => m.name), ["Lentil soup"]);
+  assert.ok(!out.dropped, "nothing was dropped, so nothing should say it was");
+  assert.deepEqual(
+    sent.livePlans.at(-1).meals.map((m) => m.name),
+    ["Lentil soup"],
+    "and the book got what the tool said it got"
+  );
+});
+
+test("J17.9 · a question arriving while a change is in flight waits for it", async () => {
+  const { book, api, idOf } = await aBook();
+  await book.refresh();
+
+  // The order is the assertion: a change reads, then pushes. A question
+  // that lands between those two has seen the book half-changed, which
+  // is where every one of this file's harder bugs came from.
+  const order = [];
+  const realRead = api.fetchRecipes.bind(api);
+  const realPush = api.pushLivePlan.bind(api);
+  api.fetchRecipes = async () => {
+    order.push("read");
+    return realRead();
+  };
+  api.pushLivePlan = async (id, plan) => {
+    order.push("push");
+    return realPush(id, plan);
+  };
+
+  const writing = ADD.run(book, { meals: [{ recipeId: idOf("Chicken pie") }] });
+  const question = book.refresh();
+  await Promise.all([writing, question]);
+
+  assert.deepEqual(order, ["read", "push", "read"], "the question waited its turn");
 });
 
 test("J16.10 · a picture arrives as a link or not at all", async () => {

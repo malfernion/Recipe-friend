@@ -95,7 +95,8 @@ async function openBook(session, { api: injected } = {}) {
 
 class Book {
   constructor(win, api, store, planStore, sync, book) {
-    this.writes = Promise.resolve();
+    this.lane = Promise.resolve();
+    this.syncing = null;
     this.win = win;
     this.api = api;
     this.store = store;
@@ -106,45 +107,67 @@ class Book {
   }
 
   /**
-   * Bring this process level with the book.
+   * A change, with nothing else touching the book while it runs.
+   *
+   * Five rounds of review found the same shape of bug five times, and
+   * every one of them came of a write sharing the book with something
+   * else for part of its life. A write here is read-modify-write against
+   * a plan that is one row for the whole book, and its undo is that plan
+   * as it was: neither is true unless the read, the change and the push
+   * are one indivisible thing. Two writes overlapping take each other's
+   * work as their starting point. A *read's* sync overlapping is worse,
+   * because it is not obviously a writer at all — it applies the plan it
+   * read before the change over the top of the change, and pushes what
+   * it read, and the write is then judged against a plan it never got
+   * into: reported as landed when it never went, or blamed on another
+   * device when there was no other device.
+   *
+   * So everything queues on one lane, and a write holds it whole. Reads
+   * still cost one trip between them (`refresh` coalesces), but a read
+   * arriving while a write runs waits, rather than racing it.
+   */
+  write(task) {
+    const attempt = this.lane.then(task, task);
+    // The lane must not stay broken because one write failed.
+    this.lane = attempt.then(() => {}, () => {});
+    return attempt;
+  }
+
+  /**
+   * The push a write makes, from inside `write`.
+   *
+   * It does not queue: the caller is holding the lane, so queuing behind
+   * it would wait for itself. It does not have to — holding the lane is
+   * what guarantees there is no sync in flight and none can start.
+   */
+  pushNow() {
+    return this.syncOnce();
+  }
+
+  /**
+   * Bring this process level with the book, for a question.
    *
    * Called before every tool call, read or write, because a stdio server
    * is long-lived and the household is editing the same book from a
    * phone while it runs. An answer from a snapshot taken an hour ago is
    * the same wrong shopping list as one computed by the wrong code.
    *
-   * **One at a time.** A model turn commonly carries two tool calls, and
-   * `syncNow` answers a re-entrant call by returning undefined and doing
-   * nothing — which this layer cannot tell from a failure. So callers
-   * queue on the same promise and every one of them gets the same
-   * answer, rather than one of them being told the network is down.
-   */
-  /**
-   * One write at a time, whatever the host asks for at once.
+   * **Questions asked together are one question.** A model turn commonly
+   * carries two tool calls, and `syncNow` answers a re-entrant call by
+   * returning undefined and doing nothing — which this layer cannot tell
+   * from a failure. So callers share one sync and every one of them gets
+   * the same answer, rather than one being told the network is down.
    *
-   * A write here is read-modify-write against a plan that is one row for
-   * the whole book, and its undo is the plan as it was before. Both of
-   * those are only true if nothing else changed the plan in between —
-   * so two writes overlapping would take each other's work as their own
-   * starting point, and the second one's undo would put the first one
-   * back after it had been rolled back and reported as failed. A meal
-   * nobody asked for, arriving on the next call that syncs.
-   *
-   * Reads do not queue here: they share the sync above, which is enough
-   * for them.
+   * A read that arrives while a write holds the lane queues behind it,
+   * which is the whole of `write`'s guarantee.
    */
-  write(task) {
-    const attempt = this.writes.then(task, task);
-    // The lane must not stay broken because one write failed.
-    this.writes = attempt.then(() => {}, () => {});
-    return attempt;
-  }
-
   refresh() {
     if (!this.syncing) {
-      this.syncing = this.syncOnce().finally(() => {
+      const attempt = this.lane.then(() => this.syncOnce());
+      this.syncing = attempt.finally(() => {
         this.syncing = null;
       });
+      this.lane = this.syncing.then(() => {}, () => {});
     }
     return this.syncing;
   }

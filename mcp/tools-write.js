@@ -247,7 +247,7 @@ const addRecipe = {
       }
 
       try {
-        await book.refresh();
+        await book.pushNow();
       } catch (err) {
         // The push and the plan half of a sync share one try/catch inside
         // `syncNow`, so a failure here does not say whether the recipe
@@ -362,7 +362,10 @@ function finished(book) {
 async function settle(book, { before, plan, wanted, verb, missing }) {
   book.planStore.setPlan(plan);
   try {
-    await book.refresh();
+    // `pushNow`, not `refresh`: this is inside `write`, which holds the
+    // lane, so there is no sync in flight to join and none can start
+    // (J17.9).
+    await book.pushNow();
   } catch (err) {
     book.planStore.setPlan(before);
     throw err;

@@ -1039,16 +1039,22 @@ release.
    later, **what a tool reports is what survived, not what it asked
    for**, and a meal that did not survive is named as dropped.
 
-   **Two questions asked at once are one read, and two changes are one
-   at a time.** A model turn commonly carries two tool calls. The sync
+   **Two questions asked at once are one read; a change has the book to
+   itself.** A model turn commonly carries two tool calls. The sync
    underneath answers a second, overlapping call by doing nothing, which
    must not reach anybody as a network that is down — so questions share
-   one read. Changes queue instead, because a change is read-modify-write
-   against a plan that is one row for the whole book, and its undo is
-   that plan as it was: two of them overlapping would each take the
-   other's work as their own starting point, and the second's undo would
-   put back what the first had already rolled back and reported as
-   failed.
+   one read.
+
+   A change takes the book whole, from its read to its push, and
+   everything else waits. It is read-modify-write against a plan that is
+   one row for the shared book, and its undo is that plan as it was:
+   neither is true if anything else touches the book in between. Two
+   changes overlapping take each other's work as their starting point. A
+   *question* overlapping is worse, because it does not look like a
+   writer at all — the sync it runs applies the plan it read over the top
+   of the change and pushes what it read, and the change is then judged
+   against a plan it never got into: reported as landed when it never
+   went, or blamed on another device when there was no other device.
 
    **A week that has been finished is not one to add to.** A live plan
    carrying a completion is a Done that landed half way, waiting for a
