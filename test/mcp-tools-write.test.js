@@ -127,6 +127,29 @@ test("J17.9 · a meal somebody added from a phone survives the agent's write (J1
   );
 });
 
+test("J17.9 · a meal is stamped after the pull, or the plan it was pulled from outranks it", async () => {
+  const { book, api, win, idOf } = await aBook();
+  // The book's plan, stamped the moment it is first read — which is what
+  // a plan somebody else has just written looks like when it arrives.
+  // A stamp taken before that read is older than the plan it is being
+  // written onto, and the merge hands the whole plan to the other side
+  // (J12.11): the meal goes, and only the report would say otherwise.
+  let held = null;
+  api.fetchLivePlan = async () => {
+    if (!held) {
+      const plan = win.RecipePlan.emptyPlan(Date.now());
+      held = { book_id: BOOK, data: plan, updated_at: new Date().toISOString() };
+    }
+    return held;
+  };
+  await book.refresh();
+
+  const out = await ADD.run(book, { meals: [{ recipeId: idOf("Chicken pie") }] });
+
+  assert.deepEqual(out.added.map((m) => m.name), ["Chicken pie"]);
+  assert.ok(!out.dropped, "nothing outranked it");
+});
+
 test("J17.9 · a write dropped by somebody else's is reported as dropped, not as done", async () => {
   const { book, win, idOf, setRemotePlan } = await aBook();
   await book.refresh();
@@ -187,6 +210,31 @@ test("J17.10 · two plan writes at once, both failing, leave nothing behind betw
   mendNetwork();
   await book.refresh();
   assert.deepEqual(sent.livePlans, [], "and no later call pushes what nobody asked for");
+});
+
+test("a dropped removal is never blamed on a full plan, which is not a reason to fail one", async () => {
+  const { book, win, setRemotePlan } = await aBook();
+  await book.refresh();
+  const pie = book.recipes.find((r) => r.name === "Chicken pie");
+
+  // A full plan, and somebody else's newer body arriving before the push
+  // — so taking a meal out is dropped, and the plan is still at the cap.
+  let full = book.plan;
+  for (let i = 0; i < win.RecipePlanStore.limits.MAX_MEALS; i++) {
+    full = win.RecipePlan.addMeal(full, pie, Date.now() + i);
+  }
+  book.planStore.setPlan(full);
+  setRemotePlan({ ...full, updatedAt: Date.now() + 60000 });
+
+  const out = await REMOVE.run(book, { mealIds: [full.meals[0].id] });
+
+  assert.deepEqual(out.removed, []);
+  assert.equal(out.dropped.length, 1);
+  assert.match(out.note, /another device at the same moment/);
+  assert.ok(
+    !/plan is full/.test(out.note),
+    "telling somebody emptying a plan that it is full and to empty it is not advice"
+  );
 });
 
 test("a plan with no room says so, rather than blaming another device", async () => {
@@ -264,7 +312,7 @@ test("J16.11 · a recipe below the floor is refused, the same as from anybody", 
 });
 
 test("J17.10 · a recipe that reached the book is reported as filed, whatever else failed", async () => {
-  const { call, breakPlanHalf, book, sent } = await aBook();
+  const { call, breakPlanHalf, mendNetwork, book, sent } = await aBook();
   await book.refresh();
   // The shape that made this lie: recipes go up first and succeed, and
   // the plan half of the same trip fails afterwards. `syncNow` reports
@@ -279,7 +327,14 @@ test("J17.10 · a recipe that reached the book is reported as filed, whatever el
   assert.equal(out.added.name, "Dal");
   assert.ok(!out.error, "it landed; saying otherwise invites a duplicate");
   assert.deepEqual(sent.recipes.map((r) => r.data.name), ["Dal"]);
-  assert.ok(book.recipes.some((r) => r.name === "Dal"), "and it is not taken back out");
+
+  // The cache is a cache: the row comes out of it while the book is
+  // being asked — so that no sync started by a call arriving in that
+  // window can push it — and the next pull brings it back, because by
+  // then it is the book's.
+  mendNetwork();
+  await book.refresh();
+  assert.ok(book.recipes.some((r) => r.name === "Dal"), "and nothing was lost taking it out");
 });
 
 test("J17.10 · a recipe that never reached the book is taken back out and said to be safe to resend", async () => {
@@ -307,7 +362,10 @@ test("J17.10 · a recipe nobody can check on is not called filed and not called 
   assert.equal(out.landed, "unknown");
   assert.match(out.error, /may or may not have been filed/);
   assert.match(out.error, /Do not send it again without looking/);
-  assert.ok(book.recipes.some((r) => r.name === "Dal"), "kept, so a later sync can push it if it must");
+  // Not kept. A row nobody can account for is a row a later sync would
+  // push behind the person's back, and the sentence above is what says
+  // to go and look rather than to send it again.
+  assert.ok(!book.recipes.some((r) => r.name === "Dal"));
 });
 
 test("J16.10 · a picture arrives as a link or not at all", async () => {

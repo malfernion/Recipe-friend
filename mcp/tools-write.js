@@ -282,6 +282,16 @@ function filed(recipe) {
  * retrying might file it twice.
  */
 async function whatBecameOfIt(book, recipe, err) {
+  // Out of the cache first, before anything is awaited.
+  //
+  // Asking the book is the one place a write waits on the network
+  // without holding the sync it started, so a tool call arriving in that
+  // window starts a sync of its own — and would push the very row this
+  // is about to call unfiled. Taking it out first means there is no
+  // uncommitted row for anybody to push. If it turns out to be on the
+  // server, the next pull brings it back, because the cache is a cache.
+  book.store.removeLocal(recipe.id);
+
   let rows;
   try {
     rows = await book.api.fetchRecipes(book.id);
@@ -298,9 +308,6 @@ async function whatBecameOfIt(book, recipe, err) {
 
   if (rows.some((row) => row.id === recipe.id)) return { ...filed(recipe), landed: "confirmed" };
 
-  // Nothing was written. The cache dies with the process, so a row left
-  // in it after a failed push is a recipe somebody was told they had.
-  book.store.removeLocal(recipe.id);
   return {
     error: `${recipe.name} was not filed — ${err.message} Nothing was written, so it is safe to send again.`,
   };
@@ -364,7 +371,11 @@ async function settle(book, { before, plan, wanted, verb, missing }) {
     // sentences: the plan is full, or somebody else's write landed
     // between this one's read and its push. Blaming another device for
     // a plan that simply has no room is a diagnosis nobody can act on.
-    const full = book.plan.meals.length >= book.win.RecipePlanStore.limits.MAX_MEALS;
+    // Only ever a reason a meal failed to go *in*. Telling somebody
+    // taking a meal out that the plan is full and they should take one
+    // out is the same unactionable advice this branch exists to replace.
+    const full =
+      verb === "added" && book.plan.meals.length >= book.win.RecipePlanStore.limits.MAX_MEALS;
     report.note = full
       ? "The plan is full — it holds " +
         book.win.RecipePlanStore.limits.MAX_MEALS +
