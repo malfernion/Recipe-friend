@@ -79,6 +79,34 @@ const listRecipes = {
 };
 
 /**
+ * A number, from something that is one or says it is.
+ *
+ * `Number()` on whatever arrived is how `true` becomes a dinner for one
+ * and `[8]` becomes a dinner for eight, neither of them said by
+ * anybody. A numeric string is kept, because `"6"` is what a host that
+ * stringifies its arguments sends and is unambiguous; everything else is
+ * NaN and its caller has a sentence to write.
+ */
+function asNumber(value) {
+  if (typeof value === "number") return value;
+  if (typeof value === "string" && value.trim() !== "") return Number(value);
+  return NaN;
+}
+
+/**
+ * The largest size worth answering about.
+ *
+ * Not a clamp on what a kitchen means — it is where arithmetic stops
+ * meaning anything: `1e308` portions overflows the multiplication and
+ * `Infinity` leaves this server as JSON `null`, which is the same shape
+ * as an ingredient with no amount at all. An answer indistinguishable
+ * from "a pinch of salt" is the wrong answer this bar exists to refuse
+ * (J17.11), and a hundred thousand is past every dinner and short of
+ * every overflow.
+ */
+const BIGGEST = 100000;
+
+/**
  * What was asked for, if a size was asked for at all (J17.12).
  *
  * Two controls, because a recipe has exactly one of them: a recipe that
@@ -89,10 +117,10 @@ const listRecipes = {
  * Neither is read raw. `servings: "six"` through an unchecked
  * multiplication is `NaN` in every amount — a recipe answered at a size
  * that does not exist, which is worse than the complaint it should have
- * been (J17.11). Nothing is clamped either: the screen's stepper stops
- * at ½ and 8 because a person holding a button needs it to stop, and a
- * clamp here would answer about a dinner for eight when the question was
- * about sixteen without saying so.
+ * been (J17.11). Nothing in range is clamped either: the screen's
+ * stepper stops at ½ and 8 because a person holding a button needs it to
+ * stop, and a clamp here would answer about a dinner for eight when the
+ * question was about sixteen without saying so.
  */
 function sizeAsked(args) {
   const wantsServings = args.servings !== null && args.servings !== undefined && args.servings !== "";
@@ -105,16 +133,21 @@ function sizeAsked(args) {
     };
   }
   if (wantsServings) {
-    const n = Number(args.servings);
-    if (!Number.isFinite(n) || n < 1 || !Number.isInteger(n)) {
-      return { error: `servings must be a whole number of at least 1; got ${JSON.stringify(args.servings)}.` };
+    const n = asNumber(args.servings);
+    if (!Number.isInteger(n) || n < 1 || n > BIGGEST) {
+      return {
+        error: `servings must be a whole number from 1 to ${BIGGEST}; got ${JSON.stringify(args.servings)}.`,
+      };
     }
     return { servings: n };
   }
   if (wantsMultiplier) {
-    const n = Number(args.multiplier);
-    if (!Number.isFinite(n) || n <= 0) {
-      return { error: `multiplier must be a number greater than 0; got ${JSON.stringify(args.multiplier)}.` };
+    const n = asNumber(args.multiplier);
+    if (!Number.isFinite(n) || n <= 0 || n > BIGGEST) {
+      return {
+        error: `multiplier must be a number greater than 0 and no more than ${BIGGEST}; got ` +
+          `${JSON.stringify(args.multiplier)}.`,
+      };
     }
     return { multiplier: n };
   }
@@ -141,10 +174,12 @@ function scaleFor(recipe, asked) {
   if (asked.multiplier) {
     // The screen's own rounding for a scaled serving count (`× 1.5` of a
     // recipe for 3 is "Serves 4.5"), so the two agree about the dinner.
-    return {
-      factor: asked.multiplier,
-      ...(servings ? { servings: Math.round(servings * asked.multiplier * 10) / 10 } : {}),
-    };
+    const lands = Math.round(servings * asked.multiplier * 10) / 10;
+    // A tenth of a serving is the smallest thing that rounding can say;
+    // below it the answer would read "Serves 0", which is a false
+    // statement about a dinner somebody is going to eat. The factor
+    // still says exactly how much of the recipe this is.
+    return { factor: asked.multiplier, ...(lands >= 0.1 ? { servings: lands } : {}) };
   }
   if (!servings) return null;
   return { factor: asked.servings / servings, servings: asked.servings };
@@ -155,8 +190,8 @@ const SCALED_NOTE =
   "step — a step says what the recipe says.";
 
 const PORTIONS_NOTE =
-  "These recipes do not say what they serve, so a portion count cannot be set on them and they " +
-  "are as written. Ask again with `multiplier` to scale them.";
+  "The recipes under notScaled do not say what they serve, so a portion count cannot be set on " +
+  "them and they are as written. Ask again with `multiplier` to scale them.";
 
 const getRecipe = {
   name: "get_recipe",
@@ -164,7 +199,8 @@ const getRecipe = {
   description:
     "One or more recipes in full: ingredients with amounts, steps, and times. Amounts are as " +
     "they were written down unless you ask for a size — `servings` for a recipe that says what " +
-    "it serves, `multiplier` for one that does not — and then quantities are scaled the way the " +
+    "it serves, `multiplier` for half or double of any recipe and the only control for one that " +
+    "does not say what it serves — and then quantities are scaled the way the " +
     "app's own portion stepper scales them, times and steps left alone. Units are always as " +
     "written, because unit preferences belong to a person and an agent is not one. Nothing here " +
     "changes the recipe. Photos do not travel. " + HOUSEHOLD_DATA,
@@ -223,7 +259,10 @@ const getRecipe = {
         continue;
       }
       const scale = scaling ? scaleFor(recipe, size) : null;
-      if (scaling && !scale) notScaled.push(recipe.name);
+      // Named by id as well as by name, because the question was asked
+      // in ids and two recipes in a book may share a name — "Granola,
+      // Granola" is a list nobody can act on.
+      if (scaling && !scale) notScaled.push({ id: recipe.id, name: recipe.name });
       found.push(full(win, recipe, planned, scale));
     }
     // A recipe can leave the book between one call and the next (J12.8),
@@ -234,12 +273,19 @@ const getRecipe = {
     // a step reading "add 200 g of flour" is unscaled beside ingredient
     // lines that are not, and a model reading the two together has no
     // other way to know which is which.
+    //
+    // Assembled from what happened rather than from what was asked. A
+    // call where nothing could be scaled would otherwise open by saying
+    // quantities are scaled, and the half a model acts on is the false
+    // half: 500 g read as 500 g for four.
     if (scaling && found.length) {
-      out.scalingNote = SCALED_NOTE;
+      const notes = [];
+      if (found.length > notScaled.length) notes.push(SCALED_NOTE);
       if (notScaled.length) {
         out.notScaled = notScaled;
-        out.scalingNote = `${SCALED_NOTE} ${PORTIONS_NOTE}`;
+        notes.push(PORTIONS_NOTE);
       }
+      out.scalingNote = notes.join(" ");
     }
     return out;
   },

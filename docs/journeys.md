@@ -1179,6 +1179,16 @@ release.
     recipe to one caller and the question's answer to another is a recipe
     answering about two different dinners.
 
+    **And no size is answered at that stops meaning anything.** A
+    hundred thousand portions is past every dinner and short of every
+    overflow, and past it the multiplication runs out of numbers: an
+    amount that overflows leaves this server as JSON `null`, which is
+    the shape of an ingredient that never had an amount — an answer
+    wrong in the one way nothing here may be wrong (J17.11). At the
+    other end, an amount is never reported as `0` and a size never as
+    "Serves 0": both are a statement that nothing is there about a
+    dinner somebody is going to eat.
+
     **The text is the screen's and the number is the truth.** J4.8's
     floor renders anything below 0.05 as "0", so a recipe taken far
     enough down says "0 tsp" for something that is present — accepted on

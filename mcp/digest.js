@@ -79,15 +79,24 @@ function digest(win, recipe, planned) {
  *
  * Rounded to the thousandth, because 200 ÷ 3 is 66.66666666666667 and
  * that is float noise wearing the clothes of a precision no recipe was
- * ever written to.
+ * ever written to — except where that rounding would itself reach zero,
+ * which is the one thing this field must never say about an ingredient
+ * that is present.
  */
 function ingredientLine(win, ing, scale) {
   const line = { amount: ing.amount, unit: ing.unit, item: ing.item };
   if (!scale) return line;
-  const amount =
-    ing.amount === null || ing.amount === undefined
-      ? ing.amount
-      : Math.round(ing.amount * scale.factor * 1000) / 1000;
+  if (ing.amount === null || ing.amount === undefined) {
+    return { ...line, text: win.RecipeScale.ingredientText(ing, scale.factor) };
+  }
+  const scaled = ing.amount * scale.factor;
+  const rounded = Math.round(scaled * 1000) / 1000;
+  // Rounding that reached zero would put the thing this field exists to
+  // prevent back one order of magnitude down: `amount: 0` is a value
+  // `sanitizeIngredient` never produces, so a caller cannot tell it from
+  // the `null` of a line that never had an amount, and both fields would
+  // then say nothing is there. Three figures of what there is instead.
+  const amount = rounded === 0 ? Number(scaled.toPrecision(3)) : rounded;
   return { ...line, amount, text: win.RecipeScale.ingredientText(ing, scale.factor) };
 }
 

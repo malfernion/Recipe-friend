@@ -326,9 +326,10 @@ question or change — waits for it.
 
 **Amounts come back as they were written**, because unit preferences
 belong to a person and an agent is not one. A size is the one thing that
-does change them: `get_recipe` takes `servings`, or `multiplier` for a
-recipe that does not say what it serves, and scales the quantities with
-the app's own portion stepper — kitchen fractions and all. Times and the
+does change them: `get_recipe` takes `servings` for a recipe that says
+what it serves, or `multiplier` for half or double of any recipe — the
+only control for one that does not — and scales the quantities with the
+app's own portion stepper, kitchen fractions and all. Times and the
 method are never scaled, an amount written into a step least of all, and
 the answer says so. Nothing is written either way.
 

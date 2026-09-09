@@ -439,12 +439,21 @@ test("J17.12 · a recipe that does not say what it serves is scaled by multiplie
     { amount: 2, unit: "tbsp", item: "honey" },
   ]);
   assert.ok(!("scaledTo" in granola), "nothing claims it was scaled");
-  assert.deepEqual(asked.notScaled, ["Granola"]);
+  // Named by id as well: a book can hold two recipes with one name, and
+  // the question was asked in ids.
+  assert.deepEqual(asked.notScaled, [{ id: idOf("Granola"), name: "Granola" }]);
   assert.match(asked.scalingNote, /multiplier/, "and it says which control would work");
   // The soup in the same call serves 2, and being beside one that could
   // not be scaled does not stop it.
   const soup = asked.recipes.find((r) => r.name === "Lentil soup");
   assert.deepEqual(soup.scaledTo, { factor: 2, servings: 4 });
+
+  // Asked alone, nothing in the answer was scaled — so nothing in the
+  // answer says quantities were. A note half true is acted on for the
+  // half that is false: 500 g read as 500 g for four.
+  const alone = await by("get_recipe").run(book, { ids: [idOf("Granola")], servings: 4 });
+  assert.ok(!/Quantities are scaled/.test(alone.scalingNote), alone.scalingNote);
+  assert.match(alone.scalingNote, /do not say what they serve/);
 
   const doubled = await by("get_recipe").run(book, { ids: [idOf("Granola")], multiplier: 2 });
   assert.deepEqual(doubled.recipes[0].ingredientLines, [
@@ -498,19 +507,60 @@ test("J4.7 · a scaled amount reads as a kitchen fraction, and J4.8's zero keeps
   assert.equal(saffron.amount, 0.042, "the amount is not zero, and is not float noise either");
 });
 
+test("J17.12 · an ingredient that is present never comes back as nothing", async () => {
+  const { book, idOf } = await aBook({
+    extra: [
+      {
+        name: "Curry paste",
+        ingredients: [
+          { amount: 0.25, unit: "tsp", item: "asafoetida" },
+          { amount: 200, unit: "g", item: "shallots" },
+        ],
+        steps: ["Pound it."],
+      },
+    ],
+  });
+
+  const out = await by("get_recipe").run(book, { ids: [idOf("Curry paste")], multiplier: 0.001 });
+  const [asafoetida] = out.recipes[0].ingredientLines;
+
+  // The text says "0" by J4.8, which is the whole reason the number is
+  // there — and rounding the number to the thousandth would have said
+  // zero too. `amount: 0` is a value no stored recipe has, so nothing
+  // could tell it from a line that never had an amount.
+  assert.equal(asafoetida.text, "0 tsp asafoetida");
+  assert.equal(asafoetida.amount, 0.00025);
+
+  // And a recipe with no servings has none to report; one with servings
+  // taken this far down would land on "Serves 0", which is a false
+  // statement about a dinner somebody is going to eat.
+  assert.deepEqual(out.recipes[0].scaledTo, { factor: 0.001 });
+  const soup = await by("get_recipe").run(book, { ids: [idOf("Lentil soup")], multiplier: 0.001 });
+  assert.deepEqual(soup.recipes[0].scaledTo, { factor: 0.001 }, "no servings rather than none of one");
+});
+
 test("J17.12 · a size nobody could cook is a sentence, never a recipe full of NaN", async () => {
   const { book, idOf } = await aBook();
   const ids = [idOf("Lentil soup")];
 
-  for (const servings of ["six", 0, -2, 2.5, {}]) {
+  // `true` is not a dinner for one and `[8]` is not a dinner for eight;
+  // 1e308 overflows the multiplication, and `Infinity` leaves this
+  // server as JSON `null` — the shape of an ingredient with no amount at
+  // all, which is an answer wrong in the one way nothing here may be.
+  for (const servings of ["six", 0, -2, 2.5, {}, true, [8], 1e308, 100001]) {
     const out = await by("get_recipe").run(book, { ids, servings });
     assert.match(out.error, /servings must be a whole number/, JSON.stringify(servings));
     assert.ok(!out.recipes, "and no recipe was answered at a size that does not exist");
   }
-  for (const multiplier of ["twice", 0, -1]) {
+  for (const multiplier of ["twice", 0, -1, true, [2], 1e308, 100001]) {
     const out = await by("get_recipe").run(book, { ids, multiplier });
-    assert.match(out.error, /multiplier must be a number greater than 0/, JSON.stringify(multiplier));
+    assert.match(out.error, /multiplier must be a number/, JSON.stringify(multiplier));
+    assert.ok(!out.recipes);
   }
+
+  // A host that stringifies its arguments is not making a mistake.
+  const stringly = await by("get_recipe").run(book, { ids, servings: "4" });
+  assert.deepEqual(stringly.recipes[0].scaledTo, { factor: 2, servings: 4 });
 
   // Both at once is two different dinners, and picking one silently is
   // the answer to a question nobody asked.
@@ -535,7 +585,11 @@ test("J8.1 · asking for a size does not convert the units, an agent still havin
     item: "potatoes",
     text: "2 kg potatoes",
   });
-  assert.ok(win, "the app's own scaling did this, not a second opinion of it");
+  // The app's own rendering, not a second opinion of it (J17.7).
+  assert.equal(
+    out.recipes[0].ingredientLines[1].text,
+    win.RecipeScale.ingredientText({ amount: 1, unit: "kg", item: "potatoes" }, 2),
+  );
 });
 
 test("J12.8 · a recipe that has left the book is an answer, not a failure", async () => {
