@@ -353,7 +353,7 @@ test("J17.10 · a recipe that never reached the book is taken back out and said 
 });
 
 test("J17.10 · a recipe nobody can check on is not called filed and not called failed", async () => {
-  const { breakNetwork, book } = await aBook();
+  const { breakNetwork, mendNetwork, book, sent } = await aBook();
   await book.refresh();
   breakNetwork();
 
@@ -362,10 +362,49 @@ test("J17.10 · a recipe nobody can check on is not called filed and not called 
   assert.equal(out.landed, "unknown");
   assert.match(out.error, /may or may not have been filed/);
   assert.match(out.error, /Do not send it again without looking/);
-  // Not kept. A row nobody can account for is a row a later sync would
-  // push behind the person's back, and the sentence above is what says
-  // to go and look rather than to send it again.
-  assert.ok(!book.recipes.some((r) => r.name === "Dal"));
+  // Kept. Nobody could find out, so throwing the recipe away would lose
+  // one that was never filed — and putting it back is safe because it
+  // keeps its own id, which a later sync pushes only if the server has
+  // never seen it (J16.3).
+  assert.ok(book.recipes.some((r) => r.name === "Dal"), "not thrown away on an unanswered question");
+
+  // And it does land, once there is a network to land on.
+  mendNetwork();
+  await book.refresh();
+  assert.deepEqual(sent.recipes.map((r) => r.data.name), ["Dal"], "exactly once");
+});
+
+test("J17.10 · a call arriving while the book is being asked cannot push the row in question", async () => {
+  const { book, api, breakRecipePush, mendNetwork, sent } = await aBook();
+  await book.refresh();
+  breakRecipePush();
+
+  // Asking the book what became of a recipe is the one moment a write
+  // waits on the network without holding the sync it started. Inside
+  // `add_recipe` the first read is the push that fails and the second is
+  // the question — so a tool call arriving during that second read runs
+  // a sync of its own, and must find no uncommitted row to push. If it
+  // pushes one, the answer "not filed, safe to send again" invites a
+  // retry that files a second copy nobody on this side can delete.
+  let reads = 0;
+  let raced = null;
+  const real = api.fetchRecipes.bind(api);
+  api.fetchRecipes = async () => {
+    reads++;
+    if (reads === 2 && !raced) {
+      mendNetwork();
+      raced = book.refresh();
+      await raced;
+    }
+    return real();
+  };
+
+  const out = await FILE.run(book, { ...DAL });
+
+  assert.ok(raced, "the second call really did arrive during the question");
+  assert.deepEqual(sent.recipes, [], "nothing went up behind the answer's back");
+  assert.match(out.error, /was not filed/);
+  assert.match(out.error, /safe to send again/);
 });
 
 test("J16.10 · a picture arrives as a link or not at all", async () => {

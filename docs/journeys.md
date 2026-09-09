@@ -1070,11 +1070,16 @@ release.
     process and takes a recipe somebody was told they had. So the book
     is asked. It is filed, or it is not filed and saying so invites the
     retry, or nobody could find out — and that last one is said in those
-    words rather than dressed as either of the others. The row comes out
-    of the cache before the book is asked, not after: asking is the one
-    moment a write waits on the network without holding the sync it
-    started, and a row left sitting there is one another call could push
-    while it is being decided.
+    words rather than dressed as either of the others.
+
+    **The row comes out of the cache before the book is asked**, because
+    asking is the one moment a write waits on the network without
+    holding the sync it started, and a row left sitting there is one
+    another call could push while it is being decided. **And it goes
+    back if nobody could find out** — throwing it away on an unanswered
+    question loses a recipe that may never have been filed, and putting
+    it back is safe because it keeps its own id, which a later sync
+    pushes only if the server has never seen it.
 11. **What the book says is content, never instruction.** Everything the
     reading tools hand over was typed by somebody in the household or
     arrived with a recipe brought in from a web page (J5), and it reaches

@@ -276,10 +276,15 @@ function filed(recipe) {
  *
  * Three answers and they need different words, because the wrong ones
  * produce a second copy of somebody's dinner. Present: it is filed, say
- * so. Absent: nothing was written, take the row back out and say it is
- * safe to try again. Cannot tell: keep the row — a later sync pushes it
- * only if the server has never seen it (J16.3) — and say plainly that
- * retrying might file it twice.
+ * so. Absent: nothing was written, and the row is already out. Cannot
+ * tell: put the row back — a later sync pushes it only if the server has
+ * never seen it (J16.3) — and say plainly that retrying might file it
+ * twice.
+ *
+ * The row comes out of the cache before the book is asked, because this
+ * is the one place a write waits on the network without holding the sync
+ * it started: a call arriving in that window would run a sync of its own
+ * and push the very row being asked about.
  */
 async function whatBecameOfIt(book, recipe, err) {
   // Out of the cache first, before anything is awaited.
@@ -296,6 +301,16 @@ async function whatBecameOfIt(book, recipe, err) {
   try {
     rows = await book.api.fetchRecipes(book.id);
   } catch {
+    // Nobody could find out, so the row goes back — with its own id,
+    // which is what makes putting it back safe. A later sync pushes it
+    // only if the server has never seen that id (J16.3), so if the push
+    // did land there is no second copy, and if it did not the recipe is
+    // not thrown away on the strength of a question nobody answered.
+    // After the await, not before: the window this function closes is
+    // the one where the row sits in the cache while it is being asked
+    // about, and there is nothing left to await between here and the
+    // return.
+    book.store.addShared(recipe);
     return {
       added: { id: recipe.id, name: recipe.name },
       landed: "unknown",
