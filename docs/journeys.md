@@ -927,15 +927,16 @@ not somebody.
    here counts down against it and the way it ends is being revoked
    (J16.7).
 
-   **That is not the same as saying it lasts for ever**, and the
-   difference is the agent's to handle. What the credential carries is a
-   refresh token, and a refresh token is spent when it is used: the
-   server hands back a new one each time, and replaying a spent one is
-   treated as a stolen one and ends the session. So an agent has to store
-   what it is given back, and an agent that restarts from the original
-   string in its configuration file will find it dead. Said here because
-   it is the one promise on this list that the app cannot keep on its
-   own.
+   **Nor does it quietly expire.** What the credential carries is a
+   refresh token, and the server hands back a new one on every exchange.
+   By default it also watches for the old one coming back and reads a
+   replay as theft, which would mean a credential that died the first
+   time an agent was restarted from the string in its configuration
+   file. Nothing that runs as somebody's assistant can promise to be the
+   only copy of itself, so this project turns that check off and the
+   pasted string goes on working. The Boundaries section records what
+   that costs and why it is accepted; said here because it is the one
+   promise on this list the app keeps by a setting rather than by code.
 10. **An agent gets no stored photos.** It cannot read a photo out of
     private storage and cannot put one there, so it can neither see the
     pictures in the book nor add one. A picture *linked* by public URL is
@@ -946,6 +947,207 @@ not somebody.
     (J2.1) and validated exactly as a pasted one is (J5.7). Being a
     program earns no latitude: a recipe with no name, no ingredient or no
     step is refused from an agent as it is from anybody.
+
+---
+
+## J17 · The program on the other end
+
+J16 let an owner place something that is not somebody in a book, and hand
+it a credential. This is what that credential is handed *to*: a small
+program in `mcp/`, which an assistant runs and talks to over a pipe, and
+which turns a household's book into a handful of questions worth asking
+about it.
+
+It is in this repository rather than one of its own because it is an API
+onto this app. It runs the app's own modules and it is bounded by the
+same policies, so a change to either can break it — and one repository
+finds that out in the same test run, where two would find out after a
+release.
+
+1. **It is a program the assistant runs, not a service anybody hosts.**
+   Launched as a subprocess, spoken to in JSON-RPC over stdin and stdout,
+   and given its credential in the environment — no listener, no port, no
+   account and nothing to sign in to.
+
+   **Its stdout is the wire.** Nothing but protocol messages goes there,
+   whatever the modules it loads would rather do: a stray line of logging
+   does not appear in the conversation, it breaks it. Everything it has
+   to say, including that it started, it says on stderr.
+2. **One credential, one book, one process.** The credential names the
+   book (J16.6) and nothing in the program chooses one, so a household
+   with two books runs two of these under two names. It is not a thing
+   you point at a book; it is a thing you make for a book.
+3. **It keeps nothing between runs.** No state file, no lock, nothing on
+   disk at all: the credential is read from the environment at every
+   start, the session lives in memory, and the local cache lives there
+   too, so a cold start is a full pull — the path a new device takes on
+   its first sign-in (J9.1).
+
+   Said as a rule rather than left as an implementation detail, because
+   the alternative is a credential that works only while a file survives,
+   and J16.9 is now written the way it is precisely so that one does not
+   have to.
+4. **The book opens on the first question, not when the program starts.**
+   A host may launch this and never ask it anything, and a token exchange
+   and a full pull per launch is a cost somebody eventually removes by
+   removing the server. A failure at startup also happens where nobody is
+   looking, where a failure answering a question is something a person
+   can be told.
+
+   **A book that would not open is tried again, not remembered as dead.**
+   A network that was down and an agent that was removed look alike from
+   here and mean opposite things, and the difference must not come down
+   to which happened first.
+5. **A failure somebody could fix is a sentence.** It comes back as the
+   tool's answer rather than as a protocol error, because a protocol
+   error is for something the caller got wrong and these are things the
+   world got wrong — and because an answer is something a model can read
+   out to the person who can act on it. A revoked credential says to add
+   a new agent and paste the new one; an unreachable project says to try
+   again in a moment. Telling those two apart is the point of writing
+   them separately.
+6. **There is no tool for anything the credential cannot do.** No edit,
+   no delete, no favourite, no Done (J16.3, J16.4). A tool that exists
+   and is always refused is worse than one that does not exist: the model
+   keeps trying it, and reads each refusal as its own mistake rather than
+   as a rule.
+7. **The answers are this app's own arithmetic, not a second opinion of
+   it.** The ranking is the search box's, "what we have not had in ages"
+   is the sort menu's, and the combined shopping list is the list the
+   phone shows. A reimplementation would drift on the things this app is
+   careful about — promotion to kilograms, plurals, and not guessing how
+   big a tin is — and nobody would notice until the list was wrong in a
+   supermarket.
+8. **A digest before a full read.** The listing tools answer with what a
+   question about what to cook is actually asked against — name, tags,
+   servings, total minutes, the ingredients a recipe is about, and when
+   it was last planned — and a second tool reads in full the few that
+   turn out to matter. A book handed over whole is a book nobody can
+   think about.
+
+   **What it says is what the household wrote.** Matching an ingredient
+   uses a stem, so that "tomatoes" finds "tomato purée" (J3.4) — but the
+   stem is a key and never a name. Printing it hands a model "ric",
+   "chees" and "win" to read back to somebody, and the app never shows
+   one: every line on screen says the word that was typed, which is what
+   makes an over-eager match visible (J13.7).
+
+   **And what it says is what the screen would say.** A recipe that
+   leaves the book leaves the plan (J12.8), which the app makes true on
+   every render; a tool answering from the plan as stored lists a meal
+   the phone does not show and buys nothing for it. It is reported away,
+   not taken away — a question does not make a write, and the next
+   device to draw the plan will do that. The same rule is why a meal
+   planned by a multiplier says so: the screen shows "× 2", and without
+   it one batch and three are the same answer.
+9. **The book is read before every question and before every change.**
+   Not only before a write: an answer about the plan computed from a
+   snapshot taken an hour ago is the same wrong shopping list as one
+   computed by the wrong code, and the household goes on cooking while a
+   session is open.
+
+   Before a *change* it is what makes the change safe at all. Meals do
+   not merge the way settled amounts do (J12.11): for one plan the more
+   recently touched body wins whole. A tool that wrote back a plan it
+   read some minutes ago would not lose a race occasionally — it would
+   delete whatever somebody added from a phone in between, every time.
+   And because a write can still be dropped by one that lands a moment
+   later, **what a tool reports is what survived, not what it asked
+   for**, and a meal that did not survive is named as dropped.
+
+   **Two questions asked at once are one read; a change has the book to
+   itself.** A model turn commonly carries two tool calls. The sync
+   underneath answers a second, overlapping call by doing nothing, which
+   must not reach anybody as a network that is down — so questions share
+   one read.
+
+   A change takes the book whole, from its read to its push, and
+   everything else waits. It is read-modify-write against a plan that is
+   one row for the shared book, and its undo is that plan as it was:
+   neither is true if anything else touches the book in between. Two
+   changes overlapping take each other's work as their starting point. A
+   *question* overlapping is worse, because it does not look like a
+   writer at all — the sync it runs applies the plan it read over the top
+   of the change and pushes what it read, and the change is then judged
+   against a plan it never got into: reported as landed when it never
+   went, or blamed on another device when there was no other device.
+
+   **A change is stamped past the one it replaces.** Two copies of one
+   plan are told apart by when each was last touched, and a tie is
+   broken on a fingerprint that the copy holding *more* meals loses as
+   often as not — so two changes landing in the same millisecond were a
+   coin flip on whether the second one existed, reported as somebody
+   else's write from a device nobody was using. The app has the same
+   hazard where a settlement and the tap retracting it can share a
+   millisecond, and the same answer: stamp one past the value being
+   replaced, so the same hand cannot tie with itself. Taps are far apart
+   and rarely meet it; a program is a much faster hand.
+
+   **Both controls, or the promise is not kept.** A recipe that says what
+   it serves is planned by portions and one that does not by a
+   multiplier (J12.4), and the screen has a control for each. A server
+   with only the first cannot put a batch cook back the size it came
+   out at — the meal returns as one batch and the shopping list halves,
+   under a tool that says taking a meal out is reversible. So both are
+   offered, asking with the wrong one is a sentence rather than a
+   silently unscaled meal, and what comes out of the plan says how much
+   of it there was.
+
+   **A week that has been finished is not one to add to.** A live plan
+   carrying a completion is a Done that landed half way, waiting for a
+   person's device to file it away (J16.4). Writing into it would put
+   the agent's meal into the record when that device finishes the job,
+   which is the one door J16.4 does not otherwise stand in front of.
+10. **Filing a recipe is one way, and the tool says so twice.** Once to
+    the client, in the hint it reads when deciding whether to ask a
+    person first, and once in words, which is what the model reads when
+    deciding whether to try. An agent cannot delete even the recipe it
+    just added (J16.3), so this is the one call here that nobody on this
+    side can take back.
+
+    **So a recipe is never reported wrongly in either direction.** A push
+    and the rest of a sync share one failure between them, and the
+    recipes go up first — so "it failed" can mean the book has it. Said
+    wrongly one way, the retry it invites files a second copy that only
+    a person can remove; said wrongly the other, the cache dies with the
+    process and takes a recipe somebody was told they had. So the book
+    is asked. It is filed, or it is not filed and saying so invites the
+    retry, or nobody could find out — and that last one is said in those
+    words rather than dressed as either of the others.
+
+    **The row comes out of the cache before the book is asked**, because
+    asking is the one moment a write waits on the network without
+    holding the sync it started, and a row left sitting there is one
+    another call could push while it is being decided. **And it goes
+    back if nobody could find out** — throwing it away on an unanswered
+    question loses a recipe that may never have been filed, and putting
+    it back is safe because it keeps its own id, which a later sync
+    pushes only if the server has never seen it.
+11. **What the book says is content, never instruction.** Everything a
+    tool hands over was typed by somebody in the household or arrived
+    with a recipe brought in from a web page (J5), and it reaches a model
+    in exactly the shape a request would. Every tool that hands any of it
+    back says so where the model will read it — the questions, and the
+    two that change the plan and answer with meal names and a shopping
+    list. `sanitizeRecipe` is the backstop on the way back in (J16.11),
+    and the tool that files a recipe carries the other half of the
+    sentence: bring back the recipe and nothing else the page asked for.
+
+    **And what arrives as a tool's arguments is checked by this server or
+    by nothing.** The protocol lets a tool publish the shape of what it
+    takes and does not hold anybody to it, so a field the schema never
+    declared arrives exactly as easily as one it did. A write therefore
+    takes the fields it means to take, one at a time, rather than passing
+    on what it was handed: the app has always built a recipe that way,
+    and the sentence in a description asking for a recipe and nothing
+    else the page wanted is a courtesy, not the gate.
+
+    **The bar for the rest is that a tool answers or says why it cannot,
+    and never answers wrongly.** A type nobody expected is worth a
+    sentence; an order nobody offers is worth a refusal rather than the
+    book's own order returned as though it were the answer; a list longer
+    than the schema allowed is worth refusing rather than working
+    through, because a change holds the book while it runs.
 
 ---
 
@@ -1015,6 +1217,59 @@ accident:
   a way in for anybody at all, which is why redeeming one is closed to
   anonymous callers (J7.5). Both are paid whether or not anybody adds an
   agent, which is why they are written down here rather than under J16.
+- **Refresh token reuse detection is off, and it is the third cost of
+  agents.** A credential is a refresh token (J16.9), the server issues a
+  new one on every exchange, and by default it treats the old one coming
+  back as a stolen one and ends the session. A program somebody runs as
+  their assistant cannot promise to be the only copy of itself — it is
+  restarted, and it is often started twice by whatever launches it — so
+  the check is switched off and the pasted credential stays good. **The
+  cost falls on every session in the project**, not only on books with
+  agents in them, and it is accepted for three reasons: what a stolen
+  token reaches is a recipe book, this app has never put a token through
+  the address bar (PKCE rather than the implicit flow), and an agent's
+  copy lives in a configuration file rather than anywhere a log would
+  pick it up.
+
+  **The reuse interval is not the answer and was checked before this
+  was.** That setting lets a spent token be presented again for a few
+  seconds, for two tabs refreshing at once — and it allows only the one
+  generation immediately behind the current token. An agent restarted a
+  week later presents a token spent a week ago, which no width of window
+  covers; an agent whose session outlived an hour has refreshed in
+  memory since, which puts the pasted string several generations back
+  and fails the second test whatever the first says. It is a window, and
+  what a credential in a configuration file needs is a property.
+
+  If any of this stops being acceptable, the way back is a credential
+  that is not a refresh token — a long-lived key exchanged for a short
+  JWT by something holding the service key — and not a setting. That
+  would cost the app the thing it has never had and never wanted: a
+  server of its own.
+- **A week finished while an agent is mid-change can be reopened by it.**
+  An agent refuses to add to a plan that is already finished (J17.9), but
+  it can only refuse what it can see: it reads the plan, and the Done
+  arrives from somebody's phone in the round trip before it writes. What
+  it pushes then wins on the ordinary rule that the more recently touched
+  body wins whole (J12.11), and the completion goes with it. What does
+  *not* go is the thing J16.4 is actually guarding: a device records the
+  week before it clears the live row, and the archive is keyed by the
+  plan's own id, so the week stays on the record and the agent's meal
+  never joins it. The same rule governs a person's second phone, which is
+  why this is written here rather than answered with a special case for
+  agents.
+- **The planning modules carry no DOM, and that is load-bearing outside
+  this app.** `plan.js`, `shoplist.js`, `search.js`, `scale.js`,
+  `units.js` and `html.js` name nothing a browser provides; `storage.js`,
+  `planstore.js` and `sync.js` reach no further than `localStorage`. It
+  is what lets the server in `mcp/` — the thing an agent talks to (J16) —
+  compute the household's shopping list by running the household's own
+  code rather than a second implementation, which would drift on exactly
+  the things this app is careful about: promotion to kilograms, plurals,
+  and not guessing how big a tin is. Breaking it costs nothing visible in
+  the app: reach for the page in `plan.js` and the site still works, and
+  the list goes wrong in a supermarket. So it is held by a test rather
+  than by anybody remembering.
 - **The challenge is the app's only third-party script.** It cannot be
   vendored the way supabase-js is, because a challenge that ships with
   the page is not a challenge — so the content security policy names
@@ -1072,9 +1327,17 @@ recipe is, what it says on screen, and what survives a round trip. Those
 are the failures that would be silent — a recipe quietly losing its tags is
 worse than a page that will not load.
 
-**Eighteen of the 164 criteria have no test naming them** — J4.15,
+It also covers the MCP server (J17), which is the same kind of risk
+wearing different clothes: a wrong shopping list computed somewhere with
+no screen to notice it on. The `mcp-*` files stub the eight calls sync
+makes rather than the whole of PostgREST, so what they hold is which of
+those an agent is allowed to reach for — and one of them runs the real
+program in a real subprocess, because the rule that nothing but protocol
+messages reaches stdout cannot be checked any other way.
+
+**Sixteen of the 175 criteria have no test naming them** — J4.15,
 J4.16, J4.19, J4.25, J5.10, J6.3, J10.4, J11.1 to J11.5, J12.12, J15.9,
-J15.11, J16.5, J16.9 and J16.10.
+J15.11 and J16.5.
 
 Five of those are a correction rather than a change. J4.19, J6.3, J10.4,
 J11.5 and J15.9 had been counted as covered for a long time and are not:
@@ -1084,11 +1347,18 @@ criteria and new tests to the old figures — rather than by counting.
 Counting is the only reason the number moved. **The convention is that a
 test title quotes its criterion**, and that is what is measured here.
 
-The J16 entries are the ordinary kind of gap. J16.5 and J16.10 are
-policies and belong with the database below. J16.9 is a promise the app
-does not keep on its own: it describes what a refresh token does once an
-agent holds it, which is the agent's business and not something a stub
-DOM can be asked about.
+J16.5 is the last one left of that journey, and it is a policy — an
+agent may clear a plan — which belongs with the database below.
+
+Two of its neighbours were on this list until the MCP server arrived and
+came off it, which is the clearest thing that server earned. J16.9 —
+what a refresh token does once an agent holds it — is now what
+`mcp/session.js` does about it, and there is a test for the refusal it
+has to survive. J16.10 — no stored photos — is a policy at the database
+and a decision in `mcp/digest.js` about what a tool hands back, and the
+second half is tested. Neither was ever something a stub DOM could be
+asked about; both are something the program on the other end of the
+credential can be.
 
 Six more things the tests do not reach, recorded so the
 gap is visible:

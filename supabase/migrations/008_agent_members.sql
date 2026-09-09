@@ -36,11 +36,28 @@
 -- tests — `docs/journeys.md` says so at the end, and this file is inside
 -- that gap. So after running this, in the dashboard:
 --
---   a. As an **agent**, in its own book: select, insert, update and
---      delete on recipes all succeed, and so do insert, update and delete
---      on live_plans and insert and delete on plans. An agent writes what
---      an editor writes (J16.3) — anything less and its own sync parks,
---      which is what §3 explains.
+--   a. As an **agent**, in its own book: select and insert on recipes
+--      succeed, and insert and update on live_plans succeed. That is the
+--      whole of what it may write.
+--
+--      **Update and delete on recipes are refused**, which is §2, and
+--      which is also what stops it favouriting one (J3.6). **Delete on
+--      live_plans is refused**, and nothing in the app wants it —
+--      clearing a plan writes an empty one over the row. **Every write
+--      to `plans` is refused**, which is §3.
+--
+--      `insert into plans` is the one people will be tempted to "fix".
+--      It is J16.4: the archive is the record an agent reads to decide
+--      what to suggest next, and something that can write its own
+--      evidence can talk itself into anything.
+--
+--      Watch how a refusal arrives, because two of these do not raise.
+--      An insert with no matching policy answers 403. An update or
+--      delete with no matching policy is not an error at all — PostgREST
+--      reports a success that changed nothing, `204` with no body, or
+--      `200` and an empty array if the request asked for the rows back.
+--      So ask for the rows and count them; a status code will tell you
+--      it worked.
 --   b. As an **agent**, against a book it is not in: every select returns
 --      nothing and every write is refused. No error, no rows — what a
 --      policy that does not match looks like.
