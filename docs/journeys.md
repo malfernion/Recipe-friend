@@ -1148,6 +1148,58 @@ release.
     book's own order returned as though it were the answer; a list longer
     than the schema allowed is worth refusing rather than working
     through, because a change holds the book while it runs.
+12. **A recipe can be read at the size it is going to be cooked.** "What
+    do I need for eight" is one of the few questions worth asking a
+    recipe, and the arithmetic is the part a model is worst at and least
+    checkable on: an amount it worked out itself arrives with nothing
+    marking it as its own. So the tool that reads a recipe takes the
+    size, and the app scales it — the same multiplication the Portions
+    stepper does (J4.2), rendered in the same kitchen fractions (J4.7),
+    so half of "1½ tbsp" is "¾ tbsp" here too.
+
+    **The same two controls as everywhere else.** A recipe that says what
+    it serves is asked for in servings and one that does not by a
+    multiplier (J12.4). Asked in portions, a recipe with no servings has
+    nothing to divide by, so it comes back as written and named as
+    unscaled with the control that would work — never scaled by a guess,
+    which is a wrong answer with nothing marking it either. A multiplier
+    is refused on neither: half of this is meaningful for any recipe, and
+    unlike a meal in the plan nothing here is stored, so no control has
+    to match what a stepper will later step.
+
+    **What is scaled is said, and so is what is not.** Times and the
+    method are the recipe's at any size, and an amount written into a
+    step — "add 200 g of flour" — is the step's own text and is not
+    touched. That is a sentence in the answer rather than only in the
+    tool's description, because it is the one way a model can tell the
+    scaled numbers from the unscaled ones sitting beside them.
+
+    **The recipe's own `servings` stays what the household wrote**, with
+    the size asked for reported separately: one field meaning the stored
+    recipe to one caller and the question's answer to another is a recipe
+    answering about two different dinners.
+
+    **And no size is answered at that stops meaning anything.** A
+    hundred thousand portions is past every dinner and short of every
+    overflow, and past it the multiplication runs out of numbers: an
+    amount that overflows leaves this server as JSON `null`, which is
+    the shape of an ingredient that never had an amount — an answer
+    wrong in the one way nothing here may be wrong (J17.11). At the
+    other end, an amount is never reported as `0` and a size never as
+    "Serves 0": both are a statement that nothing is there about a
+    dinner somebody is going to eat.
+
+    **The text is the screen's and the number is the truth.** J4.8's
+    floor renders anything below 0.05 as "0", so a recipe taken far
+    enough down says "0 tsp" for something that is present — accepted on
+    screen because the recipe as written is one tap away, and a model has
+    no tap, so the number sits beside the text. It is rounded to the
+    thousandth: 200 ÷ 3 is 66.66666666666667, and that is float noise
+    dressed as a precision no recipe was ever written to.
+
+    **And it is a question.** Scaling on screen is display-only and the
+    saved recipe never changes (J4.3); asking for a size here writes
+    nothing, the same way.
 
 ---
 
@@ -1335,7 +1387,7 @@ those an agent is allowed to reach for — and one of them runs the real
 program in a real subprocess, because the rule that nothing but protocol
 messages reaches stdout cannot be checked any other way.
 
-**Sixteen of the 175 criteria have no test naming them** — J4.15,
+**Sixteen of the 176 criteria have no test naming them** — J4.15,
 J4.16, J4.19, J4.25, J5.10, J6.3, J10.4, J11.1 to J11.5, J12.12, J15.9,
 J15.11 and J16.5.
 

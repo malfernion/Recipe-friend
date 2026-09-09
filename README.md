@@ -105,7 +105,7 @@ dependencies, so `npm install` comes first if you want to run everything.
 
 Every test name quotes a criterion from [`docs/journeys.md`](docs/journeys.md),
 so a failure points at behaviour that was agreed rather than at an
-implementation detail. **159 of the 175 criteria have a test naming
+implementation detail. **160 of the 176 criteria have a test naming
 them**; the sixteen that do not are listed at the end of the journeys,
 along with the database, which is deliberately outside the net.
 
@@ -298,7 +298,7 @@ instruction — some of it arrived from a web page.
 | Tool | Takes | Gives back |
 | --- | --- | --- |
 | `list_recipes` | optional tags, sort | every recipe as a digest: name, tags, servings, total minutes, the ingredients it is about, when it was last planned |
-| `get_recipe` | up to 20 ids | those recipes in full — amounts as written, steps, times |
+| `get_recipe` | up to 20 ids, optionally a size | those recipes in full — ingredients, steps, times — at the servings or multiplier asked for, or as written |
 | `find_recipes` | `have`, a comma-separated list | what you can cook from those, best match first, saying which terms each answered |
 | `recipes_sharing_ingredients` | a recipe id, or a list of ingredients | what overlaps with it, and on what — for a week that buys one bunch of coriander |
 | `planning_history` | — | when each recipe was last planned and how often, least recently first |
@@ -325,7 +325,13 @@ itself from its read to its write, and anything arriving during one —
 question or change — waits for it.
 
 **Amounts come back as they were written**, because unit preferences
-belong to a person and an agent is not one.
+belong to a person and an agent is not one. A size is the one thing that
+does change them: `get_recipe` takes `servings` for a recipe that says
+what it serves, or `multiplier` for half or double of any recipe — the
+only control for one that does not — and scales the quantities with the
+app's own portion stepper, kitchen fractions and all. Times and the
+method are never scaled, an amount written into a step least of all, and
+the answer says so. Nothing is written either way.
 
 It is here rather than in a repository of its own because it is an API
 onto this app: it runs the app's own modules, so the shopping list it
