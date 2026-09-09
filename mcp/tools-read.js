@@ -78,13 +78,96 @@ const listRecipes = {
   },
 };
 
+/**
+ * What was asked for, if a size was asked for at all (J17.12).
+ *
+ * Two controls, because a recipe has exactly one of them: a recipe that
+ * says what it serves is scaled by portions and one that does not by a
+ * multiplier, which is the pair the plan works in (J12.4) and the pair
+ * the stepper on the recipe screen offers (J4.2).
+ *
+ * Neither is read raw. `servings: "six"` through an unchecked
+ * multiplication is `NaN` in every amount — a recipe answered at a size
+ * that does not exist, which is worse than the complaint it should have
+ * been (J17.11). Nothing is clamped either: the screen's stepper stops
+ * at ½ and 8 because a person holding a button needs it to stop, and a
+ * clamp here would answer about a dinner for eight when the question was
+ * about sixteen without saying so.
+ */
+function sizeAsked(args) {
+  const wantsServings = args.servings !== null && args.servings !== undefined && args.servings !== "";
+  const wantsMultiplier = args.multiplier !== null && args.multiplier !== undefined && args.multiplier !== "";
+  if (wantsServings && wantsMultiplier) {
+    return {
+      error:
+        "Give either servings or multiplier, not both. A recipe that says what it serves is " +
+        "scaled by servings; one that does not is scaled by multiplier.",
+    };
+  }
+  if (wantsServings) {
+    const n = Number(args.servings);
+    if (!Number.isFinite(n) || n < 1 || !Number.isInteger(n)) {
+      return { error: `servings must be a whole number of at least 1; got ${JSON.stringify(args.servings)}.` };
+    }
+    return { servings: n };
+  }
+  if (wantsMultiplier) {
+    const n = Number(args.multiplier);
+    if (!Number.isFinite(n) || n <= 0) {
+      return { error: `multiplier must be a number greater than 0; got ${JSON.stringify(args.multiplier)}.` };
+    }
+    return { multiplier: n };
+  }
+  return {};
+}
+
+/**
+ * The scale for one recipe, or null where the size asked for is not one
+ * this recipe can be asked in.
+ *
+ * A portion count on a recipe that never said what it serves has nothing
+ * to divide by, and a factor guessed from one is a wrong answer with no
+ * mark on it. It comes back unscaled and named, the way `add_to_plan`
+ * names a meal it could not scale.
+ *
+ * A multiplier is meaningful for every recipe — half of this, twice
+ * this — so it is not refused on a recipe that does say what it serves,
+ * unlike on the plan, where the control is stored on the meal and has to
+ * be the one the meal is stepped by. Here nothing is stored, and the
+ * servings it lands on are reported the way the screen reports them.
+ */
+function scaleFor(recipe, asked) {
+  const servings = Number(recipe.servings) > 0 ? Number(recipe.servings) : 0;
+  if (asked.multiplier) {
+    // The screen's own rounding for a scaled serving count (`× 1.5` of a
+    // recipe for 3 is "Serves 4.5"), so the two agree about the dinner.
+    return {
+      factor: asked.multiplier,
+      ...(servings ? { servings: Math.round(servings * asked.multiplier * 10) / 10 } : {}),
+    };
+  }
+  if (!servings) return null;
+  return { factor: asked.servings / servings, servings: asked.servings };
+}
+
+const SCALED_NOTE =
+  "Quantities are scaled; times and the method are not, and neither is an amount written into a " +
+  "step — a step says what the recipe says.";
+
+const PORTIONS_NOTE =
+  "These recipes do not say what they serve, so a portion count cannot be set on them and they " +
+  "are as written. Ask again with `multiplier` to scale them.";
+
 const getRecipe = {
   name: "get_recipe",
   title: "Read recipes in full",
   description:
     "One or more recipes in full: ingredients with amounts, steps, and times. Amounts are as " +
-    "they were written down, because unit preferences belong to a person and an agent is not " +
-    "one. Photos do not travel. " + HOUSEHOLD_DATA,
+    "they were written down unless you ask for a size — `servings` for a recipe that says what " +
+    "it serves, `multiplier` for one that does not — and then quantities are scaled the way the " +
+    "app's own portion stepper scales them, times and steps left alone. Units are always as " +
+    "written, because unit preferences belong to a person and an agent is not one. Nothing here " +
+    "changes the recipe. Photos do not travel. " + HOUSEHOLD_DATA,
   annotations: LOOKS,
   inputSchema: {
     type: "object",
@@ -95,6 +178,21 @@ const getRecipe = {
         minItems: 1,
         maxItems: 20,
         description: "Recipe ids from list_recipes or find_recipes.",
+      },
+      servings: {
+        type: "integer",
+        minimum: 1,
+        description:
+          "Read the recipes at this many servings. Only recipes that say what they serve can be " +
+          "asked this; the answer names any that cannot, and hands those back as written.",
+      },
+      multiplier: {
+        type: "number",
+        exclusiveMinimum: 0,
+        description:
+          "Or read them at this much of the recipe — 2 for double, 0.5 for half. This is the " +
+          "control for a recipe that does not say what it serves, and it works for any recipe. " +
+          "Give one of these two, not both.",
       },
     },
     required: ["ids"],
@@ -107,20 +205,43 @@ const getRecipe = {
     const refuse = tooMany(asked, 20, "recipes");
     if (refuse) return refuse;
 
+    const size = sizeAsked(args);
+    if (size.error) return { error: size.error };
+    const scaling = Boolean(size.servings || size.multiplier);
+
     const found = [];
     const missing = [];
+    const notScaled = [];
     for (const raw of asked) {
       // An id that is not a string cannot be looked up, and dropping it
       // would answer about fewer recipes than were asked about without
       // saying so.
       const id = typeof raw === "string" ? raw.trim() : "";
       const recipe = id && book.store.getById(id);
-      if (recipe) found.push(full(win, recipe, planned));
-      else missing.push(id || String(raw));
+      if (!recipe) {
+        missing.push(id || String(raw));
+        continue;
+      }
+      const scale = scaling ? scaleFor(recipe, size) : null;
+      if (scaling && !scale) notScaled.push(recipe.name);
+      found.push(full(win, recipe, planned, scale));
     }
     // A recipe can leave the book between one call and the next (J12.8),
     // so an id that is gone is an answer rather than a failure.
-    return missing.length ? { recipes: found, missing } : { recipes: found };
+    const out = { recipes: found };
+    if (missing.length) out.missing = missing;
+    // Said on every scaled answer rather than in the description alone:
+    // a step reading "add 200 g of flour" is unscaled beside ingredient
+    // lines that are not, and a model reading the two together has no
+    // other way to know which is which.
+    if (scaling && found.length) {
+      out.scalingNote = SCALED_NOTE;
+      if (notScaled.length) {
+        out.notScaled = notScaled;
+        out.scalingNote = `${SCALED_NOTE} ${PORTIONS_NOTE}`;
+      }
+    }
+    return out;
   },
 };
 

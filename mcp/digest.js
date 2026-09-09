@@ -62,6 +62,36 @@ function digest(win, recipe, planned) {
 }
 
 /**
+ * One ingredient line, as written or at the size that was asked for
+ * (J17.12).
+ *
+ * `text` only appears on a scaled line, and it is `RecipeScale`'s own
+ * rendering rather than a second opinion of it: kitchen fractions, so
+ * half of "1½ tbsp" is "¾ tbsp" and not "0.75 tbsp" (J4.7). It is the
+ * line the screen would show, minus the reader's unit preferences, which
+ * belong to a person and not to an agent (J8.2).
+ *
+ * `amount` stays a number, and is the truth where the text is not:
+ * J4.8's floor renders anything below 0.05 as "0", so a recipe taken far
+ * enough down says "0 tsp" for something that is present — accepted on
+ * screen because the recipe as written is one tap away, and worth
+ * keeping the number beside here because a model has no tap.
+ *
+ * Rounded to the thousandth, because 200 ÷ 3 is 66.66666666666667 and
+ * that is float noise wearing the clothes of a precision no recipe was
+ * ever written to.
+ */
+function ingredientLine(win, ing, scale) {
+  const line = { amount: ing.amount, unit: ing.unit, item: ing.item };
+  if (!scale) return line;
+  const amount =
+    ing.amount === null || ing.amount === undefined
+      ? ing.amount
+      : Math.round(ing.amount * scale.factor * 1000) / 1000;
+  return { ...line, amount, text: win.RecipeScale.ingredientText(ing, scale.factor) };
+}
+
+/**
  * A recipe in full, minus the pictures an agent has no business with
  * (J16.10).
  *
@@ -71,8 +101,16 @@ function digest(win, recipe, planned) {
  * so nothing refuses it, but it is a megabyte of base64 that would eat
  * the conversation and tell nobody anything. A linked picture is a url
  * and travels, which is the line J6.2 already draws for a share link.
+ *
+ * `scale` is null for the recipe as it was written down, or
+ * `{ factor, servings? }` for the size somebody asked to cook it at
+ * (J17.12). It reaches the ingredient lines and nothing else: times and
+ * the method are the recipe's whatever size it is cooked at, and
+ * `servings` below stays the number the household wrote, with `scaledTo`
+ * saying what this answer is at. A field that changed meaning under a
+ * caller would be one recipe answering about two different dinners.
  */
-function full(win, recipe, planned) {
+function full(win, recipe, planned, scale = null) {
   // Three cases, and the middle one is the trap: a linked picture
   // travels, a stored or pasted one becomes a note, and a recipe with no
   // picture at all says nothing rather than saying it was withheld.
@@ -84,11 +122,8 @@ function full(win, recipe, planned) {
     description: recipe.description,
     prepMinutes: recipe.prepMinutes,
     cookMinutes: recipe.cookMinutes,
-    ingredientLines: (recipe.ingredients || []).map((ing) => ({
-      amount: ing.amount,
-      unit: ing.unit,
-      item: ing.item,
-    })),
+    ingredientLines: (recipe.ingredients || []).map((ing) => ingredientLine(win, ing, scale)),
+    ...(scale ? { scaledTo: scale } : {}),
     steps: recipe.steps,
     image,
     favorite: recipe.favorite,
@@ -128,4 +163,4 @@ function mealAmount(meal) {
   };
 }
 
-module.exports = { digest, full, ingredientKeys, minutesFor, mealsInBook, mealAmount, NO_PHOTO };
+module.exports = { digest, full, ingredientLine, ingredientKeys, minutesFor, mealsInBook, mealAmount, NO_PHOTO };
