@@ -87,6 +87,27 @@ function toMultiplier(win, plan, mealId, recipe, target, now) {
   return next;
 }
 
+/**
+ * A stamp the plan being replaced cannot tie with.
+ *
+ * `newerBody` decides between two copies of one plan on `updatedAt`, and
+ * breaks a tie on a fingerprint — a string compare of sorted meal ids,
+ * which the plan holding *more* meals loses about half the time. Two
+ * tool calls in the same millisecond are therefore a coin flip on
+ * whether the second one survives, and when it loses it is reported as
+ * somebody else's write from another device, which nobody made.
+ *
+ * The app has the same hazard and the same answer: `RecipePlan.settle`
+ * stamps one millisecond past the value it replaces so "the same hand
+ * cannot tie with itself", and `generationAfter` does it for a plan's
+ * id. Taps are hundreds of milliseconds apart so the app rarely meets
+ * it; a program is a much faster hand, and this server pushes on every
+ * call.
+ */
+function stampAfter(plan) {
+  return Math.max(Date.now(), (Number(plan && plan.updatedAt) || 0) + 1);
+}
+
 const addToPlan = {
   name: "add_to_plan",
   title: "Put meals in the plan",
@@ -141,8 +162,9 @@ const addToPlan = {
       // (J17.9) — so the stamp goes here, after it. Stamped before the
       // pull it can be older than a plan body that arrived during it, and
       // then `newerBody` hands the whole plan to the other side and this
-      // edit is dropped on the way out.
-      const now = Date.now();
+      // edit is dropped on the way out. And forced past the plan it
+      // replaces, so this hand cannot tie with itself.
+      const now = stampAfter(book.plan);
       const refuseIfFinished = finished(book);
       if (refuseIfFinished) return refuseIfFinished;
 
@@ -156,6 +178,7 @@ const addToPlan = {
       const missing = [];
       const notScaled = [];
       const wrongControl = [];
+      const clamped = [];
 
       for (const one of asked) {
         const meal = one && typeof one === "object" ? one : { recipeId: one };
@@ -171,13 +194,34 @@ const addToPlan = {
         // (J12.4). Asking with the wrong one is worth a sentence rather
         // than a silently unscaled meal.
         const byPortions = Number(added.portions) > 0;
+        let asked = null;
         if (meal.portions !== undefined && meal.portions !== null) {
-          if (byPortions) plan = toPortions(win, plan, added.id, recipe, asCount(meal.portions, 0), now);
-          else notScaled.push(added.name);
+          if (byPortions) {
+            asked = meal.portions;
+            plan = toPortions(win, plan, added.id, recipe, asCount(asked, 0), now);
+          } else notScaled.push(added.name);
         }
         if (meal.multiplier !== undefined && meal.multiplier !== null) {
           if (byPortions) wrongControl.push(added.name);
-          else plan = toMultiplier(win, plan, added.id, recipe, meal.multiplier, now);
+          else {
+            asked = meal.multiplier;
+            // To the nearest half and inside the bounds the app steps
+            // between, so an out-of-range ask lands somewhere real
+            // rather than nowhere.
+            const half = Math.min(8, Math.max(0.5, Math.round(Number(asked) * 2) / 2));
+            plan = toMultiplier(win, plan, added.id, recipe, half, now);
+          }
+        }
+        // The app's own steps floor a multiplier at 0.5 and cap it at 8,
+        // and a portion count cannot climb for ever either. Landing
+        // somewhere other than what was asked for is worth a sentence:
+        // the schema advertises those bounds and nothing enforces them.
+        if (asked !== null) {
+          const settled = plan.meals.find((m) => m.id === added.id);
+          const landed = Number(settled.portions) > 0 ? settled.portions : settled.multiplier;
+          if (Number.isFinite(landed) && landed !== Number(asked)) {
+            clamped.push(`${added.name}: asked for ${asked}, went in at ${landed}`);
+          }
         }
         // The name travels with the id: a meal dropped on the way out is
         // in neither the plan we started from nor the one we ended with,
@@ -192,6 +236,9 @@ const addToPlan = {
         done.scalingNote =
           "These recipes do not say what they serve, so a portion count cannot be set on them " +
           "— ask again with `multiplier` (in halves) to say how many batches.";
+      }
+      if (clamped.length) {
+        done.clamped = clamped;
       }
       if (wrongControl.length) {
         done.notScaled = [...(done.notScaled || []), ...wrongControl];
@@ -230,7 +277,7 @@ const removeFromPlan = {
   async run(book, args) {
     return book.write(async () => {
       const win = book.win;
-      const now = Date.now();
+      const now = stampAfter(book.plan);
       const refuseIfFinished = finished(book);
       if (refuseIfFinished) return refuseIfFinished;
 

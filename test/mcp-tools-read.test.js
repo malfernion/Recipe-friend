@@ -336,6 +336,13 @@ test("J13.13 · a settled line reports the amount that was settled, not what is 
   // with no amount is not what the screen shows.
   assert.deepEqual(out.shoppingList.alreadyHave, ["2 onions"]);
   assert.ok(!out.shoppingList.toBuy.some((line) => line.includes("onion")));
+
+  // The other half of the same pair: a line ticked into the basket says
+  // the amount that went in, not the nothing that is left of it.
+  const lentils = built.lines.find((l) => l.text.includes("lentils"));
+  book.planStore.setPlan(win.RecipePlan.settle(book.plan, lentils.key, "got", 200, Date.now()));
+  const after = await by("get_plan").run(book);
+  assert.deepEqual(after.shoppingList.inBasket, ["200 g lentils"]);
 });
 
 test("a recipe that says only how long it bakes still says how long it takes", async () => {

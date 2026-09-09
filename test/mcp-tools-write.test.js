@@ -321,6 +321,68 @@ test("J12.5 · a batch cook comes back the size it went out at", async () => {
   assert.deepEqual((await call(by("get_plan"), {})).shoppingList.toBuy, beforeList);
 });
 
+test("J12.11 · two changes in the same millisecond both survive", async () => {
+  const { book, call, idOf } = await aBook();
+
+  // `newerBody` breaks a tie on `updatedAt` with a string compare of
+  // sorted meal ids, which the plan holding *more* meals loses about
+  // half the time — so two calls landing in one millisecond were a coin
+  // flip on whether the second one existed, reported as somebody else's
+  // write from a device nobody was using. The app has the same hazard
+  // and the same answer: stamp one past what you are replacing, so the
+  // same hand cannot tie with itself.
+  const first = await call(ADD, { meals: [{ recipeId: idOf("Chicken pie") }] });
+  const second = await call(ADD, { meals: [{ recipeId: idOf("Lentil soup") }] });
+
+  assert.deepEqual(first.added.map((m) => m.name), ["Chicken pie"]);
+  assert.deepEqual(second.added.map((m) => m.name), ["Lentil soup"]);
+  assert.ok(!second.dropped, "nothing was dropped, so nothing should say it was");
+  assert.deepEqual(
+    second.plan.meals.map((m) => m.name).sort(),
+    ["Chicken pie", "Lentil soup"]
+  );
+});
+
+test("J12.5 · a meal planned by portions also comes back the size it went out at", async () => {
+  const { book, call, idOf } = await aBook();
+  const added = await call(ADD, { meals: [{ recipeId: idOf("Chicken pie"), portions: 7 }] });
+  const listed = (await call(by("get_plan"), {})).shoppingList.toBuy;
+
+  const removed = await call(REMOVE, { mealIds: [added.added[0].mealId] });
+
+  // The other branch of `was` — the one J12.5's sibling test does not
+  // reach, where the amount is a portion count rather than a multiplier.
+  assert.deepEqual(removed.removed[0].was, { portions: 7 });
+
+  const back = await call(ADD, { meals: [{ recipeId: idOf("Chicken pie"), ...removed.removed[0].was }] });
+  assert.equal(back.added[0].portions, 7);
+  assert.deepEqual((await call(by("get_plan"), {})).shoppingList.toBuy, listed);
+});
+
+test("an amount the app cannot step to says where it landed instead", async () => {
+  const { book, call } = await aBook();
+  const batch = book.win.RecipeStore.sanitizeRecipe({
+    name: "Batch chilli",
+    ingredients: [{ amount: 2, unit: "kg", item: "beef mince" }],
+    steps: ["Cook it."],
+  });
+  book.store.add(batch);
+  const filed = book.recipes.find((r) => r.name === "Batch chilli");
+
+  // The app steps multipliers in halves between 0.5 and 8, and the
+  // schema says so without anything enforcing it.
+  const high = await call(ADD, { meals: [{ recipeId: filed.id, multiplier: 12 }] });
+  assert.equal(high.added[0].multiplier, 8);
+  assert.deepEqual(high.clamped, ["Batch chilli: asked for 12, went in at 8"]);
+
+  const odd = await call(ADD, { meals: [{ recipeId: filed.id, multiplier: 3.7 }] });
+  assert.equal(odd.added[0].multiplier, 3.5);
+  assert.match(odd.clamped[0], /asked for 3.7, went in at 3.5/);
+
+  const fine = await call(ADD, { meals: [{ recipeId: filed.id, multiplier: 2 }] });
+  assert.ok(!fine.clamped, "an amount it could honour says nothing");
+});
+
 test("J12.4 · asking with the wrong one of the two controls is a sentence, not a shrug", async () => {
   const { book, call, idOf } = await aBook();
   const batch = book.win.RecipeStore.sanitizeRecipe({

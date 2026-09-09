@@ -298,6 +298,22 @@ test("a book that cannot be reached says so rather than answering from nothing",
   await assert.rejects(() => book.refresh(), /Could not reach the book/);
 });
 
+test("J17.5 · a book that cannot be opened at all says the same thing as one that cannot be read", async () => {
+  // The roster read is the one network call between the exchange and
+  // the first sync, and both of those say "try again in a moment". Left
+  // bare it handed the driver's own words to the model instead.
+  const api = fakeApi();
+  api.listBooks = async () => {
+    throw new Error("fetch failed");
+  };
+
+  await assert.rejects(() => openBook(session(), { api }), (err) => {
+    assert.match(err.message, /Could not reach the book/);
+    assert.match(err.message, /Ask again in a moment/);
+    return true;
+  });
+});
+
 test("J17.5 · an agent removed while the server is running is told so, not blamed on the network", async () => {
   const api = fakeApi();
   const book = await openBook(session(), { api });

@@ -1072,6 +1072,17 @@ release.
    against a plan it never got into: reported as landed when it never
    went, or blamed on another device when there was no other device.
 
+   **A change is stamped past the one it replaces.** Two copies of one
+   plan are told apart by when each was last touched, and a tie is
+   broken on a fingerprint that the copy holding *more* meals loses as
+   often as not — so two changes landing in the same millisecond were a
+   coin flip on whether the second one existed, reported as somebody
+   else's write from a device nobody was using. The app has the same
+   hazard where a settlement and the tap retracting it can share a
+   millisecond, and the same answer: stamp one past the value being
+   replaced, so the same hand cannot tie with itself. Taps are far apart
+   and rarely meet it; a program is a much faster hand.
+
    **Both controls, or the promise is not kept.** A recipe that says what
    it serves is planned by portions and one that does not by a
    multiplier (J12.4), and the screen has a control for each. A server
