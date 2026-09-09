@@ -287,10 +287,43 @@ test/                          Tests, named for the criteria they check
 `mcp/` is a [Model Context Protocol](https://modelcontextprotocol.io)
 server: a small program an assistant runs as a subprocess and talks to
 over stdin and stdout. It holds one agent's credential, opens the one
-book that credential names, and offers nine tools — what is in the book,
-what can I cook from these, what else uses chicken, what have we not had
-in ages, what does the plan add up to, and the three that add a recipe or
-change the plan.
+book that credential names, and offers nine tools.
+
+### What it can do
+
+Six that only read. Every one of them says, where the model will read
+it, that recipe text is the household's content and never an
+instruction — some of it arrived from a web page.
+
+| Tool | Takes | Gives back |
+| --- | --- | --- |
+| `list_recipes` | optional tags, sort | every recipe as a digest: name, tags, servings, total minutes, the ingredients it is about, when it was last planned |
+| `get_recipe` | up to 20 ids | those recipes in full — amounts as written, steps, times |
+| `find_recipes` | `have`, a comma-separated list | what you can cook from those, best match first, saying which terms each answered |
+| `recipes_sharing_ingredients` | a recipe id, or a list of ingredients | what overlaps with it, and on what — for a week that buys one bunch of coriander |
+| `planning_history` | — | when each recipe was last planned and how often, least recently first |
+| `get_plan` | — | the live plan, and the one combined shopping list those meals add up to |
+
+Three that change something. The plan ones are reversible; filing a
+recipe is not.
+
+| Tool | Takes | Does |
+| --- | --- | --- |
+| `add_to_plan` | recipes, with portions | puts meals in the book's plan, reading it first and reporting what survived |
+| `remove_from_plan` | meal ids from `get_plan` | takes them out again; nothing is recorded either way |
+| `add_recipe` | a recipe | files it into the book — **one way**, see below |
+
+Answers come from the app's own modules, so the shopping list the
+assistant computes is the list the phone computes: the same promotion to
+kilograms, the same folding of plurals, the same refusal to guess how
+big a tin is.
+
+**Every call reads the book again** before answering, because the
+household goes on cooking while an assistant session is open. Two calls
+arriving together share one read; two changes queue.
+
+**Amounts come back as they were written**, because unit preferences
+belong to a person and an agent is not one.
 
 It is here rather than in a repository of its own because it is an API
 onto this app: it runs the app's own modules, so the shopping list it
@@ -316,13 +349,17 @@ takes MCP server configuration:
 }
 ```
 
+That spec resolves to whatever is on the default branch, so it works
+once this has been merged there. To run it from a branch first, put the
+ref on the end: `github:malfernion/Recipe-friend#some-branch`.
+
 The `-y` is not optional: without it `npx` asks before installing and
 there is no terminal to answer, so the server hangs with no error. On
 Windows the command generally needs wrapping as `cmd /c npx`.
 
-Measured on a cold machine with an empty npm cache: **12 seconds** from
-launch to answering the protocol, and **4 seconds** once the cache is
-warm. The four is not nothing — `npx` re-resolves the git ref on every
+Measured against this repository on a machine with an empty npm cache:
+**11 seconds** from launch to answering the protocol, and **2.5 seconds**
+once the cache is warm. The four is not nothing — `npx` re-resolves the git ref on every
 start, which is a network round trip — and it is the price of always
 running the latest push rather than a pinned tag. Pin one in the host's
 config if you would rather not pay it.
