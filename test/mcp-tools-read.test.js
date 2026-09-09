@@ -269,21 +269,7 @@ test("J12.8 · a recipe that has left the book is an answer, not a failure", asy
 });
 
 test("J17.8 · a digest names ingredients the way the household wrote them", async () => {
-  const { book } = await aBook({
-    extra: [
-      {
-        name: "Risotto",
-        servings: 2,
-        ingredients: [
-          { amount: 300, unit: "g", item: "rice" },
-          { amount: 100, unit: "g", item: "parmesan cheese" },
-          { amount: 150, unit: "ml", item: "white wine" },
-          { amount: 2, unit: "", item: "apples" },
-        ],
-        steps: ["Stir it."],
-      },
-    ],
-  });
+  const { book } = await aBook({ extra: STEMMED });
 
   const out = await by("list_recipes").run(book, {});
   const risotto = out.recipes.find((r) => r.name === "Risotto");
@@ -291,14 +277,71 @@ test("J17.8 · a digest names ingredients the way the household wrote them", asy
   // The stem is the right thing to match on and the wrong thing to
   // print: "ric", "chees", "win", "appl" is what a model would read back
   // to the household.
-  assert.deepEqual(risotto.ingredients, ["rice", "parmesan cheese", "white wine", "apples"]);
+  assert.deepEqual(risotto.ingredients, ["rice", "cheese", "wine"]);
 });
 
-test("J17.8 · what two recipes share is named the same way", async () => {
-  const { book, idOf } = await aBook();
-  const out = await by("recipes_sharing_ingredients").run(book, { recipeId: idOf("Roast chicken") });
+/**
+ * Words whose stems are not themselves — "rice" stems to "ric",
+ * "cheese" to "chees", "wine" to "win". Without one of these, every
+ * assertion that a name is a name passes just as well when it is a stem.
+ */
+const STEMMED = [
+  {
+    name: "Risotto",
+    servings: 2,
+    ingredients: [
+      { amount: 300, unit: "g", item: "rice" },
+      { amount: 100, unit: "g", item: "cheese" },
+      { amount: 150, unit: "ml", item: "wine" },
+    ],
+    steps: ["Stir it."],
+  },
+  {
+    name: "Cheese toastie",
+    servings: 1,
+    ingredients: [
+      { amount: 2, unit: "", item: "bread" },
+      { amount: 80, unit: "g", item: "cheese" },
+    ],
+    steps: ["Grill it."],
+  },
+];
 
-  assert.deepEqual(out.recipes[0].shared, ["chicken"], "not the stem it matched on");
+test("J17.8 · what two recipes share is named the same way", async () => {
+  const { book, idOf } = await aBook({ extra: STEMMED });
+  const out = await by("recipes_sharing_ingredients").run(book, { recipeId: idOf("Risotto") });
+
+  // "cheese" stems to "chees", so this assertion only means something
+  // because the word and its key are different.
+  assert.deepEqual(out.recipes.map((r) => r.name), ["Cheese toastie"]);
+  assert.deepEqual(out.recipes[0].shared, ["cheese"], "not the stem it matched on");
+});
+
+test("J17.8 · and the question is echoed back in the words it was asked in", async () => {
+  const { book } = await aBook({ extra: STEMMED });
+
+  const out = await by("recipes_sharing_ingredients").run(book, {
+    ingredients: ["rice", "cheese", "wine"],
+  });
+
+  // One reply saying `of: ["chees"]` beside `shared: ["cheese"]` is an
+  // answer contradicting itself.
+  assert.deepEqual(out.of, ["rice", "cheese", "wine"]);
+  assert.ok(out.recipes.every((r) => r.shared.every((word) => out.of.includes(word))));
+});
+
+test("J15.6 · the orders this server offers are the orders the app has", async () => {
+  const { win } = await aBook();
+
+  // `SORTS` in mcp/tools-read.js is a hand-kept copy: it fills the tool
+  // schema and the refusal message. Adding a sort to js/search.js and
+  // not here would have the server refuse an order the app offers, and
+  // nothing else would notice.
+  const appOffers = win.RecipeSearch.SORTS.map((sort) => sort.id).sort();
+  const schema = by("list_recipes").inputSchema.properties.sort.enum.slice().sort();
+
+  assert.deepEqual(schema, appOffers);
+  assert.deepEqual(by("find_recipes").inputSchema.properties.sort.enum.slice().sort(), appOffers);
 });
 
 test("J15.6 · an order nobody offers is refused, not answered in book order", async () => {

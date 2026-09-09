@@ -210,15 +210,24 @@ const recipesSharingIngredients = {
     const stem = (word) => win.RecipeShopList.stemWord(String(word || "").trim());
     const planned = book.planStore.plannedIndex();
 
+    // Stem to the word it came from, both ways round: matched on the
+    // stem, reported as what somebody actually wrote (J17.8). Held as a
+    // map rather than a set of stems because `of` echoes the question
+    // back, and echoing "chees" beside a `shared` of "cheese" is one
+    // answer contradicting itself.
     let wanted;
     let source = null;
     if (args.recipeId) {
       const recipe = book.store.getById(args.recipeId);
       if (!recipe) return { error: `No recipe with id ${args.recipeId} is in this book.` };
       source = recipe;
-      wanted = new Set(ingredientKeys(win, recipe).keys());
+      wanted = ingredientKeys(win, recipe);
     } else {
-      wanted = new Set(asStrings(args.ingredients).map(stem).filter(Boolean));
+      wanted = new Map();
+      for (const written of asStrings(args.ingredients)) {
+        const key = stem(written);
+        if (key && !wanted.has(key)) wanted.set(key, written);
+      }
     }
     if (wanted.size === 0) {
       return { error: "Give either a recipeId or a list of ingredients to overlap with." };
@@ -237,7 +246,11 @@ const recipesSharingIngredients = {
       if (shared.length >= minimum) overlaps.push({ ...digest(win, recipe, planned), shared });
     }
     overlaps.sort((a, b) => b.shared.length - a.shared.length || a.name.localeCompare(b.name));
-    return { of: source ? source.name : [...wanted], count: overlaps.length, recipes: overlaps };
+    return {
+      of: source ? source.name : [...wanted.values()],
+      count: overlaps.length,
+      recipes: overlaps,
+    };
   },
 };
 
