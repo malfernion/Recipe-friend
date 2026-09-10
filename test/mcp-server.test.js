@@ -65,11 +65,54 @@ test("a host is offered nine tools, each saying what kind of thing it is", async
   for (const tool of tools) {
     assert.ok(tool.description, `${tool.name} says what it is for`);
     assert.equal(tool.inputSchema.type, "object", tool.name);
-    assert.ok(tool.annotations.title, `${tool.name} has something to call it`);
+    assert.ok(tool.title, `${tool.name} has something to call it`);
+    assert.ok(!tool.annotations.title, `${tool.name} does not send its title twice`);
   }
   const filing = tools.find((t) => t.name === "add_recipe");
   assert.equal(filing.annotations.destructiveHint, true, "the one-way tool tells the host so");
   assert.equal(tools.find((t) => t.name === "get_plan").annotations.readOnlyHint, true);
+});
+
+/**
+ * What a host is charged for saying hello.
+ *
+ * Every session pays for the whole tool list before it asks anything, so
+ * the number is a budget and this is the guard on it. It is deliberately
+ * loose — a real new tool should not have to argue with a test — and it
+ * fails on the thing that actually happens: descriptions growing back
+ * into essays about why the server is built the way it is.
+ */
+const LISTING_BUDGET = 9000;
+
+test("J17.13 · the tool list is what a caller needs, inside a budget every session pays", async () => {
+  const client = await connect();
+
+  const { tools } = await client.listTools();
+  const listing = JSON.stringify(tools);
+
+  assert.ok(
+    listing.length <= LISTING_BUDGET,
+    `the tool list is ${listing.length} characters, over its ${LISTING_BUDGET} budget`
+  );
+
+  for (const tool of tools) {
+    // What comes back, so a caller does not have to spend a call finding
+    // out. `add_recipe` says it in its own words rather than by the
+    // formula, being the one tool whose answer is about what it did.
+    assert.match(tool.description, /[Gg]ives back/, tool.name);
+    // The reasoning belongs in the code and the journeys, both of which
+    // are free to read. These are the phrases that were shipping to
+    // every client before this was written down.
+    for (const essay of [
+      /because unit preferences belong to a person/,
+      /the app's own portion stepper/,
+      /plurals folded together/,
+      /somebody may be editing it from a phone/,
+      /the honest answer/,
+    ]) {
+      assert.ok(!essay.test(tool.description), `${tool.name} is explaining itself: ${essay}`);
+    }
+  }
 });
 
 test("J17.4 · listing the tools opens no book, so a host may spawn this and think again", async () => {

@@ -105,7 +105,7 @@ dependencies, so `npm install` comes first if you want to run everything.
 
 Every test name quotes a criterion from [`docs/journeys.md`](docs/journeys.md),
 so a failure points at behaviour that was agreed rather than at an
-implementation detail. **160 of the 176 criteria have a test naming
+implementation detail. **161 of the 177 criteria have a test naming
 them**; the sixteen that do not are listed at the end of the journeys,
 along with the database, which is deliberately outside the net.
 

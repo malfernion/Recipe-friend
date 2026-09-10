@@ -1200,6 +1200,27 @@ release.
     **And it is a question.** Scaling on screen is display-only and the
     saved recipe never changes (J4.3); asking for a size here writes
     nothing, the same way.
+13. **A tool description says what the tool does, what it takes and what
+    comes back — never why it was built that way.** The tool list is read
+    at the start of every session and charged for whether or not a single
+    tool is called, so it is the one piece of writing here with a running
+    cost. Reasoning is free to read in the code and in these journeys,
+    and a caller can act on none of it: "because unit preferences belong
+    to a person and an agent is not one" told a model nothing it could
+    do differently, and neither did the shopping list's plurals or the
+    portion stepper being the thing that multiplies.
+
+    **What comes back is worth the words.** Every tool names the fields
+    in its answer, because the alternative is a call spent finding out —
+    which costs more than the sentence saves. The same reasoning trims
+    the other way: a rule the server enforces with a clear sentence of
+    its own does not also need saying in the schema, since the schema is
+    paid for every session and the sentence only when it is needed.
+
+    **The guard on this is a budget, not a style.** A test measures the
+    whole listing and fails when it grows past what nine tools can
+    justify, and names the phrases that were shipping before this was
+    written down — the point being that descriptions grow back.
 
 ---
 
@@ -1387,7 +1408,7 @@ those an agent is allowed to reach for — and one of them runs the real
 program in a real subprocess, because the rule that nothing but protocol
 messages reaches stdout cannot be checked any other way.
 
-**Sixteen of the 176 criteria have no test naming them** — J4.15,
+**Sixteen of the 177 criteria have no test naming them** — J4.15,
 J4.16, J4.19, J4.25, J5.10, J6.3, J10.4, J11.1 to J11.5, J12.12, J15.9,
 J15.11 and J16.5.
 
