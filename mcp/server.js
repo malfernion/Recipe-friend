@@ -61,13 +61,18 @@ function makeServer({ session, version = "0.0.0", openBook = require("./book.js"
     return opening;
   }
 
+  // `title` once, at the top level, where the current specification puts
+  // it. It was also being repeated inside `annotations`, which is where
+  // clients older than the 2025-06-18 revision looked — nine titles sent
+  // twice, in a payload every session pays for before a single question
+  // is asked (J17.13).
   server.setRequestHandler(ListToolsRequestSchema, async () => ({
     tools: TOOLS.map((tool) => ({
       name: tool.name,
       title: tool.title,
       description: tool.description,
       inputSchema: tool.inputSchema,
-      annotations: { title: tool.title, ...tool.annotations },
+      annotations: tool.annotations,
     })),
   }));
 
