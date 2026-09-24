@@ -1524,7 +1524,7 @@ test("J13.16 · a line stamped far in the future off the server can still be cha
     meals: [],
     items: [{ id, text: "zzz", textAt: 1e20, addedAt: 1, state: "got", at: 1e20 }],
   });
-  assert.ok(plan.items[0].textAt < Date.now() + 2 * 24 * 60 * 60 * 1000, "no stamp is believed past a day ahead");
+  assert.ok(plan.items[0].textAt + 1 > plan.items[0].textAt, "a stamp is kept where one past it can still be counted");
   const edited = d.plan.editItem(plan, id, "milk", Date.now());
   assert.equal(d.plan.mergePlans(plan, edited).items[0].text, "milk");
   const unticked = d.plan.setItemState(plan, id, "", Date.now());
@@ -1543,4 +1543,29 @@ test("J13.16 · a change only to when the words were changed is still pushed", a
   d.planStore.setPlan(plan);
   await d.sync.syncNow();
   assert.equal(cloud.db.live_plans[0].data.items[0].textAt, 3000);
+});
+
+test("J13.16 · a phone whose clock is days slow still has its edit and its tick count", async () => {
+  const cloud = fakeCloud();
+  const a = device(cloud);
+  const b = device(cloud);
+  const DAY = 24 * 60 * 60 * 1000;
+  // A's clock is right; its line carries stamps two days ahead of B's.
+  const ahead = Date.now() + 2 * DAY;
+  a.planStore.setPlan(a.plan.addItem(a.planStore.plan, "7 eggs", ahead));
+  const id = a.planStore.plan.items[0].id;
+  a.planStore.setPlan(a.plan.setItemState(a.planStore.plan, id, "got", ahead));
+  await a.sync.syncNow();
+  await b.sync.syncNow();
+
+  // B, two days slow, edits and unticks by its own clock.
+  let plan = b.plan.editItem(b.planStore.plan, id, "8 eggs", Date.now());
+  plan = b.plan.setItemState(plan, id, "", Date.now());
+  b.planStore.setPlan(plan);
+  await b.sync.syncNow();
+  await a.sync.syncNow();
+
+  for (const d of [a, b]) {
+    assert.deepEqual(d.planStore.plan.items.map((i) => [i.text, i.state]), [["8 eggs", ""]]);
+  }
 });

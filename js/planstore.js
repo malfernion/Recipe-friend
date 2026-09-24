@@ -148,16 +148,20 @@
   }
 
   /**
-   * A line's stamp, from a row another member wrote. A stamp far in the
-   * future outranks every later edit and tick for good, and past 2^53 the
-   * one-millisecond-past a change is stamped with (plan.js) cannot even
-   * be added — so a line could never be changed again. A day ahead of
-   * this device's clock is as far as any honest clock is wrong.
+   * A line's stamp, from a row another member wrote. Past 2^53 the
+   * one-millisecond-past a change is stamped with (plan.js) cannot be
+   * added at all, so a line stamped there could never be changed again.
+   * The cap is set at the year 2200 — absurd for any clock, and nowhere
+   * near 2^53 — and not at "a day past this device's clock": a phone
+   * whose clock is two days slow would then hold every other phone's
+   * stamps lower than they are, and its own edits and ticks, stamped
+   * past those, would lose to them everywhere.
    */
+  const MAX_STAMP = Date.UTC(2200, 0, 1);
   function stamp(value) {
     const at = moment(value);
     if (at === null) return null;
-    return Math.min(at, Date.now() + 24 * 60 * 60 * 1000);
+    return Math.min(at, MAX_STAMP);
   }
 
   function positive(value, max) {
