@@ -89,9 +89,18 @@
     if (!since) return restored;
     const meals = new Set(restored.meals.map((m) => m.id));
     const items = new Set((restored.items || []).map((i) => i.id));
+    // Per line and per field, the later word wins, as it does in any
+    // merge (J12.11): "we have four onions" said after Done is not undone
+    // by "we have one" said before it.
     const settled = Object.assign(Object.create(null), restored.settled);
     for (const [key, entry] of Object.entries(since.settled || {})) {
-      if (!(key in settled)) settled[key] = entry;
+      const mine = settled[key] || {};
+      const next = { ...mine };
+      for (const field of ["have", "got"]) {
+        const theirs = entry && entry[field];
+        if (theirs && (!mine[field] || Number(theirs.at) > Number(mine[field].at))) next[field] = theirs;
+      }
+      settled[key] = next;
     }
     return {
       ...restored,
@@ -586,8 +595,23 @@
       // — so a Done pressed during the sync stays done. A plan recorded
       // here in the meantime is kept, and owed, rather than dropped from
       // the archive by a list that was read before it existed.
-      if (this.planStore.plan !== startedWith) {
-        plan = global.RecipePlan.mergePlans(this.planStore.plan, plan);
+      //
+      //
+      // One case needs more than that. A phone that has never seen this
+      // book's plan starts the sync holding the placeholder, stamped zero
+      // so that it yields (planstore.js). A first line added while the
+      // sync runs dates the placeholder "now", and as a generation it
+      // would then replace the book's plan outright. It is not a new
+      // week; it is an edit to the one the book is on, so it is replayed
+      // onto the result as a copy of that plan — meals by their stamp, the
+      // list line by line. Only then: an edit to a week that a newer one
+      // replaced during the sync belongs to the week that is over, and the
+      // generation rule is what keeps it there.
+      const now = this.planStore.plan;
+      if (now !== startedWith) {
+        const firstEdit = !startedWith.createdAt && now.id === startedWith.id && plan;
+        const edit = firstEdit ? { ...now, id: plan.id, createdAt: plan.createdAt } : now;
+        plan = global.RecipePlan.mergePlans(edit, plan);
       }
       for (const mine of this.planStore.archive) {
         if (!archivedBefore.has(mine.id) && !here.has(mine.id)) here.set(mine.id, mine);

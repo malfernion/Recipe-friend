@@ -1406,3 +1406,67 @@ test("J14.2 · Undo of a recorded Done keeps a line added since, too", async () 
   assert.deepEqual(restored.meals.map((m) => m.name), ["Bolognese"]);
   assert.deepEqual(d.plan.liveItems(d.planStore.plan).map((i) => i.text), ["eggs"]);
 });
+
+test("J12.13 · a new phone's first line, added while its first sync runs, does not replace the book's plan", async () => {
+  const cloud = fakeCloud();
+  const recipe = shareRecipe(cloud);
+  const a = device(cloud);
+  a.planStore.setPlan(a.plan.addMeal(a.planStore.plan, recipe, 1000));
+  await a.sync.syncNow();
+
+  // B has never seen this book's plan: it holds the placeholder.
+  const b = device(cloud);
+  const hold = stall(b);
+  const first = b.sync.syncNow();
+  await hold.arrived;
+  b.planStore.setPlan(b.plan.addItem(b.planStore.plan, "milk", Date.now()));
+  hold.release();
+  await first;
+  await b.sync.syncNow();
+  await a.sync.syncNow();
+
+  for (const d of [a, b]) {
+    assert.deepEqual(d.planStore.plan.meals.map((m) => m.name), ["Bolognese"], "the household's week is still there");
+    assert.deepEqual(d.plan.liveItems(d.planStore.plan).map((i) => i.text), ["milk"], "and so is the milk");
+  }
+  assert.deepEqual(cloud.db.live_plans[0].data.meals.map((m) => m.name), ["Bolognese"]);
+});
+
+test("J14.2 · Undo keeps the later word on a line, not the older one", async () => {
+  const cloud = fakeCloud();
+  const recipe = shareRecipe(cloud);
+  const d = device(cloud);
+  let plan = d.plan.addMeal(d.planStore.plan, recipe, 1000);
+  plan = d.plan.settle(plan, "onion|unit:", "have", 1, 1500);
+  d.planStore.setPlan(plan);
+  const { archived, items } = await d.sync.completePlan(2000);
+  d.planStore.setPlan(d.plan.settle(d.planStore.plan, "onion|unit:", "have", 4, 6500));
+
+  await d.sync.undoComplete(archived.id, 8000, items);
+
+  assert.deepEqual(d.plan.settledFor(d.planStore.plan, "onion|unit:"), { have: 4, got: 0 });
+});
+
+test("J14.4 · a tick on the old week, made while a sync brings in the new one, stays with the old week", async () => {
+  const cloud = fakeCloud();
+  const a = device(cloud);
+  const b = device(cloud);
+  a.planStore.setPlan(a.plan.addItem(a.planStore.plan, "milk", 1000));
+  await a.sync.syncNow();
+  await b.sync.syncNow();
+
+  // B clears the plan; A, mid-sync, ticks the milk on the week that is over.
+  b.planStore.setPlan(b.plan.emptyPlan(b.plan.generationAfter(b.planStore.plan, Date.now())));
+  await b.sync.syncNow();
+  const hold = stall(a);
+  const running = a.sync.syncNow();
+  await hold.arrived;
+  const milk = a.planStore.plan.items[0].id;
+  a.planStore.setPlan(a.plan.setItemState(a.planStore.plan, milk, "got", Date.now()));
+  hold.release();
+  await running;
+  await a.sync.syncNow();
+
+  assert.equal(a.planStore.plan.id, b.planStore.plan.id, "the cleared plan is the one the book is on");
+  assert.deepEqual(a.plan.liveItems(a.planStore.plan), [], "and the old week's milk did not follow it in");
+});

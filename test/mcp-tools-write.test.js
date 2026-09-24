@@ -871,3 +871,10 @@ test("J12.13 · a name sent where the schema wants a recipeId gets the same poin
   const long = await call(ADD, { meals: [{ name: "x".repeat(5000) }] });
   assert.equal(long.notRecipes[0].length, win.RecipePlanStore.limits.MAX_NAME_CHARS, "nothing is echoed back unbounded");
 });
+
+test("J17.11 · a recipeId that is not text is not echoed back", async () => {
+  const { call } = await aBook();
+  const out = await call(ADD, { meals: [{ recipeId: { a: "x".repeat(3000) } }, { recipeId: ["Frozen pizza"] }] });
+  assert.deepEqual(out.missing, [null, null]);
+  assert.ok(JSON.stringify(out).length < 1500, "the answer is not a mirror of what was sent");
+});

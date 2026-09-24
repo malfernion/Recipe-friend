@@ -190,10 +190,12 @@ const addToPlan = {
         }
         const recipe = book.store.getById(meal.recipeId);
         if (!recipe) {
+          // Said back as it was sent when it is text, and clipped; anything
+          // else is nothing anybody could look up, and is not echoed.
           missing.push(
             typeof meal.recipeId === "string"
               ? win.RecipePlanStore.clip(meal.recipeId, limits(book).MAX_NAME_CHARS)
-              : meal.recipeId
+              : null
           );
           continue;
         }
