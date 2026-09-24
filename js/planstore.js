@@ -55,19 +55,25 @@
   // of at most MAX_NAME_CHARS units 360, and three numbers 72 — 647
   // bytes, called 700.
   //
+  // One line added by hand is an object of six fields: 13 elements at 8 =
+  // 104, its key names 26, two uuids 72, text of at most MAX_ITEM_CHARS
+  // units 360, a state of at most seven characters 21, and two numbers 48
+  // — 631 bytes, called 650.
+  //
   // One settled item is a key and an object of two fields, each an object
   // of two: 14 elements at 8 = 112, a key of at most MAX_KEY_CHARS units
   // 720, the inner key names 23, and four numbers 96 — 951 bytes, called
   // 1000.
   //
-  // The plan around them — id, three stamps, and the two containers — is
-  // 271 bytes, called 300.
+  // The plan around them — id, three stamps, and the three containers —
+  // is 292 bytes, called 300.
   //
-  //    60 meals   ×  700  =   42000      <- MAX_MEALS
-  //   120 settled × 1000  =  120000      <- MAX_SETTLED
+  //    40 meals   ×  700  =   28000      <- MAX_MEALS
+  //   100 items   ×  650  =   65000      <- MAX_ITEMS
+  //   100 settled × 1000  =  100000      <- MAX_SETTLED
   //   the plan itself     =     300
   //                          -------
-  //                          162300  <=  200000, with 37700 to spare
+  //                          193300  <=  200000, with 6700 to spare
   //
   // An archived plan is the same shape and goes into a row with the same
   // check, so the same sum covers it; MAX_ARCHIVE is about this device's
@@ -82,15 +88,18 @@
   // item is capped at 200 characters (storage.js) and a unit at 24, and
   // shoplist.js keys a line on the pair. Trimming that would silently
   // drop the settlement on a long-named item instead. The counts are
-  // what gave way, and they had the room to. 60 meals is two months of
-  // dinners in one plan. Settled lines get the larger share of the
-  // budget because they are the half a real shop can approach — every
-  // distinct thing on the list can be ticked, and a big week's list runs
-  // to a few dozen.
-  const MAX_MEALS = 60;
-  const MAX_SETTLED = 120;
+  // what gave way, and they had the room to. 40 meals is five weeks of
+  // dinners in one plan. A hundred lines added by hand is a list kept all
+  // week by two people, removed ones included (see `sanitizeItems`). A
+  // hundred settled recipe lines is a very big shop — a real week's list
+  // runs to a few dozen.
+  const MAX_MEALS = 40;
+  const MAX_ITEMS = 100;
+  const MAX_SETTLED = 100;
   const MAX_KEY_CHARS = 240;
   const MAX_NAME_CHARS = 120;
+  const MAX_ITEM_CHARS = 120;
+  const ITEM_STATES = ["", "have", "got", "removed"];
   // The server's own limit, restated here as the thing the sum above has
   // to come in under. Exported for the test that does the sum.
   const SERVER_MAX_BYTES = 200000;
@@ -129,6 +138,20 @@
    */
   function sanitizeMeal(raw) {
     if (!raw || typeof raw !== "object") return null;
+    // A meal that is not a recipe (J12.13) is a name and nothing else, and
+    // without the name it is nothing at all.
+    if (raw.recipeId === null || raw.recipeId === undefined) {
+      const name = String(raw.name || "").trim().slice(0, MAX_NAME_CHARS);
+      if (!name) return null;
+      return {
+        id: isUuid(raw.id) ? raw.id : global.RecipeStore.newId(),
+        recipeId: null,
+        name,
+        portions: null,
+        multiplier: null,
+        addedAt: moment(raw.addedAt) ?? 0,
+      };
+    }
     if (!isUuid(raw.recipeId)) return null;
     const portions = positive(raw.portions, MAX_PORTIONS);
     const multiplier = positive(raw.multiplier, MAX_MULTIPLIER);
@@ -178,6 +201,51 @@
   }
 
   /**
+   * The lines added by hand (J12.14, J13.15).
+   *
+   * A line without a uuid is dropped rather than given one: it is merged
+   * by id, so an id minted here would be a new line every time the plan
+   * was read, and the list would grow a copy of it on every sync. Two
+   * copies of one id keep the later, as a merge would.
+   *
+   * Over the cap, what is on the list is kept before what was taken off
+   * it. A removed line is kept only so that an older copy cannot bring it
+   * back (J12.14); losing the oldest of those is a small risk, and losing
+   * something somebody still means to buy is not one worth taking. The
+   * order the lines were added in is kept either way.
+   */
+  function sanitizeItems(raw) {
+    if (!Array.isArray(raw)) return [];
+    const byId = new Map();
+    for (const one of raw.slice(0, MAX_ITEMS * 4)) {
+      if (!one || typeof one !== "object" || !isUuid(one.id)) continue;
+      const text = String(one.text || "").trim().replace(/\s+/g, " ").slice(0, MAX_ITEM_CHARS);
+      if (!text) continue;
+      const addedAt = moment(one.addedAt) ?? 0;
+      const item = {
+        id: one.id,
+        text,
+        mealId: isUuid(one.mealId) ? one.mealId : null,
+        addedAt,
+        state: ITEM_STATES.includes(one.state) ? one.state : "",
+        at: moment(one.at) ?? addedAt,
+      };
+      const held = byId.get(item.id);
+      if (!held || item.at > held.at) byId.set(item.id, item);
+    }
+    const all = [...byId.values()];
+    if (all.length <= MAX_ITEMS) return all;
+    const live = all.filter((i) => i.state !== "removed").slice(0, MAX_ITEMS);
+    const room = MAX_ITEMS - live.length;
+    const removed = all
+      .filter((i) => i.state === "removed")
+      .sort((a, b) => b.at - a.at)
+      .slice(0, room);
+    const keep = new Set([...live, ...removed]);
+    return all.filter((i) => keep.has(i));
+  }
+
+  /**
    * Coerce an untrusted object — off this device's storage, or off the
    * server, where another member of the book wrote it — into a plan, or
    * null if there is nothing usable in it.
@@ -202,14 +270,21 @@
       updatedAt: moment(raw.updatedAt) ?? createdAt,
       completedAt: moment(raw.completedAt) || null,
       meals,
+      items: sanitizeItems(raw.items),
       settled: sanitizeSettled(raw.settled),
     };
   }
 
-  /** An archived plan is one that was finished; anything else is not one (J14.4). */
+  /**
+   * An archived plan is one that was finished; anything else is not one
+   * (J14.4). What was added to the list by hand is not kept (J14.13): the
+   * record is what was planned, not what was bought.
+   */
   function sanitizeArchived(raw) {
     const plan = sanitizePlan(raw);
-    return plan && plan.completedAt ? plan : null;
+    if (!plan || !plan.completedAt) return null;
+    delete plan.items;
+    return plan;
   }
 
   function load(key) {
@@ -354,7 +429,10 @@
       // the placeholder above, stamped zero so that it yields to whatever
       // the book is already shopping for; the moment somebody puts a meal
       // in it, it is this book's plan and dates from now.
-      if (!clean.createdAt && (clean.meals.length > 0 || Object.keys(clean.settled).length > 0)) {
+      if (
+        !clean.createdAt &&
+        (clean.meals.length > 0 || clean.items.length > 0 || Object.keys(clean.settled).length > 0)
+      ) {
         clean.createdAt = global.RecipePlan.touchedAt(clean) || Date.now();
       }
       this.state.plan = clean;
@@ -456,9 +534,11 @@
   // against the real numbers rather than a copy of them.
   RecipePlanStore.limits = {
     MAX_MEALS,
+    MAX_ITEMS,
     MAX_SETTLED,
     MAX_KEY_CHARS,
     MAX_NAME_CHARS,
+    MAX_ITEM_CHARS,
     MAX_ARCHIVE,
     SERVER_MAX_BYTES,
   };

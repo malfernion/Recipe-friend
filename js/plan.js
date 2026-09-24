@@ -12,8 +12,19 @@
  *     id, createdAt, updatedAt,
  *     completedAt: null,          // set when finished; archived plans carry it
  *     meals:   [ {id, recipeId, name, portions, multiplier, addedAt} ],
+ *     items:   [ {id, text, mealId, addedAt, state, at} ],
  *     settled: { [itemKey]: { have: {amount, at}, got: {amount, at} } }
  *   }
+ *
+ * A meal whose `recipeId` is null is a meal that is not a recipe — frozen
+ * pizza (J12.13): a name, and no portions, because there is nothing to
+ * scale.
+ *
+ * `items` is what was added to the list by hand (J12.14, J13.15). Each is
+ * text, exactly as typed, and is never summed or combined with anything.
+ * `mealId` ties one to a meal that is not a recipe; null is a loose line.
+ * `state` is "" (still to buy), "have" (✗), "got" (✓) or "removed", and
+ * `at` is when it last changed, which is how two copies of it merge.
  *
  * `meals[].name` is a copy of the recipe's name taken when it was added,
  * so an archived plan still reads correctly after the recipe is deleted
@@ -55,6 +66,7 @@
       updatedAt: now,
       completedAt: null,
       meals: [],
+      items: [],
       settled: Object.create(null),
     };
   }
@@ -109,10 +121,103 @@
     return { ...plan, meals: [...plan.meals, meal], updatedAt: now };
   }
 
+  /**
+   * Add a meal that is not a recipe (J12.13): a name and nothing to scale.
+   * It counts as a meal everywhere one is counted, and never reaches
+   * planning history — `plannedIndex` reads recipes.
+   */
+  function addNamedMeal(plan, name, now = Date.now()) {
+    const text = String(name || "").trim();
+    if (!text) return plan;
+    const meal = {
+      id: newId(),
+      recipeId: null,
+      name: text,
+      portions: null,
+      multiplier: null,
+      addedAt: now,
+    };
+    return { ...plan, meals: [...plan.meals, meal], updatedAt: now };
+  }
+
+  /**
+   * Take a meal out. A meal that is not a recipe takes its own lines with
+   * it (J12.13) — they are marked removed rather than dropped, because the
+   * list merges line by line (J12.14) and a line simply missing from this
+   * copy would come straight back from the other phone's.
+   */
   function removeMeal(plan, id, now = Date.now()) {
     const meals = plan.meals.filter((m) => m.id !== id);
     if (meals.length === plan.meals.length) return plan;
-    return { ...plan, meals, updatedAt: now };
+    let next = { ...plan, meals, updatedAt: now };
+    for (const item of itemsOf(plan)) {
+      if (item.mealId === id && item.state !== "removed") {
+        next = setItemState(next, item.id, "removed", now);
+      }
+    }
+    return next;
+  }
+
+  /** Is this a meal that is a recipe, rather than just a name (J12.13)? */
+  function isRecipeMeal(meal) {
+    return Boolean(meal && meal.recipeId);
+  }
+
+  // ---------------------------------------------------------------------
+  // What was added to the list by hand (J12.14, J13.15)
+  // ---------------------------------------------------------------------
+
+  const ITEM_STATES = ["", "have", "got", "removed"];
+
+  function itemsOf(plan) {
+    return (plan && Array.isArray(plan.items)) ? plan.items : [];
+  }
+
+  /** The lines added by hand that are still on the list, in any state. */
+  function liveItems(plan) {
+    return itemsOf(plan).filter((item) => item.state !== "removed");
+  }
+
+  /**
+   * Put a line on the list, exactly as typed (J13.15). `mealId` ties it to
+   * a meal that is not a recipe (J12.13); without one it is a loose line.
+   *
+   * The plan's `updatedAt` is left alone for the reason `settle` leaves
+   * it alone: the meals merge whole on it (J12.11), and somebody adding
+   * milk must not beat somebody else adding the curry. The line carries
+   * its own stamp and merges on that.
+   */
+  function addItem(plan, text, mealId = null, now = Date.now()) {
+    const words = String(text || "").trim().replace(/\s+/g, " ");
+    if (!words) return plan;
+    const item = {
+      id: newId(),
+      text: words,
+      mealId: mealId || null,
+      addedAt: now,
+      state: "",
+      at: now,
+    };
+    return { ...plan, items: [...itemsOf(plan), item] };
+  }
+
+  /**
+   * Move a line added by hand to a state: "" back on the list, "have"
+   * (✗), "got" (✓), or "removed". Stamped one millisecond past whatever it
+   * said before, exactly as `settle` is, so the same hand cannot tie with
+   * itself and a device whose clock is behind can still take back what
+   * another phone said.
+   */
+  function setItemState(plan, id, state, now = Date.now()) {
+    if (!ITEM_STATES.includes(state)) return plan;
+    const item = itemsOf(plan).find((i) => i.id === id);
+    if (!item || item.state === state) return plan;
+    const previous = Number(item.at);
+    const at = Number.isFinite(previous) ? Math.max(Number(now) || 0, previous + 1) : Number(now) || 0;
+    return {
+      ...plan,
+      items: itemsOf(plan).map((i) => (i.id === id ? { ...i, state, at } : i)),
+    };
   }
 
   /**
@@ -123,7 +228,8 @@
    */
   function stepPortions(plan, id, direction, recipe, now = Date.now()) {
     const meal = plan.meals.find((m) => m.id === id);
-    if (!meal) return plan;
+    // A meal that is not a recipe has nothing to scale (J12.13).
+    if (!meal || !isRecipeMeal(meal)) return plan;
     const up = direction === "up";
     let next;
     if (Number(recipe && recipe.servings) > 0 && Number(meal.portions) > 0) {
@@ -150,7 +256,8 @@
    */
   function prune(plan, availableRecipeIds, now = Date.now()) {
     const have = availableRecipeIds instanceof Set ? availableRecipeIds : new Set(availableRecipeIds || []);
-    const meals = plan.meals.filter((m) => have.has(m.recipeId));
+    // A meal that is not a recipe has no recipe to leave (J12.13).
+    const meals = plan.meals.filter((m) => !isRecipeMeal(m) || have.has(m.recipeId));
     if (meals.length === plan.meals.length) return plan;
     return { ...plan, meals, updatedAt: now };
   }
@@ -233,12 +340,15 @@
         if (entry[field] && Number(entry[field].at) > at) at = Number(entry[field].at);
       }
     }
+    for (const item of itemsOf(plan)) {
+      if (Number(item.at) > at) at = Number(item.at);
+    }
     return at;
   }
 
   /** Is this recipe in the live plan (J14.8)? */
   function isPlanned(plan, recipeId) {
-    return Boolean(plan && plan.meals.some((m) => m.recipeId === recipeId));
+    return Boolean(recipeId && plan && plan.meals.some((m) => m.recipeId === recipeId));
   }
 
   /** Finish a plan: it is archived as it stands, stamped with the date (J14.1, J14.5). */
@@ -314,11 +424,42 @@
 
     return {
       ...winner,
+      // Line by line, not whole (J12.14): adding to the list is the race
+      // the meals do not have.
+      items: mergeItems(itemsOf(local), itemsOf(remote)),
       // The plan was created once; the earlier of the two claims is it.
       createdAt: Math.min(Number(local.createdAt) || 0, Number(remote.createdAt) || 0) || winner.createdAt,
       updatedAt: Math.max(Number(local.updatedAt) || 0, Number(remote.updatedAt) || 0),
       settled,
     };
+  }
+
+  /**
+   * Two copies of the lines added by hand. Every line either side has is
+   * kept; where both have one, the later `at` wins, so a line taken off
+   * stays off when an older copy still has it (J12.14). A tie — two
+   * clocks in one millisecond — goes to the state further along, and
+   * then to the text, so both devices reach the same list whichever order
+   * they merge in.
+   */
+  function mergeItems(a, b) {
+    const byId = new Map();
+    for (const item of [...a, ...b]) {
+      const held = byId.get(item.id);
+      byId.set(item.id, held ? laterItem(held, item) : item);
+    }
+    return [...byId.values()].sort(
+      (x, y) => (Number(x.addedAt) || 0) - (Number(y.addedAt) || 0) || (x.id < y.id ? -1 : x.id > y.id ? 1 : 0)
+    );
+  }
+
+  function laterItem(a, b) {
+    const at = Number(a.at) || 0;
+    const bt = Number(b.at) || 0;
+    if (at !== bt) return at > bt ? a : b;
+    const rank = (i) => ITEM_STATES.indexOf(i.state);
+    if (rank(a) !== rank(b)) return rank(a) > rank(b) ? a : b;
+    return JSON.stringify(a) >= JSON.stringify(b) ? a : b;
   }
 
   function laterSettlement(a, b) {
@@ -379,6 +520,8 @@
       // have been planned (J14.4).
       if (!at) continue;
       for (const meal of plan.meals || []) {
+        // A meal that is not a recipe is not planning history (J12.13).
+        if (!isRecipeMeal(meal)) continue;
         const entry = index[meal.recipeId] || (index[meal.recipeId] = { lastPlannedAt: 0, count: 0 });
         entry.count += 1;
         if (at > entry.lastPlannedAt) entry.lastPlannedAt = at;
@@ -453,7 +596,12 @@
   global.RecipePlan = {
     emptyPlan,
     addMeal,
+    addNamedMeal,
     removeMeal,
+    isRecipeMeal,
+    addItem,
+    setItemState,
+    liveItems,
     stepPortions,
     factorFor,
     prune,

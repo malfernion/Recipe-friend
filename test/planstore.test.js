@@ -281,6 +281,16 @@ function maximalPlan(win, from = 0) {
       multiplier: 7.6543219,
       addedAt: HUGE,
     })),
+    // Lines added by hand at their widest: the longest state there is,
+    // and every one of them tied to a meal, so both uuids are spent.
+    items: Array.from({ length: limits.MAX_ITEMS * 2 }, () => ({
+      id: uuid(),
+      text: wide(limits.MAX_ITEM_CHARS * 2),
+      mealId: uuid(),
+      addedAt: HUGE,
+      state: "removed",
+      at: HUGE,
+    })),
     settled: Object.fromEntries(
       Array.from({ length: limits.MAX_SETTLED * 2 }, (_, i) => [
         key(i),
@@ -297,6 +307,8 @@ test("J12.2 · the biggest plan this client will hold is one the server will tak
   const plan = maximalPlan(d.win);
 
   assert.equal(plan.meals.length, limits.MAX_MEALS);
+  assert.equal(plan.items.length, limits.MAX_ITEMS);
+  assert.equal(plan.items[0].text.length, limits.MAX_ITEM_CHARS);
   assert.equal(Object.keys(plan.settled).length, limits.MAX_SETTLED);
   assert.equal(plan.meals[0].name.length, limits.MAX_NAME_CHARS);
 
@@ -960,4 +972,171 @@ test("J16.3 · an agent still settles a line and pushes the live plan", async ()
 
   assert.equal(cloud.db.live_plans.length, 1, "the plan it built goes up");
   assert.equal(cloud.db.live_plans[0].data.meals.length, 1);
+});
+
+// ---------------------------------------------------------------------
+// Meals that are not recipes, and lines added by hand (J12.13, J12.14, J14.13)
+// ---------------------------------------------------------------------
+
+test("J12.14 · two phones adding to the list offline both keep it, across a real round trip", async () => {
+  const cloud = fakeCloud();
+  const recipe = shareRecipe(cloud);
+  const a = device(cloud);
+  const b = device(cloud);
+  a.planStore.setPlan(a.plan.addMeal(a.planStore.plan, recipe, 1000));
+  await a.sync.syncNow();
+  await b.sync.syncNow();
+
+  a.planStore.setPlan(a.plan.addItem(a.planStore.plan, "milk", null, 5000));
+  b.planStore.setPlan(b.plan.addItem(b.planStore.plan, "kitchen roll", null, 5001));
+  await a.sync.syncNow();
+  await b.sync.syncNow();
+  await a.sync.syncNow();
+
+  for (const d of [a, b]) {
+    assert.deepEqual(d.plan.liveItems(d.planStore.plan).map((i) => i.text).sort(), ["kitchen roll", "milk"]);
+  }
+  assert.deepEqual(cloud.db.live_plans[0].data.items.map((i) => i.text).sort(), ["kitchen roll", "milk"]);
+});
+
+test("J12.14 · a line taken off on one phone stays off when the other syncs its older copy", async () => {
+  const cloud = fakeCloud();
+  const a = device(cloud);
+  const b = device(cloud);
+  a.planStore.setPlan(a.plan.addItem(a.planStore.plan, "milk", null, 1000));
+  await a.sync.syncNow();
+  await b.sync.syncNow();
+  const id = b.planStore.plan.items[0].id;
+
+  a.planStore.setPlan(a.plan.setItemState(a.planStore.plan, id, "removed", 5000));
+  await a.sync.syncNow();
+  await b.sync.syncNow();
+
+  assert.deepEqual(b.plan.liveItems(b.planStore.plan), []);
+  assert.deepEqual(b.plan.liveItems(cloud.db.live_plans[0].data), []);
+});
+
+test("J12.14 · a tick on a line added by hand is pushed, with no meal changing", async () => {
+  const cloud = fakeCloud();
+  const d = device(cloud);
+  d.planStore.setPlan(d.plan.addItem(d.planStore.plan, "milk", null, 1000));
+  await d.sync.syncNow();
+  const id = d.planStore.plan.items[0].id;
+
+  d.planStore.setPlan(d.plan.setItemState(d.planStore.plan, id, "got", 2000));
+  await d.sync.syncNow();
+  assert.equal(cloud.db.live_plans[0].data.items[0].state, "got",
+    "the plan the server holds differs only in the line, and that is enough to push it");
+});
+
+test("J12.14 · a plan that is only a line added by hand begins when the line goes in", () => {
+  const cloud = fakeCloud();
+  const d = device(cloud);
+  assert.equal(d.planStore.plan.createdAt, 0, "the placeholder has not begun");
+  d.planStore.setPlan(d.plan.addItem(d.planStore.plan, "milk", null, 4000));
+  assert.equal(d.planStore.plan.createdAt, 4000, "it is this book's plan now, and dates from the milk");
+});
+
+test("J12.14 · lines off the server are sanitised, not trusted", () => {
+  const cloud = fakeCloud();
+  const d = device(cloud);
+  const limits = d.win.RecipePlanStore.limits;
+  const uuid = () => d.win.RecipeStore.newId();
+  const kept = uuid();
+  const plan = d.win.RecipePlanStore.sanitizePlan({
+    meals: [],
+    items: [
+      { id: "not-a-uuid", text: "dropped" },
+      { id: uuid(), text: "   " },
+      { id: kept, text: "x".repeat(500), state: "eaten", mealId: "nope", at: "whenever", addedAt: 7 },
+      { id: kept, text: "older copy", at: 1, addedAt: 7 },
+    ],
+  });
+  assert.equal(plan.items.length, 1, "no id to merge on, or no words, is no line");
+  const [item] = plan.items;
+  assert.equal(item.text.length, limits.MAX_ITEM_CHARS);
+  assert.equal(item.state, "", "a state that is not one is still to buy");
+  assert.equal(item.mealId, null);
+  assert.equal(item.at, 7, "with no readable stamp it dates from when it was added");
+});
+
+test("J12.14 · over the cap, what is still on the list is kept before what was taken off it", () => {
+  const cloud = fakeCloud();
+  const d = device(cloud);
+  const limits = d.win.RecipePlanStore.limits;
+  const uuid = () => d.win.RecipeStore.newId();
+  const removed = Array.from({ length: limits.MAX_ITEMS }, (_, i) => ({
+    id: uuid(), text: `gone ${i}`, state: "removed", addedAt: i, at: 10000 + i,
+  }));
+  const live = Array.from({ length: 10 }, (_, i) => ({
+    id: uuid(), text: `wanted ${i}`, addedAt: 500 + i, at: 500 + i,
+  }));
+  const plan = d.win.RecipePlanStore.sanitizePlan({ meals: [], items: [...removed, ...live] });
+  assert.equal(plan.items.length, limits.MAX_ITEMS);
+  assert.equal(d.plan.liveItems(plan).length, 10, "nothing anybody means to buy is lost");
+  assert.ok(!plan.items.some((i) => i.text === "gone 0"), "the oldest removal goes first");
+});
+
+test("J14.13 · Done records the meals and not what was added by hand", async () => {
+  const cloud = fakeCloud();
+  const recipe = shareRecipe(cloud);
+  const d = device(cloud);
+  let plan = d.plan.addMeal(d.planStore.plan, recipe, 1000);
+  plan = d.plan.addNamedMeal(plan, "Frozen pizza", 1001);
+  plan = d.plan.addItem(plan, "milk", null, 1002);
+  d.planStore.setPlan(plan);
+
+  const result = await d.sync.completePlan(7000);
+
+  const recorded = cloud.db.plans[0].data;
+  assert.deepEqual(recorded.meals.map((m) => m.name), ["Bolognese", "Frozen pizza"],
+    "the week's meals are the record, pizza night included");
+  assert.equal("items" in recorded, false, "the list is not kept");
+  assert.equal("items" in d.planStore.archive[0], false, "not on this phone either");
+  assert.deepEqual(d.planStore.plan.items, [], "and nothing carries into the next plan");
+  assert.ok(cloud.db.live_plans.every((row) => (row.data.items || []).length === 0));
+  assert.deepEqual(result.items.map((i) => i.text), ["milk"], "Undo is handed it, and nothing else is");
+});
+
+test("J14.2 · Undo puts back what was on the list by hand as well as the meals", async () => {
+  const cloud = fakeCloud();
+  const recipe = shareRecipe(cloud);
+  const d = device(cloud);
+  let plan = d.plan.addMeal(d.planStore.plan, recipe, 1000);
+  plan = d.plan.addItem(plan, "milk", null, 1001);
+  d.planStore.setPlan(plan);
+  const { archived, items } = await d.sync.completePlan(7000);
+
+  const restored = await d.sync.undoComplete(archived.id, 8000, items);
+
+  assert.deepEqual(d.plan.liveItems(restored).map((i) => i.text), ["milk"]);
+  assert.deepEqual(d.plan.liveItems(cloud.db.live_plans[0].data).map((i) => i.text), ["milk"]);
+});
+
+test("J14.3 · a plan that is only lines added by hand is not a week, and records nothing", async () => {
+  const cloud = fakeCloud();
+  const d = device(cloud);
+  d.planStore.setPlan(d.plan.addItem(d.planStore.plan, "milk", null, 1000));
+  assert.equal(await d.sync.completePlan(7000), null);
+  assert.deepEqual(cloud.db.plans, []);
+});
+
+test("J14.3 · a plan whose only meal is not a recipe can be finished", async () => {
+  const cloud = fakeCloud();
+  const d = device(cloud);
+  d.planStore.setPlan(d.plan.addNamedMeal(d.planStore.plan, "Frozen pizza", 1000));
+  const result = await d.sync.completePlan(7000);
+  assert.ok(result, "a meal is a meal");
+  assert.equal(cloud.db.plans.length, 1);
+  assert.equal(Object.keys(d.planStore.plannedIndex()).length, 0, "and it is not planning history (J12.13)");
+});
+
+test("J12.13 · a meal that is not a recipe survives the round trip as one", async () => {
+  const cloud = fakeCloud();
+  const a = device(cloud);
+  const b = device(cloud);
+  a.planStore.setPlan(a.plan.addNamedMeal(a.planStore.plan, "Frozen pizza", 1000));
+  await a.sync.syncNow();
+  await b.sync.syncNow();
+  assert.deepEqual(b.planStore.plan.meals.map((m) => [m.name, m.recipeId]), [["Frozen pizza", null]]);
 });
