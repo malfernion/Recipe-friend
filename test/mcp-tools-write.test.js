@@ -682,8 +682,9 @@ test("J17.6 · no tool exists for anything the credential cannot do", () => {
     []
   );
   assert.deepEqual(names.sort(), [
-    "add_recipe", "add_to_plan", "find_recipes", "get_plan", "get_recipe",
-    "list_recipes", "planning_history", "recipes_sharing_ingredients", "remove_from_plan",
+    "add_recipe", "add_to_list", "add_to_plan", "find_recipes", "get_plan", "get_recipe",
+    "list_recipes", "planning_history", "recipes_sharing_ingredients", "remove_from_list",
+    "remove_from_plan",
   ]);
 });
 
@@ -693,8 +694,144 @@ test("J17.10 · the one-way tool says so twice: to the client in a hint, to the 
   assert.match(FILE.description, /cannot be undone/i);
   assert.match(FILE.description, /permanent until a person removes it/);
 
-  for (const tool of [ADD, REMOVE]) {
+  for (const tool of [ADD, REMOVE, by("add_to_list"), by("remove_from_list")]) {
     assert.equal(tool.annotations.readOnlyHint, false, tool.name);
     assert.equal(tool.annotations.destructiveHint, false, tool.name);
+  }
+});
+
+// --- meals that are not recipes, and the list (J17.14) -----------------
+
+const ADD_LINES = by("add_to_list");
+const REMOVE_LINES = by("remove_from_list");
+const GET_PLAN = by("get_plan");
+const tick = () => new Promise((resume) => setTimeout(resume, 2));
+
+test("J17.14 · a meal that is not a recipe goes in by name, with its own lines", async () => {
+  const { call, sent } = await aBook();
+
+  const out = await call(ADD, { meals: [{ name: "Frozen pizza", items: ["2 frozen pizzas", " "] }] });
+
+  assert.deepEqual(out.added.map((m) => [m.name, m.recipe]), [["Frozen pizza", false]]);
+  assert.deepEqual(out.added[0].items.map((i) => i.text), ["2 frozen pizzas"], "a blank line is no line");
+  assert.deepEqual(out.plan.byHand.map((l) => [l.text, l.meal]), [["2 frozen pizzas", "Frozen pizza"]]);
+  assert.ok(out.plan.toBuy.includes("2 frozen pizzas"));
+  assert.deepEqual(sent.livePlans.at(-1).meals.map((m) => [m.name, m.recipeId]), [["Frozen pizza", null]]);
+});
+
+test("J17.14 · a meal that is not a recipe comes out with its lines, and says how to put it back", async () => {
+  const { call } = await aBook();
+  const added = await call(ADD, { meals: [{ name: "Frozen pizza", items: ["2 frozen pizzas"] }] });
+  await tick();
+
+  const out = await call(REMOVE, { mealIds: [added.added[0].mealId] });
+
+  assert.deepEqual(out.removed[0].was, { name: "Frozen pizza", items: ["2 frozen pizzas"] });
+  assert.deepEqual(out.plan.meals, []);
+  assert.deepEqual(out.plan.byHand, [], "its lines went with it");
+});
+
+test("J17.14 · a meal with neither a recipe nor a name is reported, not invented", async () => {
+  const { call } = await aBook();
+  const out = await call(ADD, { meals: [{ name: "   " }, {}] });
+  assert.deepEqual(out.added, []);
+  assert.equal(out.missing.length, 2);
+});
+
+test("J17.14 · lines go on the list as text, one line each, never combined", async () => {
+  const { call, idOf, sent } = await aBook();
+  await call(ADD, { meals: [{ recipeId: idOf("Chicken pie") }] });
+  await tick();
+
+  const out = await call(ADD_LINES, { items: ["1 onion", "milk", "milk"] });
+
+  assert.deepEqual(out.added.map((i) => i.text), ["1 onion", "milk", "milk"]);
+  assert.ok(out.added.every((i) => typeof i.itemId === "string"));
+  assert.ok(out.plan.toBuy.includes("1 onion"), "the pie's onion is its own line");
+  assert.equal(out.plan.toBuy.filter((t) => t === "1 onion").length, 2, "and so is the one added by hand");
+  assert.deepEqual(sent.livePlans.at(-1).items.map((i) => i.text), ["1 onion", "milk", "milk"]);
+});
+
+test("J17.14 · the tool says to read the list first and decide, because the server never combines", () => {
+  assert.match(ADD_LINES.description, /call get_plan first/);
+  assert.match(ADD_LINES.description, /never combined/);
+});
+
+test("J17.14 · a line comes off by its id, and what came off says what it was", async () => {
+  const { call } = await aBook();
+  const added = await call(ADD_LINES, { items: ["milk", "bread"] });
+  await tick();
+
+  const out = await call(REMOVE_LINES, { itemIds: [added.added[0].itemId, "not-a-line"] });
+
+  assert.deepEqual(out.removed, [{ itemId: added.added[0].itemId, text: "milk" }]);
+  assert.deepEqual(out.missing, ["not-a-line"]);
+  assert.deepEqual(out.plan.byHand.map((l) => l.text), ["bread"]);
+});
+
+test("J17.14 · get_plan says what each line added by hand is and how it stands", async () => {
+  const { call, book, win } = await aBook();
+  const added = await call(ADD_LINES, { items: ["milk", "bread"] });
+  // Somebody ticks the bread on their phone.
+  book.planStore.setPlan(win.RecipePlan.setItemState(book.plan, added.added[1].itemId, "got", Date.now() + 5));
+
+  const out = await GET_PLAN.run(book, {});
+
+  assert.deepEqual(out.shoppingList.byHand.map((l) => [l.text, l.state]), [["milk", "to buy"], ["bread", "in basket"]]);
+  assert.deepEqual(out.shoppingList.inBasket, ["bread"]);
+});
+
+test("J17.14 · a line from another phone survives the agent's write, because the list merges line by line", async () => {
+  const { call, win, setRemotePlan, sent } = await aBook();
+  await call(ADD_LINES, { items: ["milk"] });
+  const asPushed = sent.livePlans.at(-1);
+  // A phone adds kitchen roll a moment later — and adds a meal too, so its
+  // body is the newer one and would win whole if the list merged whole.
+  let theirs = win.RecipePlan.addItem(asPushed, "kitchen roll", null, Date.now() + 1);
+  theirs = win.RecipePlan.addNamedMeal(theirs, "Frozen pizza", asPushed.updatedAt + 10);
+  setRemotePlan(theirs);
+  await tick();
+
+  const out = await call(ADD_LINES, { items: ["eggs"] });
+
+  assert.deepEqual(out.added.map((i) => i.text), ["eggs"]);
+  assert.deepEqual(out.plan.byHand.map((l) => l.text).sort(), ["eggs", "kitchen roll", "milk"]);
+});
+
+test("J17.14 · a full list says so, and adds nothing past it", async () => {
+  const { call, win } = await aBook();
+  const max = win.RecipePlanStore.limits.MAX_ITEMS;
+  for (let i = 0; i < max; i += 20) {
+    await call(ADD_LINES, { items: Array.from({ length: Math.min(20, max - i) }, (_, j) => `thing ${i + j}`) });
+    await tick();
+  }
+
+  const out = await call(ADD_LINES, { items: ["one too many"] });
+
+  assert.deepEqual(out.added, []);
+  assert.deepEqual(out.notAdded, ["one too many"]);
+  assert.match(out.note, /The list is full/);
+});
+
+test("J17.14 · a finished week is not one to add lines to (J17.9)", async () => {
+  const { call, win, setRemotePlan } = await aBook();
+  setRemotePlan({ ...win.RecipePlan.emptyPlan(1000), completedAt: 2000 });
+  const out = await call(ADD_LINES, { items: ["milk"] });
+  assert.match(out.error, /finished/);
+  const off = await call(REMOVE_LINES, { itemIds: ["x"] });
+  assert.match(off.error, /finished/);
+});
+
+test("J17.14 · the list tools answer what arrives, whatever it is", async () => {
+  const { call } = await aBook();
+  for (const args of [{}, { items: null }, { items: [3, {}, null] }, { items: "milk" }]) {
+    const out = await call(ADD_LINES, args);
+    assert.ok(out && (out.error || Array.isArray(out.added)), JSON.stringify(args));
+  }
+  const many = await call(ADD_LINES, { items: Array.from({ length: 21 }, () => "x") });
+  assert.match(many.error, /at most 20/);
+  for (const args of [{}, { itemIds: null }, { itemIds: [3, {}] }]) {
+    const out = await call(REMOVE_LINES, args);
+    assert.ok(out && (out.error || Array.isArray(out.removed)), JSON.stringify(args));
   }
 });

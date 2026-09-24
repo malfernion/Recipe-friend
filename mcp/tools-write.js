@@ -1,5 +1,5 @@
 /**
- * mcp/tools-write.js — the three tools that change something.
+ * mcp/tools-write.js — the five tools that change something.
  *
  * An agent may add a recipe and work on the plan, and may not edit,
  * delete, favourite, or finish a week (J16.3, J16.4). Nothing the
@@ -21,7 +21,7 @@
 
 const { asList, asStrings, asCount, tooMany } = require("./args.js");
 const { HOUSEHOLD_DATA } = require("./tools-read.js");
-const { mealsInBook, mealAmount } = require("./digest.js");
+const { mealsInBook, mealAmount, byHandLines } = require("./digest.js");
 
 const CHANGES_THE_PLAN = {
   readOnlyHint: false,
@@ -112,7 +112,9 @@ const addToPlan = {
   name: "add_to_plan",
   title: "Put meals in the plan",
   description:
-    "Add recipes to the book's live plan, adding to what is there rather than replacing it. " +
+    "Add meals to the book's live plan, adding to what is there rather than replacing it. A " +
+    "meal is a recipe by recipeId, or a meal that is not a recipe by `name` (\"Frozen pizza\"), " +
+    "with `items` for the list lines it needs. " +
     "Gives back: `added` — the meals that landed, each with its mealId and amount — plus " +
     "`dropped`, `missing`, `notScaled` and a `note` for anything that did not, and the plan as " +
     "it now stands. A plan is a bag of meals: nothing in it belongs to a day or a date, so " +
@@ -129,6 +131,13 @@ const addToPlan = {
           type: "object",
           properties: {
             recipeId: { type: "string", description: "From list_recipes or find_recipes." },
+            name: { type: "string", description: "For a meal that is not a recipe, instead of recipeId." },
+            items: {
+              type: "array",
+              maxItems: 10,
+              items: { type: "string" },
+              description: "What a meal that is not a recipe needs on the list, as text.",
+            },
             portions: {
               type: "integer",
               minimum: 1,
@@ -143,7 +152,6 @@ const addToPlan = {
                 "How many batches, in halves, for a recipe that does not say what it serves.",
             },
           },
-          required: ["recipeId"],
           additionalProperties: false,
         },
       },
@@ -175,9 +183,29 @@ const addToPlan = {
       const notScaled = [];
       const wrongControl = [];
       const clamped = [];
+      const listFull = [];
 
       for (const one of asked) {
         const meal = one && typeof one === "object" ? one : { recipeId: one };
+        const byName = typeof meal.name === "string" ? meal.name.trim() : "";
+        if (!meal.recipeId && byName) {
+          // A meal that is not a recipe (J12.13): a name, and its own lines.
+          plan = win.RecipePlan.addNamedMeal(plan, byName.slice(0, limits(book).MAX_NAME_CHARS), now);
+          const added = plan.meals[plan.meals.length - 1];
+          const lines = asStrings(meal.items).slice(0, 10);
+          // A millisecond apart, so they keep the order they were sent in:
+          // the list is ordered by when each line was added.
+          let at = now;
+          for (const line of lines) {
+            if (win.RecipePlan.liveItems(plan).length >= limits(book).MAX_ITEMS) {
+              listFull.push(line);
+              continue;
+            }
+            plan = win.RecipePlan.addItem(plan, line.slice(0, limits(book).MAX_ITEM_CHARS), added.id, at++);
+          }
+          wanted.push({ id: added.id, name: added.name });
+          continue;
+        }
         const recipe = book.store.getById(meal.recipeId);
         if (!recipe) {
           missing.push(meal.recipeId);
@@ -227,6 +255,17 @@ const addToPlan = {
 
       if (!wanted.length) return { added: [], missing, plan: planNow(book) };
       const done = await settle(book, { before, plan, wanted, verb: "added", missing });
+      // A meal that is not a recipe says which lines it put on the list.
+      for (const meal of done.added) {
+        if (meal.recipe !== false) continue;
+        meal.items = book.win.RecipePlan.liveItems(book.plan)
+          .filter((i) => i.mealId === meal.mealId)
+          .map((i) => ({ itemId: i.id, text: i.text }));
+      }
+      if (listFull.length) {
+        done.notOnList = listFull;
+        done.listNote = listIsFull(book);
+      }
       if (notScaled.length) {
         done.notScaled = notScaled;
         done.scalingNote =
@@ -299,9 +338,18 @@ const removeFromPlan = {
         wanted.push({
           id,
           name: meal.name || "",
-          was: Number(meal.portions) > 0
-            ? { portions: meal.portions }
-            : { multiplier: meal.multiplier || 1 },
+          // A meal that is not a recipe goes back by name, with the lines
+          // it took with it (J12.13).
+          was: !meal.recipeId
+            ? {
+                name: meal.name || "",
+                items: win.RecipePlan.liveItems(before)
+                  .filter((i) => i.mealId === id)
+                  .map((i) => i.text),
+              }
+            : Number(meal.portions) > 0
+              ? { portions: meal.portions }
+              : { multiplier: meal.multiplier || 1 },
         });
       }
 
@@ -310,6 +358,157 @@ const removeFromPlan = {
     });
   },
 };
+
+const addToList = {
+  name: "add_to_list",
+  title: "Put things on the shopping list",
+  description:
+    "Add lines to the book's shopping list, as text (\"2 l milk\"), belonging to no meal. " +
+    "Each is its own line and is never combined with anything, so call get_plan first: if " +
+    "it is already on the list, by hand or from a recipe, decide whether this is more of it, " +
+    "the same need, or something else — and add, replace (remove_from_list, then add) or leave " +
+    "it. Gives back: `added`, each with its itemId and text; `notAdded` and a `note` for any " +
+    "that did not land; and the plan as it now stands. " + HOUSEHOLD_DATA,
+  annotations: CHANGES_THE_PLAN,
+  inputSchema: {
+    type: "object",
+    properties: {
+      items: { type: "array", minItems: 1, maxItems: 20, items: { type: "string" } },
+    },
+    required: ["items"],
+    additionalProperties: false,
+  },
+  async run(book, args) {
+    return book.write(async () => {
+      const win = book.win;
+      const now = Date.now();
+      const refuseIfFinished = finished(book);
+      if (refuseIfFinished) return refuseIfFinished;
+
+      const raw = asList(args.items);
+      const refuse = tooMany(raw, 20, "lines");
+      if (refuse) return refuse;
+      const asked = asStrings(raw);
+      if (!asked.length) return { error: "Nothing to add: send each line as a string of text." };
+
+      const before = book.plan;
+      let plan = before;
+      const wanted = [];
+      const full = [];
+      // A millisecond apart, so the lines keep the order they were sent in.
+      let at = now;
+      for (const text of asked) {
+        if (win.RecipePlan.liveItems(plan).length >= limits(book).MAX_ITEMS) {
+          full.push(text);
+          continue;
+        }
+        plan = win.RecipePlan.addItem(plan, text.slice(0, limits(book).MAX_ITEM_CHARS), null, at++);
+        const item = plan.items[plan.items.length - 1];
+        wanted.push({ id: item.id, text: item.text });
+      }
+      if (!wanted.length) return { added: [], notAdded: full, note: listIsFull(book), plan: planNow(book) };
+      const done = await settleLines(book, { before, plan, wanted, removing: false });
+      if (full.length) {
+        done.notAdded = [...(done.notAdded || []), ...full];
+        done.note = listIsFull(book);
+      }
+      return done;
+    });
+  },
+};
+
+const removeFromList = {
+  name: "remove_from_list",
+  title: "Take things off the shopping list",
+  description:
+    "Take lines off the book's shopping list by itemId, from get_plan's `byHand`. Only lines " +
+    "added by hand; a recipe's lines go when its meal does. Gives back: `removed`, each with " +
+    "its text so it can be added back; `missing` for ids not on the list; and the plan as it " +
+    "now stands. " + HOUSEHOLD_DATA,
+  annotations: CHANGES_THE_PLAN,
+  inputSchema: {
+    type: "object",
+    properties: {
+      itemIds: { type: "array", minItems: 1, maxItems: 20, items: { type: "string" } },
+    },
+    required: ["itemIds"],
+    additionalProperties: false,
+  },
+  async run(book, args) {
+    return book.write(async () => {
+      const win = book.win;
+      const now = Date.now();
+      const refuseIfFinished = finished(book);
+      if (refuseIfFinished) return refuseIfFinished;
+
+      const asked = asList(args.itemIds);
+      const refuse = tooMany(asked, 20, "lines");
+      if (refuse) return refuse;
+
+      const before = book.plan;
+      let plan = before;
+      const wanted = [];
+      const missing = [];
+      for (const raw of asked) {
+        const id = typeof raw === "string" ? raw.trim() : "";
+        const item = id ? win.RecipePlan.liveItems(plan).find((i) => i.id === id) : null;
+        if (!item) {
+          missing.push(id || String(raw));
+          continue;
+        }
+        plan = win.RecipePlan.setItemState(plan, id, "removed", now);
+        wanted.push({ id, text: item.text });
+      }
+      if (!wanted.length) return { removed: [], missing, plan: planNow(book) };
+      const done = await settleLines(book, { before, plan, wanted, removing: true });
+      if (missing.length) done.missing = missing;
+      return done;
+    });
+  },
+};
+
+function limits(book) {
+  return book.win.RecipePlanStore.limits;
+}
+
+function listIsFull(book) {
+  return (
+    "The list is full — it holds " + limits(book).MAX_ITEMS + " lines added by hand — so " +
+    "there was no room. Take something off it first."
+  );
+}
+
+/**
+ * Push a change to the lines added by hand, and report what survived.
+ *
+ * The list merges line by line (J12.14), so another phone writing at the
+ * same moment does not take these lines with it the way it can take a
+ * meal. What is reported is still read back rather than assumed (J17.9):
+ * the only honest answer to "did it land" is the plan as it now stands.
+ */
+async function settleLines(book, { before, plan, wanted, removing }) {
+  book.planStore.setPlan(plan);
+  try {
+    await book.pushNow();
+  } catch (err) {
+    book.planStore.setPlan(before);
+    throw err;
+  }
+  const live = new Set(book.win.RecipePlan.liveItems(book.plan).map((i) => i.id));
+  const landed = wanted.filter((w) => (removing ? !live.has(w.id) : live.has(w.id)));
+  const lost = wanted.filter((w) => !landed.includes(w));
+  const report = {
+    [removing ? "removed" : "added"]: landed.map((w) => ({ itemId: w.id, text: w.text })),
+  };
+  if (lost.length) {
+    report[removing ? "notRemoved" : "notAdded"] = lost.map((w) => w.text);
+    report.note = removing
+      ? "Somebody put these back from another device at the same moment. Read the plan again."
+      : listIsFull(book);
+  }
+  report.plan = planNow(book);
+  return report;
+}
 
 const addRecipe = {
   name: "add_recipe",
@@ -588,7 +787,8 @@ function planNow(book) {
     partlySorted: list.toBuy
       .filter((line) => line.partText)
       .map((line) => `${line.item}: ${line.partText}`),
+    byHand: byHandLines(list),
   };
 }
 
-module.exports = [addToPlan, removeFromPlan, addRecipe];
+module.exports = [addToPlan, removeFromPlan, addToList, removeFromList, addRecipe];
