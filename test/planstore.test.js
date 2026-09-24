@@ -1515,3 +1515,32 @@ test("J13.16 · an edit on one phone and a tick on the other survive a real roun
     assert.deepEqual(d.planStore.plan.items.map((i) => [i.text, i.state]), [["7 eggs", "got"]]);
   }
 });
+
+test("J13.16 · a line stamped far in the future off the server can still be changed", () => {
+  const cloud = fakeCloud();
+  const d = device(cloud);
+  const id = d.win.RecipeStore.newId();
+  const plan = d.win.RecipePlanStore.sanitizePlan({
+    meals: [],
+    items: [{ id, text: "zzz", textAt: 1e20, addedAt: 1, state: "got", at: 1e20 }],
+  });
+  assert.ok(plan.items[0].textAt < Date.now() + 2 * 24 * 60 * 60 * 1000, "no stamp is believed past a day ahead");
+  const edited = d.plan.editItem(plan, id, "milk", Date.now());
+  assert.equal(d.plan.mergePlans(plan, edited).items[0].text, "milk");
+  const unticked = d.plan.setItemState(plan, id, "", Date.now());
+  assert.equal(d.plan.mergePlans(plan, unticked).items[0].state, "");
+});
+
+test("J13.16 · a change only to when the words were changed is still pushed", async () => {
+  const cloud = fakeCloud();
+  const d = device(cloud);
+  d.planStore.setPlan(d.plan.addItem(d.planStore.plan, "milk", 1000));
+  await d.sync.syncNow();
+  const id = d.planStore.plan.items[0].id;
+  // Edited away and back on this phone: the same words, a later stamp.
+  let plan = d.plan.editItem(d.planStore.plan, id, "oat milk", 2000);
+  plan = d.plan.editItem(plan, id, "milk", 3000);
+  d.planStore.setPlan(plan);
+  await d.sync.syncNow();
+  assert.equal(cloud.db.live_plans[0].data.items[0].textAt, 3000);
+});

@@ -1242,13 +1242,20 @@ test("J14.3 · an empty plan offers no Done and no Clear", () => {
 // Changing a line added by hand where it stands (J13.16)
 // ---------------------------------------------------------------------
 
-/** The plan open, with these lines added by hand. */
+/**
+ * The plan open, with these lines added by hand. `later()` runs what the
+ * app put off with window.setTimeout — the redraw owed after leaving a
+ * line — which the stub otherwise never runs.
+ */
 function withLines(...texts) {
   const app = planMode([BOLOGNESE]);
+  const owed = [];
+  app.win.setTimeout = (fn) => { owed.push(fn); return owed.length; };
   app.open();
   for (const t of texts) app.add(t);
   const idOf = (text) => app.plan().items.find((i) => i.text === text).id;
-  return { app, idOf };
+  const later = () => { while (owed.length) owed.shift()(); };
+  return { app, idOf, later };
 }
 
 test("J13.16 · the words of a line added by hand are its editor, and a recipe's line has none", () => {
@@ -1258,6 +1265,7 @@ test("J13.16 · the words of a line added by hand are its editor, and a recipe's
   app.open();
   const html = app.readout();
   assert.match(html, new RegExp(`contenteditable="plaintext-only"[^>]*data-edit-item="${idOf("6 eggs")}"`));
+  assert.doesNotMatch(html, /aria-label="Edit /, "its label is not its words, which would go stale");
   assert.equal((html.match(/data-edit-item=/g) || []).length, 1, "only the line typed in is editable");
   assert.match(html, /class="shop-edit"/, "and it wears the dotted underline");
   assert.doesNotMatch(html, /data-plan="edit"/, "there is no edit button");
@@ -1321,7 +1329,7 @@ test("J13.16 · emptying a line takes it off the list, and Undo puts it back as 
 });
 
 test("J13.16 · the list does not redraw under a line being edited, and catches up after", () => {
-  const { app, idOf } = withLines("milk");
+  const { app, idOf, later } = withLines("milk");
   const line = app.editLine(idOf("milk"));
   line.type("oat mi");
   const drawn = app.readout();
@@ -1333,8 +1341,85 @@ test("J13.16 · the list does not redraw under a line being edited, and catches 
 
   line.type("oat milk");
   line.leave();
-  assert.match(app.words(), /eggs/, "and the screen catches up once the line is left");
+  assert.equal(app.readout(), drawn, "not on the way out of the line, where the next tap is landing");
+  later();
+  assert.match(app.words(), /eggs/, "but a moment later, once the tap has landed");
   assert.match(app.words(), /oat milk/);
+});
+
+test("J13.16 · a tap in the list pays a redraw owed from leaving a line, after the tap lands", async () => {
+  const { app, idOf } = withLines("milk", "bread");
+  const line = app.editLine(idOf("milk"));
+  app.planStore.setPlan(app.win.RecipePlan.addItem(app.plan(), "eggs", Date.now()));
+  app.app.render();
+  line.leave();
+  await app.tap({ plan: "got", key: `hand:${idOf("bread")}` });
+  assert.equal(app.plan().items.find((i) => i.text === "bread").state, "got", "the tap landed");
+  assert.match(app.words(), /eggs/, "and the screen caught up");
+});
+
+test("J13.16 · leaving a line untouched does not write its old words over the other phone's", () => {
+  const { app, idOf } = withLines("6 eggs");
+  const id = idOf("6 eggs");
+  const line = app.editLine(id);
+  // The other phone makes it 7 while the caret sits in the line here.
+  app.planStore.setPlan(app.win.RecipePlan.editItem(app.plan(), id, "7 eggs", Date.now() + 5));
+  app.app.render();
+  line.leave();
+  assert.equal(app.plan().items[0].text, "7 eggs");
+});
+
+test("J13.16 · Escape does not write the old words over the other phone's either", () => {
+  const { app, idOf } = withLines("6 eggs");
+  const id = idOf("6 eggs");
+  const line = app.editLine(id);
+  line.type("8 eggs");
+  app.planStore.setPlan(app.win.RecipePlan.editItem(app.plan(), id, "7 eggs", Date.now() + 5));
+  app.app.render();
+  line.press("Escape");
+  assert.equal(app.plan().items[0].text, "7 eggs");
+});
+
+test("J13.16 · the space a keyboard leaves after a word is tidied in place, not by a redraw", () => {
+  const { app, idOf } = withLines("milk");
+  const line = app.editLine(idOf("milk"));
+  line.type("2 l milk\u00a0");
+  const drawn = app.readout();
+  line.leave();
+  assert.equal(app.plan().items[0].text, "2 l milk");
+  assert.equal(line.el.textContent, "2 l milk", "the words on screen are what was saved");
+  assert.equal(app.readout(), drawn, "and nothing was redrawn under the next tap");
+});
+
+test("J13.16 · a line typed past what a line holds is cut, and says so", () => {
+  const { app, idOf } = withLines("milk");
+  const max = app.win.RecipePlanStore.limits.MAX_ITEM_CHARS;
+  const line = app.editLine(idOf("milk"));
+  line.type("m".repeat(max + 10));
+  line.leave();
+  assert.equal(app.plan().items[0].text.length, max);
+  assert.match(app.el("toast").textContent, new RegExp(`${max} characters at most`));
+});
+
+test("J13.16 · two lines' worth pasted in reads as one line, not two words run together", () => {
+  const { app, idOf } = withLines("milk");
+  const line = app.editLine(idOf("milk"));
+  // What a browser's innerText gives for a <br> that got in.
+  line.el.innerText = "oat\nmilk";
+  line.el.textContent = "oatmilk";
+  line.leave();
+  assert.equal(app.plan().items[0].text, "oat milk");
+});
+
+test("J13.16 · a plan closed with a line still being edited is drawn afresh when it is opened again", () => {
+  const { app, idOf } = withLines("milk");
+  app.editLine(idOf("milk"));
+  // Closed with the caret in the line, and no word from the line that it
+  // lost focus — which not every browser sends for an element hidden.
+  app.el("plan-view").open = false;
+  app.planStore.setPlan(app.win.RecipePlan.addItem(app.plan(), "eggs", Date.now()));
+  app.open();
+  assert.match(app.words(), /eggs/, "not frozen on what it showed when it closed");
 });
 
 test("J13.16 · an edit does not redraw the list on its way out, so the tap that left it lands", () => {

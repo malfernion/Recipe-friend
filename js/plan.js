@@ -451,7 +451,16 @@
   function mergeItem(a, b) {
     const tick = laterTick(a, b);
     const words = laterWords(a, b);
-    return { ...tick, text: words.text, textAt: words.textAt };
+    // Built field by field rather than from either copy, so that merging
+    // three copies comes out the same in any order.
+    return {
+      id: a.id,
+      text: words.text,
+      textAt: words.textAt,
+      addedAt: Math.min(Number(a.addedAt) || 0, Number(b.addedAt) || 0),
+      state: tick.state,
+      at: tick.at,
+    };
   }
 
   function laterTick(a, b) {
@@ -459,8 +468,7 @@
     const bt = Number(b.at) || 0;
     if (at !== bt) return at > bt ? a : b;
     const rank = (i) => ITEM_STATES.indexOf(i.state);
-    if (rank(a) !== rank(b)) return rank(a) > rank(b) ? a : b;
-    return JSON.stringify(a) >= JSON.stringify(b) ? a : b;
+    return rank(a) >= rank(b) ? a : b;
   }
 
   function laterWords(a, b) {

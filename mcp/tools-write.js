@@ -520,9 +520,16 @@ const editList = {
           notEdited.push({ itemId: id, reason: "No text to change it to. To take a line off, use remove_from_list." });
           continue;
         }
+        // What the agent read is not optional: without it there is no way
+        // to tell an edit from an overwrite, and the schema's `required`
+        // is advertised, not enforced (J17.11).
+        if (typeof edit.was !== "string") {
+          notEdited.push({ itemId: id, reason: "Send `was`, the text you read, so a person's change is not written over." });
+          continue;
+        }
         // Somebody has changed it since it was read: theirs stands, and
         // the agent is told what it says now (J17.14).
-        if (typeof edit.was === "string" && words(edit.was) !== item.text) {
+        if (words(edit.was) !== item.text) {
           changed.push({ itemId: id, now: item.text });
           continue;
         }

@@ -985,3 +985,18 @@ test("J17.14 · add_to_list points at edit_list for something already on the lis
   assert.match(ADD_LINES.description, /edit that line \(edit_list\)/);
   assert.match(EDIT_LINES.description, /`was`/);
 });
+
+test("J17.14 · an edit without `was` is not an edit: it cannot tell itself from an overwrite", async () => {
+  const { call, book, win } = await aBook();
+  const added = await call(ADD_LINES, { items: ["6 eggs"] });
+  const id = added.added[0].itemId;
+  book.planStore.setPlan(win.RecipePlan.editItem(book.plan, id, "7 eggs", Date.now() + 5));
+  await book.pushNow();
+
+  for (const was of [undefined, null, 6]) {
+    const out = await call(EDIT_LINES, { items: [{ itemId: id, text: "12 eggs", was }] });
+    assert.deepEqual(out.edited, [], String(was));
+    assert.match(out.notEdited[0].reason, /Send `was`/);
+  }
+  assert.deepEqual((await call(by("get_plan"), {})).shoppingList.byHand.map((l) => l.text), ["7 eggs"]);
+});

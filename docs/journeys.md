@@ -735,7 +735,11 @@ so the app can tell them what to buy.
     **Leaving the line is saving it.** Tapping away, or the keyboard's
     Enter, keeps what was typed; there is no Save. Escape puts back what
     was there. Nothing is written until the line is left, so a half-typed
-    word never reaches the other phone.
+    word never reaches the other phone — and **a line left as it was
+    entered writes nothing at all**, so a stray tap, or Escape, cannot
+    put its old words back over an edit the other phone made meanwhile.
+    A line is one line: a line break typed or pasted becomes a space, and
+    past what a line holds (J12.13) the end is left off, and it says so.
 
     **Emptying a line takes it off the list**, and says so with an Undo —
     the one way a line added by hand is removed for good rather than
@@ -754,7 +758,9 @@ so the app can tell them what to buy.
 
     **The list does not redraw under a line being edited.** A sync
     arriving mid-word would otherwise take the words and the caret with
-    it — the screen catches up when the line is left.
+    it — the screen catches up a moment after the line is left, not at
+    the moment it is left, because leaving a line is usually a tap on
+    something else, and a redraw then would take away what was tapped.
 
     **An edit and a tick are two facts.** "7 eggs" typed on one phone and
     ✓ tapped on the other both survive the merge (J12.13): the words and
@@ -1351,7 +1357,9 @@ release.
     their phone, a minute ago — it is not written over: the answer is the
     line as it now reads, to be read again and decided on. An agent
     working from a snapshot must not put "6 eggs" back over somebody's
-    "7 eggs". Emptying a line is not an edit from here; taking a line off
+    "7 eggs". An edit that does not say what it read is refused, since it
+    cannot tell itself from an overwrite. Emptying a line is not an edit
+    from here; taking a line off
     is its own tool, so a blank from a confused model deletes nothing.
 
     **It is held to what a person is held to.** A line is taken as text

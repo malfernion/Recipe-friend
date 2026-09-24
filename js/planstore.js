@@ -147,6 +147,19 @@
     return s.slice(0, code >= 0xd800 && code <= 0xdbff ? max - 1 : max);
   }
 
+  /**
+   * A line's stamp, from a row another member wrote. A stamp far in the
+   * future outranks every later edit and tick for good, and past 2^53 the
+   * one-millisecond-past a change is stamped with (plan.js) cannot even
+   * be added — so a line could never be changed again. A day ahead of
+   * this device's clock is as far as any honest clock is wrong.
+   */
+  function stamp(value) {
+    const at = moment(value);
+    if (at === null) return null;
+    return Math.min(at, Date.now() + 24 * 60 * 60 * 1000);
+  }
+
   function positive(value, max) {
     const n = Number(value);
     return Number.isFinite(n) && n > 0 ? Math.min(n, max) : null;
@@ -235,16 +248,16 @@
       if (!one || typeof one !== "object" || !isUuid(one.id)) continue;
       const text = clip(String(one.text || "").trim().replace(/\s+/g, " "), MAX_ITEM_CHARS).replace(/\s+/g, " ").trim();
       if (!text) continue;
-      const addedAt = moment(one.addedAt) ?? 0;
+      const addedAt = stamp(one.addedAt) ?? 0;
       const item = {
         id: one.id,
         text,
         // A line saved before it could be edited has never been edited:
         // its words date from when it was added.
-        textAt: moment(one.textAt) ?? addedAt,
+        textAt: stamp(one.textAt) ?? addedAt,
         addedAt,
         state: ITEM_STATES.includes(one.state) ? one.state : "",
-        at: moment(one.at) ?? addedAt,
+        at: stamp(one.at) ?? addedAt,
       };
       const held = byId.get(item.id);
       // Two copies of one id merge as any two copies do, field by field.

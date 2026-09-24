@@ -638,3 +638,17 @@ test("J13.16 · an edit from a clock that is behind still takes", () => {
   assert.ok(edited.items[0].textAt > 9000, "stamped past the words it replaces");
   assert.equal(mergePlans(base, edited).items[0].text, "oat milk");
 });
+
+test("J13.16 · three copies of one line merge to the same line in any order", () => {
+  const { mergeItem } = win.RecipePlan;
+  const id = "11111111-1111-4111-8111-111111111111";
+  const copies = [
+    { id, text: "milk", textAt: 5, addedAt: 1, state: "got", at: 7 },
+    { id, text: "oat milk", textAt: 9, addedAt: 2, state: "have", at: 7 },
+    { id, text: "soya milk", textAt: 9, addedAt: 3, state: "", at: 4 },
+  ];
+  const orders = [[0, 1, 2], [0, 2, 1], [1, 0, 2], [1, 2, 0], [2, 0, 1], [2, 1, 0]];
+  const results = orders.map(([x, y, z]) => mergeItem(mergeItem(copies[x], copies[y]), copies[z]));
+  for (const r of results) assert.deepEqual(r, results[0]);
+  assert.deepEqual([results[0].text, results[0].state, results[0].addedAt], ["soya milk", "got", 1]);
+});
