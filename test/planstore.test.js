@@ -1060,6 +1060,69 @@ test("J12.14 · lines off the server are sanitised, not trusted", () => {
   assert.equal(item.at, 7, "with no readable stamp it dates from when it was added");
 });
 
+test("J12.14 · two phones' lists meeting near the limit lose nothing and bring nothing back", async () => {
+  const cloud = fakeCloud();
+  const a = device(cloud);
+  const b = device(cloud);
+  const limits = a.win.RecipePlanStore.limits;
+  // Sixty shared lines, synced to both phones.
+  let plan = a.planStore.plan;
+  for (let i = 0; i < 60; i++) plan = a.plan.addItem(plan, `shared ${i}`, null, 1000 + i);
+  a.planStore.setPlan(plan);
+  await a.sync.syncNow();
+  await b.sync.syncNow();
+
+  // Offline, A takes two off — the newest two, so age cannot be what
+  // keeps them off — and adds forty, which is more than the list would
+  // hold if the removed ones counted; B adds thirty of its own. Together
+  // that is everything the plan holds (MAX_ITEMS), and none of it may go.
+  const x = a.planStore.plan.items[59];
+  const y = a.planStore.plan.items[58];
+  plan = a.plan.setItemState(a.planStore.plan, x.id, "removed", 5000);
+  plan = a.plan.setItemState(plan, y.id, "removed", 5001);
+  for (let i = 0; i < 40; i++) plan = a.plan.addItem(plan, `a ${i}`, null, 6000 + i);
+  a.planStore.setPlan(plan);
+  let theirs = b.planStore.plan;
+  for (let i = 0; i < 30; i++) theirs = b.plan.addItem(theirs, `b ${i}`, null, 7000 + i);
+  b.planStore.setPlan(theirs);
+  assert.equal(60 + 40 + 30, limits.MAX_ITEMS, "the two lists together are exactly what the plan holds");
+
+  await a.sync.syncNow();
+  await b.sync.syncNow();
+  await a.sync.syncNow();
+
+  for (const d of [a, b]) {
+    const texts = d.plan.liveItems(d.planStore.plan).map((i) => i.text);
+    assert.ok(!texts.includes(x.text) && !texts.includes(y.text), "what A took off stays off");
+    for (let i = 0; i < 58; i++) assert.ok(texts.includes(`shared ${i}`), `"shared ${i}" is kept`);
+    for (let i = 0; i < 40; i++) assert.ok(texts.includes(`a ${i}`), `A's "a ${i}" is kept`);
+    for (let i = 0; i < 30; i++) assert.ok(texts.includes(`b ${i}`), `B's "b ${i}" is kept`);
+  }
+});
+
+test("J12.14 · a line is never cut half way through a character", () => {
+  const cloud = fakeCloud();
+  const d = device(cloud);
+  const limits = d.win.RecipePlanStore.limits;
+  const plan = d.win.RecipePlanStore.sanitizePlan({
+    meals: [{ recipeId: null, name: "b".repeat(limits.MAX_NAME_CHARS - 1) + "🍕" }],
+    items: [{ id: d.win.RecipeStore.newId(), text: "a".repeat(limits.MAX_ITEM_CHARS - 1) + "😀" }],
+  });
+  assert.equal(plan.items[0].text, "a".repeat(limits.MAX_ITEM_CHARS - 1));
+  assert.equal(plan.meals[0].name, "b".repeat(limits.MAX_NAME_CHARS - 1));
+});
+
+test("J12.14 · junk at the front of a list off the server does not push real lines out", () => {
+  const cloud = fakeCloud();
+  const d = device(cloud);
+  const real = { id: d.win.RecipeStore.newId(), text: "milk", addedAt: 1, at: 1 };
+  const plan = d.win.RecipePlanStore.sanitizePlan({
+    meals: [],
+    items: [...Array.from({ length: 5000 }, () => ({ id: "junk", text: "x" })), real],
+  });
+  assert.deepEqual(plan.items.map((i) => i.text), ["milk"]);
+});
+
 test("J12.14 · over the cap, what is still on the list is kept before what was taken off it", () => {
   const cloud = fakeCloud();
   const d = device(cloud);

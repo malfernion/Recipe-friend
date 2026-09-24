@@ -1451,6 +1451,15 @@ accident:
 - Nothing carries from one plan to the next. Saying "we have onions" is
   about this shop (J13.9), and a line added by hand is about this shop
   too (J14.13).
+- **Two phones' lists merge without loss up to what a plan holds, and
+  not past it** (J12.14). A list takes a hundred lines, and a plan holds
+  a hundred and thirty, counting lines taken off, so that two phones
+  near the limit can meet and keep everything. Past that — both phones
+  adding thirty or more lines apiece, offline, to a list already nearly
+  full — the plan keeps what is on the list before what was taken off,
+  and the newest before the oldest. That is a list nobody keeps, and
+  the size check the server applies (007) is why there is a limit at
+  all.
 - **Two plans are two plans, and the newer one wins whole.** Settlements
   merge per item within a plan (J12.11), but never between one plan and
   the next, or "we have onions" — said about a shop that is over — comes

@@ -1915,21 +1915,21 @@
    * at a time and usually several lines at once.
    */
   function planAdd(kind, text, mealId) {
-    if (!canPlan()) return;
+    if (!canPlan()) return false;
     const words = String(text || "").trim();
-    if (!words) return;
+    if (!words) return false;
     const plan = thePlan();
     const limits = window.RecipePlanStore.limits;
     if (kind === "meal") {
       if (plan.meals.length >= limits.MAX_MEALS) {
         toast(`The plan is full — it holds ${limits.MAX_MEALS} meals. Take one out first.`);
-        return;
+        return false;
       }
       planStore.setPlan(RecipePlan.addNamedMeal(plan, words));
     } else {
-      if (RecipePlan.liveItems(plan).length >= limits.MAX_ITEMS) {
-        toast(`The list is full — it holds ${limits.MAX_ITEMS} things added by hand. Clear some first.`);
-        return;
+      if (RecipePlan.liveItems(plan).length >= limits.MAX_LIST_LINES) {
+        toast(`The list is full — it holds ${limits.MAX_LIST_LINES} things added by hand. Clear some first.`);
+        return false;
       }
       const owner = kind === "line" ? plan.meals.find((m) => m.id === mealId) : null;
       planStore.setPlan(RecipePlan.addItem(plan, words, owner ? owner.id : null));
@@ -1939,6 +1939,7 @@
       kind === "meal" ? "#plan-add-meal" : kind === "line" ? `#plan-add-line-${mealId}` : "#plan-add-item"
     );
     if (again && again.focus) again.focus();
+    return true;
   }
 
   /** A tap inside the readout: the meals above, the shop below. */
@@ -2145,8 +2146,9 @@
     event.preventDefault();
     const input = form.elements && form.elements.text;
     const text = input ? input.value : "";
-    if (input) input.value = "";
-    planAdd(form.dataset.planAdd, text, form.dataset.meal);
+    // Emptied only once it has gone in: a refusal — the list is full —
+    // should not also throw away what somebody typed.
+    if (planAdd(form.dataset.planAdd, text, form.dataset.meal) && input) input.value = "";
   });
 
 

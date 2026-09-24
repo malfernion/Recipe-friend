@@ -1168,11 +1168,12 @@ test("J14.4 · Clear takes lines added by hand with it, and says so", async () =
 test("J12.14 · a full list says so rather than dropping the line", () => {
   const app = planMode([]);
   app.open();
-  const limit = app.win.RecipePlanStore.limits.MAX_ITEMS;
+  const limit = app.win.RecipePlanStore.limits.MAX_LIST_LINES;
   for (let i = 0; i < limit; i++) app.add("item", `thing ${i}`);
-  app.add("item", "one too many");
+  const box = app.add("item", "one too many");
   assert.equal(app.win.RecipePlan.liveItems(app.plan()).length, limit);
   assert.match(app.el("toast").textContent, /The list is full/);
+  assert.equal(box.value, "one too many", "and what was typed is still there, not thrown away too");
 });
 
 test("J12.10 · a viewer's add is refused, not merely hidden", () => {

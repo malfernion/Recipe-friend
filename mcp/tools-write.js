@@ -134,7 +134,7 @@ const addToPlan = {
             name: { type: "string", description: "For a meal that is not a recipe, instead of recipeId." },
             items: {
               type: "array",
-              maxItems: 10,
+              maxItems: 20,
               items: { type: "string" },
               description: "What a meal that is not a recipe needs on the list, as text.",
             },
@@ -184,28 +184,43 @@ const addToPlan = {
       const wrongControl = [];
       const clamped = [];
       const listFull = [];
+      const linesIgnored = [];
+      const named = [];
+      const clip = win.RecipePlanStore.clip;
+      // A millisecond apart, so lines keep the order they were sent in:
+      // the list is ordered by when each line was added.
+      let at = now;
 
       for (const one of asked) {
         const meal = one && typeof one === "object" ? one : { recipeId: one };
         const byName = typeof meal.name === "string" ? meal.name.trim() : "";
         if (!meal.recipeId && byName) {
           // A meal that is not a recipe (J12.13): a name, and its own lines.
-          plan = win.RecipePlan.addNamedMeal(plan, byName.slice(0, limits(book).MAX_NAME_CHARS), now);
+          const name = clip(byName, limits(book).MAX_NAME_CHARS);
+          if (plan.meals.length >= limits(book).MAX_MEALS) {
+            // No room for the meal, so none for its lines either: lines
+            // left behind by a meal that never went in would be loose
+            // lines nobody asked for, and a retry would add them twice.
+            wanted.push({ id: `full:${named.length}`, name });
+            named.push(null);
+            continue;
+          }
+          plan = win.RecipePlan.addNamedMeal(plan, name, now);
           const added = plan.meals[plan.meals.length - 1];
-          const lines = asStrings(meal.items).slice(0, 10);
-          // A millisecond apart, so they keep the order they were sent in:
-          // the list is ordered by when each line was added.
-          let at = now;
-          for (const line of lines) {
-            if (win.RecipePlan.liveItems(plan).length >= limits(book).MAX_ITEMS) {
+          const lines = asStrings(meal.items);
+          if (lines.length > 20) listFull.push(...lines.slice(20));
+          for (const line of lines.slice(0, 20)) {
+            if (win.RecipePlan.liveItems(plan).length >= limits(book).MAX_LIST_LINES) {
               listFull.push(line);
               continue;
             }
-            plan = win.RecipePlan.addItem(plan, line.slice(0, limits(book).MAX_ITEM_CHARS), added.id, at++);
+            plan = win.RecipePlan.addItem(plan, clip(line, limits(book).MAX_ITEM_CHARS), added.id, at++);
           }
           wanted.push({ id: added.id, name: added.name });
+          named.push(added.id);
           continue;
         }
+        if (asStrings(meal.items).length) linesIgnored.push(meal.recipeId);
         const recipe = book.store.getById(meal.recipeId);
         if (!recipe) {
           missing.push(meal.recipeId);
@@ -254,17 +269,41 @@ const addToPlan = {
       }
 
       if (!wanted.length) return { added: [], missing, plan: planNow(book) };
-      const done = await settle(book, { before, plan, wanted, verb: "added", missing });
+      let done = await settle(book, { before, plan, wanted, verb: "added", missing });
+      // A meal that is not a recipe and did not survive — another device's
+      // meals won the merge — must not leave its lines behind as loose
+      // ones: the answer says nothing landed, so a retry would add them
+      // again. They come off in a second write, and the answer is taken
+      // after it.
+      const held = new Set(book.plan.meals.map((m) => m.id));
+      const orphans = win.RecipePlan.liveItems(book.plan).filter(
+        (i) => i.mealId && named.includes(i.mealId) && !held.has(i.mealId)
+      );
+      if (orphans.length) {
+        let tidy = book.plan;
+        const stamp = Date.now();
+        for (const item of orphans) tidy = win.RecipePlan.setItemState(tidy, item.id, "removed", stamp);
+        book.planStore.setPlan(tidy);
+        await book.pushNow();
+        done.plan = planNow(book);
+      }
       // A meal that is not a recipe says which lines it put on the list.
       for (const meal of done.added) {
         if (meal.recipe !== false) continue;
-        meal.items = book.win.RecipePlan.liveItems(book.plan)
+        meal.items = win.RecipePlan.liveItems(book.plan)
           .filter((i) => i.mealId === meal.mealId)
           .map((i) => ({ itemId: i.id, text: i.text }));
       }
       if (listFull.length) {
         done.notOnList = listFull;
-        done.listNote = listIsFull(book);
+        done.listNote =
+          "Not every line went on: a meal takes at most 20 in one call, and the list holds " +
+          limits(book).MAX_LIST_LINES + ". Take something off it, or add the rest with add_to_list.";
+      }
+      if (linesIgnored.length) {
+        done.itemsNote =
+          "`items` is only for a meal that is not a recipe; a recipe's lines come from the recipe. " +
+          "Use add_to_list for anything else it needs.";
       }
       if (notScaled.length) {
         done.notScaled = notScaled;
@@ -398,11 +437,11 @@ const addToList = {
       // A millisecond apart, so the lines keep the order they were sent in.
       let at = now;
       for (const text of asked) {
-        if (win.RecipePlan.liveItems(plan).length >= limits(book).MAX_ITEMS) {
+        if (win.RecipePlan.liveItems(plan).length >= limits(book).MAX_LIST_LINES) {
           full.push(text);
           continue;
         }
-        plan = win.RecipePlan.addItem(plan, text.slice(0, limits(book).MAX_ITEM_CHARS), null, at++);
+        plan = win.RecipePlan.addItem(plan, win.RecipePlanStore.clip(text, limits(book).MAX_ITEM_CHARS), null, at++);
         const item = plan.items[plan.items.length - 1];
         wanted.push({ id: item.id, text: item.text });
       }
@@ -473,7 +512,7 @@ function limits(book) {
 
 function listIsFull(book) {
   return (
-    "The list is full — it holds " + limits(book).MAX_ITEMS + " lines added by hand — so " +
+    "The list is full — it holds " + limits(book).MAX_LIST_LINES + " lines added by hand — so " +
     "there was no room. Take something off it first."
   );
 }
@@ -502,9 +541,16 @@ async function settleLines(book, { before, plan, wanted, removing }) {
   };
   if (lost.length) {
     report[removing ? "notRemoved" : "notAdded"] = lost.map((w) => w.text);
-    report.note = removing
-      ? "Somebody put these back from another device at the same moment. Read the plan again."
-      : listIsFull(book);
+    // Three reasons, and they need three sentences. A plan with another
+    // id is another week: somebody cleared or finished this one from
+    // another device while this was being written.
+    const anotherWeek = book.plan.id !== plan.id;
+    report.note = anotherWeek
+      ? "Somebody cleared or finished the plan from another device at the same moment, so " +
+        "this went into a week that is over. Read the plan again and decide what is still wanted."
+      : removing
+        ? "Somebody put these back from another device at the same moment. Read the plan again."
+        : listIsFull(book);
   }
   report.plan = planNow(book);
   return report;

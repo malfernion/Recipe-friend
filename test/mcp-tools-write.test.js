@@ -799,18 +799,96 @@ test("J17.14 · a line from another phone survives the agent's write, because th
 });
 
 test("J17.14 · a full list says so, and adds nothing past it", async () => {
-  const { call, win } = await aBook();
-  const max = win.RecipePlanStore.limits.MAX_ITEMS;
+  const { call, win, sent } = await aBook();
+  const max = win.RecipePlanStore.limits.MAX_LIST_LINES;
   for (let i = 0; i < max; i += 20) {
     await call(ADD_LINES, { items: Array.from({ length: Math.min(20, max - i) }, (_, j) => `thing ${i + j}`) });
     await tick();
   }
+  const pushes = sent.livePlans.length;
 
   const out = await call(ADD_LINES, { items: ["one too many"] });
 
   assert.deepEqual(out.added, []);
   assert.deepEqual(out.notAdded, ["one too many"]);
   assert.match(out.note, /The list is full/);
+  assert.equal(sent.livePlans.length, pushes, "refused before anything was written, not trimmed after");
+});
+
+test("J17.14 · a meal that is not a recipe, refused by a full plan, leaves no lines behind", async () => {
+  const { call, win, sent } = await aBook();
+  const max = win.RecipePlanStore.limits.MAX_MEALS;
+  for (let i = 0; i < max; i += 20) {
+    await call(ADD, { meals: Array.from({ length: Math.min(20, max - i) }, (_, j) => ({ name: `Night ${i + j}` })) });
+    await tick();
+  }
+
+  const out = await call(ADD, { meals: [{ name: "Frozen pizza", items: ["2 frozen pizzas", "chips"] }] });
+
+  assert.deepEqual(out.added, []);
+  assert.deepEqual(out.dropped, ["Frozen pizza"]);
+  assert.match(out.note, /The plan is full/);
+  assert.deepEqual(out.plan.byHand, [], "its lines did not go on as loose ones");
+  assert.deepEqual(sent.livePlans.at(-1).items, [], "nor went on and came off again: they were never written");
+});
+
+test("J17.14 · a meal that is not a recipe, lost to another phone's write, takes its lines back off", async () => {
+  const { call, win, book, setRemotePlan } = await aBook();
+  await call(ADD, { meals: [{ name: "Soup night" }] });
+  await tick();
+  // Between the tool reading the book and writing it, another phone's
+  // newer meals body arrives — one without the meal about to be added —
+  // and wins whole (J12.11).
+  await book.refresh();
+  setRemotePlan({ ...book.plan, meals: [], updatedAt: Date.now() + 100000 });
+
+  const out = await ADD.run(book, { meals: [{ name: "Frozen pizza", items: ["2 frozen pizzas"] }] });
+
+  assert.deepEqual(out.added, []);
+  assert.deepEqual(out.dropped, ["Frozen pizza"]);
+  assert.deepEqual(win.RecipePlan.liveItems(book.plan).map((i) => i.text), [],
+    "a retry must not find the pizzas already on the list");
+});
+
+test("J17.14 · lines past what one meal takes in a call are named, not dropped in silence", async () => {
+  const { call } = await aBook();
+  const lines = Array.from({ length: 23 }, (_, i) => `line ${i}`);
+  const out = await call(ADD, { meals: [{ name: "Party", items: lines }] });
+  assert.equal(out.added[0].items.length, 20);
+  assert.deepEqual(out.notOnList, ["line 20", "line 21", "line 22"]);
+  assert.match(out.listNote, /add_to_list/);
+});
+
+test("J17.14 · lines sent with a recipe are said to be ignored, not ignored in silence", async () => {
+  const { call, idOf } = await aBook();
+  const out = await call(ADD, { meals: [{ recipeId: idOf("Chicken pie"), items: ["gravy"] }] });
+  assert.deepEqual(out.added.map((m) => m.name), ["Chicken pie"]);
+  assert.match(out.itemsNote, /add_to_list/);
+  assert.deepEqual(out.plan.byHand, []);
+});
+
+test("J17.14 · a line that lands in a week somebody has just cleared says so, not that the list is full", async () => {
+  const { call, win, book, setRemotePlan } = await aBook();
+  await call(ADD_LINES, { items: ["milk"] });
+  await tick();
+  // Between the tool reading the book and writing it, somebody presses
+  // Clear: a new generation, later than this one.
+  await book.refresh();
+  setRemotePlan(win.RecipePlan.emptyPlan(win.RecipePlan.generationAfter(book.plan, Date.now() + 100000)));
+
+  const out = await ADD_LINES.run(book, { items: ["eggs"] });
+
+  assert.deepEqual(out.notAdded, ["eggs"]);
+  assert.match(out.note, /cleared or finished/);
+  assert.doesNotMatch(out.note, /full/);
+});
+
+test("J17.14 · a line is never cut half way through a character", async () => {
+  const { call, sent } = await aBook();
+  const out = await call(ADD_LINES, { items: ["a".repeat(119) + "😀"] });
+  const text = out.added[0].text;
+  assert.equal(text, "a".repeat(119), "the emoji that would not fit goes whole");
+  assert.doesNotMatch(JSON.stringify(sent.livePlans.at(-1)), /\\ud83d"/);
 });
 
 test("J17.14 · a finished week is not one to add lines to (J17.9)", async () => {

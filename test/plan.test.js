@@ -611,6 +611,19 @@ test("J12.14 · a line whose meal this copy has lost is still on the list", () =
     "something to buy is not thrown away on the strength of a merge");
 });
 
+test("J12.14 · Put back on one phone beats the ✗ an older copy still holds", () => {
+  const base = addItem(emptyPlan(1), "milk", null, 1000);
+  const id = base.items[0].id;
+  const crossed = setItemState(base, id, "have", 2000);
+  const putBack = setItemState(crossed, id, "", 3000);
+  for (const merged of [mergePlans(crossed, putBack), mergePlans(putBack, crossed)]) {
+    assert.equal(merged.items[0].state, "", "the later word on it is that it is wanted");
+  }
+  // And the other way: a later ✓ beats an earlier Put back.
+  const got = setItemState(putBack, id, "got", 4000);
+  assert.equal(mergePlans(putBack, got).items[0].state, "got");
+});
+
 test("J14.13 · a new plan does not inherit the old one's list", () => {
   const old = addItem(addMeal(emptyPlan(1), BOLOGNESE, 1000), "milk", null, 1500);
   const fresh = emptyPlan(generationAfter(old, 2000));
