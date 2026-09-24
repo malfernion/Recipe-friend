@@ -457,9 +457,9 @@ const getPlan = {
   title: "The week's plan and the shopping list it makes",
   description:
     "The book's live plan and the one shopping list its meals add up to. Gives back: `meals`, " +
-    "each with mealId, recipeId, name and portions (or multiplier), or `recipe: false` for a " +
-    "meal that is not a recipe; and `shoppingList` — toBuy, partlySorted, alreadyHave, " +
-    "inBasket, and `byHand`: lines added by hand, each with itemId, text and state. A plan is a bag of meals: nothing in it " +
+    "each with mealId, recipeId, name and portions (or multiplier); and `shoppingList` — " +
+    "toBuy, partlySorted, alreadyHave, inBasket, and `byHand`: lines added by hand, each with " +
+    "itemId, text and state. A plan is a bag of meals: nothing in it " +
     "belongs to a day or a date, so keep the calendar on your side. " + HOUSEHOLD_DATA,
   annotations: LOOKS,
   inputSchema: { type: "object", properties: {}, additionalProperties: false },

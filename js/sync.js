@@ -628,14 +628,25 @@
     async completePlan(now = Date.now()) {
       if (!this.planStore) return null;
       const live = this.planStore.plan;
-      const finished = global.RecipePlan.complete(live, now);
-      // An empty plan has nothing to record and offers no Done (J14.3).
-      if (!finished || finished === live) return null;
+      // An empty plan has nothing to finish and offers no Done (J14.3).
+      if (!global.RecipePlan.hasSomething(live)) return null;
       if (this.readOnly) throw new Error("this is a book you read, not one you plan");
       // Done is what records a week as planned (J14.1), and that record
       // is what an agent reads to decide what to suggest next (J14.9).
       // An agent does not write its own evidence (J16.4).
       if (this.addOnly) throw new Error("an agent does not finish a plan");
+
+      // A shop with no recipe in it is finished the same way and records
+      // nothing (J14.3): what is recorded is only ever recipes (J14.5).
+      // The list goes and a later generation takes its place, exactly as
+      // Clear does it, and the plan that was is handed back for Undo.
+      if (live.meals.length === 0) {
+        const fresh = global.RecipePlan.emptyPlan(global.RecipePlan.generationAfter(live, now));
+        this.planStore.setPlan(fresh);
+        await this.syncNow();
+        return { archived: null, previous: live, plan: fresh, items: live.items || [] };
+      }
+      const finished = global.RecipePlan.complete(live, now);
 
       // Strictly later than the plan it replaces, so the two are ordered
       // as generations on every device that meets them (see mergePlans).
@@ -693,6 +704,28 @@
       this.planStore.setPlan(restored);
       await this.syncNow();
       return restored;
+    }
+
+    /**
+     * Undo after a Done that recorded nothing (J14.3): the plan comes back
+     * as a new generation, for the reason `undoComplete` gives — the empty
+     * plan that replaced it may already be on another phone.
+     *
+     * No network: there is no record to take back, so this is an ordinary
+     * local edit, pushed on the usual debounce like any other (J12.12).
+     */
+    restoreUnrecorded(previous, now = Date.now()) {
+      if (!this.planStore || !previous) return null;
+      if (this.readOnly) throw new Error("this is a book you read, not one you plan");
+      if (this.addOnly) throw new Error("an agent does not finish a plan");
+      const createdAt = global.RecipePlan.generationAfter(this.planStore.plan, now);
+      return this.planStore.setPlan({
+        ...previous,
+        id: global.RecipeStore.newId(),
+        createdAt,
+        updatedAt: Math.max(now, createdAt),
+        completedAt: null,
+      });
     }
 
     /** Local edit happened: coalesce rapid changes into one round trip. */

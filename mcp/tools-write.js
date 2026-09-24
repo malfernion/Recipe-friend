@@ -112,9 +112,8 @@ const addToPlan = {
   name: "add_to_plan",
   title: "Put meals in the plan",
   description:
-    "Add meals to the book's live plan, adding to what is there rather than replacing it. A " +
-    "meal is a recipe by recipeId, or a meal that is not a recipe by `name` (\"Frozen pizza\"), " +
-    "with `items` for the list lines it needs. " +
+    "Add recipes to the book's live plan, adding to what is there rather than replacing it. " +
+    "Anything that is not a recipe — frozen pizza — goes on the list with add_to_list. " +
     "Gives back: `added` — the meals that landed, each with its mealId and amount — plus " +
     "`dropped`, `missing`, `notScaled` and a `note` for anything that did not, and the plan as " +
     "it now stands. A plan is a bag of meals: nothing in it belongs to a day or a date, so " +
@@ -131,13 +130,6 @@ const addToPlan = {
           type: "object",
           properties: {
             recipeId: { type: "string", description: "From list_recipes or find_recipes." },
-            name: { type: "string", description: "For a meal that is not a recipe, instead of recipeId." },
-            items: {
-              type: "array",
-              maxItems: 20,
-              items: { type: "string" },
-              description: "What a meal that is not a recipe needs on the list, as text.",
-            },
             portions: {
               type: "integer",
               minimum: 1,
@@ -152,6 +144,7 @@ const addToPlan = {
                 "How many batches, in halves, for a recipe that does not say what it serves.",
             },
           },
+          required: ["recipeId"],
           additionalProperties: false,
         },
       },
@@ -183,44 +176,16 @@ const addToPlan = {
       const notScaled = [];
       const wrongControl = [];
       const clamped = [];
-      const listFull = [];
-      const linesIgnored = [];
-      const named = [];
-      const clip = win.RecipePlanStore.clip;
-      // A millisecond apart, so lines keep the order they were sent in:
-      // the list is ordered by when each line was added.
-      let at = now;
+      const notRecipes = [];
 
       for (const one of asked) {
         const meal = one && typeof one === "object" ? one : { recipeId: one };
-        const byName = typeof meal.name === "string" ? meal.name.trim() : "";
-        if (!meal.recipeId && byName) {
-          // A meal that is not a recipe (J12.13): a name, and its own lines.
-          const name = clip(byName, limits(book).MAX_NAME_CHARS);
-          if (plan.meals.length >= limits(book).MAX_MEALS) {
-            // No room for the meal, so none for its lines either: lines
-            // left behind by a meal that never went in would be loose
-            // lines nobody asked for, and a retry would add them twice.
-            wanted.push({ id: `full:${named.length}`, name });
-            named.push(null);
-            continue;
-          }
-          plan = win.RecipePlan.addNamedMeal(plan, name, now);
-          const added = plan.meals[plan.meals.length - 1];
-          const lines = asStrings(meal.items);
-          if (lines.length > 20) listFull.push(...lines.slice(20));
-          for (const line of lines.slice(0, 20)) {
-            if (win.RecipePlan.liveItems(plan).length >= limits(book).MAX_LIST_LINES) {
-              listFull.push(line);
-              continue;
-            }
-            plan = win.RecipePlan.addItem(plan, clip(line, limits(book).MAX_ITEM_CHARS), added.id, at++);
-          }
-          wanted.push({ id: added.id, name: added.name });
-          named.push(added.id);
+        // A meal is a recipe (J12.13). A name without one is something for
+        // the list, and saying so is more use than calling it missing.
+        if (!meal.recipeId && typeof meal.name === "string" && meal.name.trim()) {
+          notRecipes.push(meal.name.trim());
           continue;
         }
-        if (asStrings(meal.items).length) linesIgnored.push(meal.recipeId);
         const recipe = book.store.getById(meal.recipeId);
         if (!recipe) {
           missing.push(meal.recipeId);
@@ -268,51 +233,21 @@ const addToPlan = {
         wanted.push({ id: added.id, name: added.name });
       }
 
-      if (!wanted.length) return { added: [], missing, plan: planNow(book) };
-      let done = await settle(book, { before, plan, wanted, verb: "added", missing });
-      // A meal that is not a recipe and did not survive — another device's
-      // meals won the merge — must not leave its lines behind as loose
-      // ones: the answer says nothing landed, so a retry would add them
-      // again. They come off in a second write, and the answer is taken
-      // after it.
-      const held = new Set(book.plan.meals.map((m) => m.id));
-      const orphans = win.RecipePlan.liveItems(book.plan).filter(
-        (i) => i.mealId && named.includes(i.mealId) && !held.has(i.mealId)
-      );
-      if (orphans.length) {
-        let tidy = book.plan;
-        const stamp = Date.now();
-        for (const item of orphans) tidy = win.RecipePlan.setItemState(tidy, item.id, "removed", stamp);
-        book.planStore.setPlan(tidy);
-        try {
-          await book.pushNow();
-        } catch {
-          // The first write landed, so this is not a failure to report as
-          // one: a model told "nothing happened" would try again. The
-          // removal is held here and goes up with the next sync.
-          done.cleanupPending =
-            "The lines of a meal that did not go in are off the list here but not yet in the " +
-            "book; they go on the next call. Do not add them again.";
-        }
-        done.plan = planNow(book);
+      const listNote =
+        "Only recipes go in the plan. Put anything else on the list with add_to_list — " +
+        "frozen pizza night is \"2 frozen pizzas\" there, and the night is on your calendar.";
+      if (!wanted.length) {
+        return {
+          added: [],
+          missing,
+          ...(notRecipes.length ? { notRecipes, note: listNote } : {}),
+          plan: planNow(book),
+        };
       }
-      // A meal that is not a recipe says which lines it put on the list.
-      for (const meal of done.added) {
-        if (meal.recipe !== false) continue;
-        meal.items = win.RecipePlan.liveItems(book.plan)
-          .filter((i) => i.mealId === meal.mealId)
-          .map((i) => ({ itemId: i.id, text: i.text }));
-      }
-      if (listFull.length) {
-        done.notOnList = listFull;
-        done.listNote =
-          "Not every line went on: a meal takes at most 20 in one call, and the list holds " +
-          limits(book).MAX_LIST_LINES + ". Take something off it, or add the rest with add_to_list.";
-      }
-      if (linesIgnored.length) {
-        done.itemsNote =
-          "`items` is only for a meal that is not a recipe; a recipe's lines come from the recipe. " +
-          "Use add_to_list for anything else it needs.";
+      const done = await settle(book, { before, plan, wanted, verb: "added", missing });
+      if (notRecipes.length) {
+        done.notRecipes = notRecipes;
+        done.listNote = listNote;
       }
       if (notScaled.length) {
         done.notScaled = notScaled;
@@ -386,18 +321,9 @@ const removeFromPlan = {
         wanted.push({
           id,
           name: meal.name || "",
-          // A meal that is not a recipe goes back by name, with the lines
-          // it took with it (J12.13).
-          was: !meal.recipeId
-            ? {
-                name: meal.name || "",
-                items: win.RecipePlan.liveItems(before)
-                  .filter((i) => i.mealId === id)
-                  .map((i) => i.text),
-              }
-            : Number(meal.portions) > 0
-              ? { portions: meal.portions }
-              : { multiplier: meal.multiplier || 1 },
+          was: Number(meal.portions) > 0
+            ? { portions: meal.portions }
+            : { multiplier: meal.multiplier || 1 },
         });
       }
 
@@ -450,7 +376,7 @@ const addToList = {
           full.push(text);
           continue;
         }
-        plan = win.RecipePlan.addItem(plan, win.RecipePlanStore.clip(text, limits(book).MAX_ITEM_CHARS), null, at++);
+        plan = win.RecipePlan.addItem(plan, win.RecipePlanStore.clip(text, limits(book).MAX_ITEM_CHARS), at++);
         const item = plan.items[plan.items.length - 1];
         wanted.push({ id: item.id, text: item.text });
       }
@@ -529,7 +455,7 @@ function listIsFull(book) {
 /**
  * Push a change to the lines added by hand, and report what survived.
  *
- * The list merges line by line (J12.14), so another phone writing at the
+ * The list merges line by line (J12.13), so another phone writing at the
  * same moment does not take these lines with it the way it can take a
  * meal. What is reported is still read back rather than assumed (J17.9):
  * the only honest answer to "did it land" is the plan as it now stands.

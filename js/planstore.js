@@ -55,10 +55,11 @@
   // of at most MAX_NAME_CHARS units 360, and three numbers 72 — 647
   // bytes, called 700.
   //
-  // One line added by hand is an object of six fields: 13 elements at 8 =
-  // 104, its key names 26, two uuids 72, text of at most MAX_ITEM_CHARS
-  // units 360, a state of at most seven characters 21, and two numbers 48
-  // — 631 bytes, called 650.
+  // One line added by hand is an object of five fields: 11 elements at 8 =
+  // 88, its key names 20, a uuid 36, text of at most MAX_ITEM_CHARS units
+  // 360, a state of at most seven characters 21, and two numbers 48 — 573
+  // bytes, called 650. (It had a sixth field, the meal it belonged to,
+  // when a meal could be a name; the room it left is kept as margin.)
   //
   // One settled item is a key and an object of two fields, each an object
   // of two: 14 elements at 8 = 112, a key of at most MAX_KEY_CHARS units
@@ -96,7 +97,7 @@
   // be on the list — what a person or the agent may add up to. MAX_ITEMS
   // is how many the plan will hold, and it is larger because it also
   // holds lines taken off: those are kept so that an older copy cannot
-  // bring them back (J12.14), and two phones' lists meeting can come to
+  // bring them back (J12.13), and two phones' lists meeting can come to
   // more than either held. The difference is the room that keeps a merge
   // near the limit from dropping anything at all (see `sanitizeItems`).
   const MAX_MEALS = 40;
@@ -160,20 +161,6 @@
    */
   function sanitizeMeal(raw) {
     if (!raw || typeof raw !== "object") return null;
-    // A meal that is not a recipe (J12.13) is a name and nothing else, and
-    // without the name it is nothing at all.
-    if (raw.recipeId === null || raw.recipeId === undefined) {
-      const name = clip(String(raw.name || "").trim(), MAX_NAME_CHARS).trim();
-      if (!name) return null;
-      return {
-        id: isUuid(raw.id) ? raw.id : global.RecipeStore.newId(),
-        recipeId: null,
-        name,
-        portions: null,
-        multiplier: null,
-        addedAt: moment(raw.addedAt) ?? 0,
-      };
-    }
     if (!isUuid(raw.recipeId)) return null;
     const portions = positive(raw.portions, MAX_PORTIONS);
     const multiplier = positive(raw.multiplier, MAX_MULTIPLIER);
@@ -223,7 +210,7 @@
   }
 
   /**
-   * The lines added by hand (J12.14, J13.15).
+   * The lines added by hand (J12.13, J13.15).
    *
    * A line without a uuid is dropped rather than given one: it is merged
    * by id, so an id minted here would be a new line every time the plan
@@ -234,7 +221,7 @@
    * since each is allowed only MAX_LIST_LINES on the list — what is on
    * the list is kept before what was taken off it, and the newest of each
    * before the oldest. A removed line is kept only so that an older copy
-   * cannot bring it back (J12.14): one coming back is visible and a tap
+   * cannot bring it back (J12.13): one coming back is visible and a tap
    * fixes it, where a line somebody added vanishing is neither. The order
    * the lines were added in is kept either way.
    *
@@ -253,7 +240,6 @@
       const item = {
         id: one.id,
         text,
-        mealId: isUuid(one.mealId) ? one.mealId : null,
         addedAt,
         state: ITEM_STATES.includes(one.state) ? one.state : "",
         at: moment(one.at) ?? addedAt,

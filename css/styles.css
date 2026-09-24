@@ -1871,7 +1871,7 @@ button.crumb:hover {
 }
 
 /*
-  Adding by hand (J12.13, J12.14): one box and its button. The box takes
+  Adding by hand (J12.13): one box and its button. The box takes
   the row, because what is typed is the line, and a line cut off while
   it is being written is a line written wrong. 16px, because anything
   smaller makes iOS zoom the page in on focus, which is the last thing
@@ -1914,26 +1914,6 @@ button.crumb:hover {
 
 .plan-add-submit {
   flex: none;
-}
-
-/*
-  A meal that is not a recipe has no stepper, so its name and × fit one
-  row even on a phone; the box for its own lines goes under them, across
-  the whole row.
-*/
-.plan-meal-named {
-  flex-wrap: wrap;
-}
-
-.plan-meal-named .plan-add-form {
-  flex: 1 0 100%;
-  margin: 0;
-}
-
-@media (max-width: 480px) {
-  .plan-meal-named .plan-meal-name {
-    flex: 1;
-  }
 }
 
 /* ---------- The shopping list ---------- */

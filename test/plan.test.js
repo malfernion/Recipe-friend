@@ -488,74 +488,30 @@ test("J14.9 · recipes planned equally long ago keep the order they came in", ()
 // A meal that is not a recipe, and what is added to the list by hand
 // ---------------------------------------------------------------------
 
-const { addNamedMeal, isRecipeMeal, addItem, setItemState, liveItems } = win.RecipePlan;
+const { addItem, setItemState, liveItems } = win.RecipePlan;
 
-test("J12.13 · a meal can be just a name, and it counts as a meal", () => {
-  let plan = addNamedMeal(emptyPlan(1), "  Frozen pizza ", 1000);
-  plan = addMeal(plan, BOLOGNESE, 1001);
-
-  assert.equal(plan.meals.length, 2, "it is one of the week's meals");
-  const pizza = plan.meals[0];
-  assert.equal(pizza.name, "Frozen pizza");
-  assert.equal(pizza.recipeId, null);
-  assert.equal(pizza.portions, null, "there is nothing to scale");
-  assert.equal(pizza.multiplier, null);
-  assert.equal(isRecipeMeal(pizza), false);
-  assert.equal(isRecipeMeal(plan.meals[1]), true);
-  assert.equal(addNamedMeal(plan, "   ", 1002), plan, "a meal with no name is not a meal");
-});
-
-test("J12.13 · a meal that is not a recipe has no portions to step and no recipe to leave", () => {
-  const plan = addNamedMeal(emptyPlan(1), "Frozen pizza", 1000);
-  const id = plan.meals[0].id;
-  assert.equal(stepPortions(plan, id, "up", undefined, 2000), plan, "stepping it changes nothing");
-  assert.equal(prune(plan, [], 2000), plan, "a book with no recipes still has pizza night");
-  assert.equal(isPlanned(plan, null), false, "no recipe is 'in the plan' because a name is");
-});
-
-test("J12.13 · a meal that is not a recipe is not planning history", () => {
-  let plan = addNamedMeal(emptyPlan(1), "Frozen pizza", 1000);
-  plan = addMeal(plan, BOLOGNESE, 1001);
-  const index = plannedIndex([complete(plan, 5000)]);
-  assert.deepEqual(Object.keys(index), [BOLOGNESE.id], "only the recipe was planned");
-  assert.equal(index[BOLOGNESE.id].count, 1);
-});
-
-test("J12.13 · taking a meal out takes its own lines with it", () => {
-  let plan = addNamedMeal(emptyPlan(1), "Frozen pizza", 1000);
-  const pizza = plan.meals[0].id;
-  plan = addItem(plan, "2 frozen pizzas", pizza, 1001);
-  plan = addItem(plan, "milk", null, 1002);
-
-  const after = removeMeal(plan, pizza, 3000);
-  assert.deepEqual(liveItems(after).map((i) => i.text), ["milk"], "the loose line stays");
-  const gone = after.items.find((i) => i.text === "2 frozen pizzas");
-  assert.equal(gone.state, "removed", "marked, not dropped, so the other phone's copy cannot bring it back");
-  assert.ok(gone.at >= 3000);
-});
-
-test("J12.14 · a line added by hand is the words as typed, and needs no recipe or meal", () => {
+test("J12.13 · a line added by hand is the words as typed, and needs no recipe or meal", () => {
   let plan = emptyPlan(1);
-  plan = addItem(plan, "  2 l   milk ", null, 1000);
-  assert.deepEqual(plan.items.map((i) => [i.text, i.mealId, i.state]), [["2 l milk", null, ""]]);
-  assert.equal(addItem(plan, "   ", null, 1001), plan, "nothing typed is nothing added");
+  plan = addItem(plan, "  2 l   milk ", 1000);
+  assert.deepEqual(plan.items.map((i) => [i.text, i.state]), [["2 l milk", ""]]);
+  assert.equal(addItem(plan, "   ", 1001), plan, "nothing typed is nothing added");
   assert.equal(plan.meals.length, 0);
 });
 
-test("J12.14 · adding to the list does not make this phone win the meals", () => {
+test("J12.13 · adding to the list does not make this phone win the meals", () => {
   let plan = addMeal(emptyPlan(1), BOLOGNESE, 1000);
   const before = plan.updatedAt;
-  plan = addItem(plan, "milk", null, 9000);
+  plan = addItem(plan, "milk", 9000);
   assert.equal(plan.updatedAt, before, "the meals merge on updatedAt, and milk is not a meal");
   assert.equal(touchedAt(plan), 9000, "but the plan was touched, so it is pushed");
 });
 
-test("J12.14 · two phones adding to the list offline both keep what they added", () => {
+test("J12.13 · two phones adding to the list offline both keep what they added", () => {
   const base = addMeal(emptyPlan(1), BOLOGNESE, 1000);
-  const mine = addItem(base, "milk", null, 2000);
+  const mine = addItem(base, "milk", 2000);
   // The other phone also changed the meals, later: its meals win whole,
   // and the list must not go with them.
-  const theirs = addItem(addMeal(base, CURRY, 3000), "kitchen roll", null, 2500);
+  const theirs = addItem(addMeal(base, CURRY, 3000), "kitchen roll", 2500);
 
   for (const merged of [mergePlans(mine, theirs), mergePlans(theirs, mine)]) {
     assert.deepEqual(merged.meals.map((m) => m.name), ["Bolognese", "Curry"]);
@@ -563,14 +519,14 @@ test("J12.14 · two phones adding to the list offline both keep what they added"
   }
 });
 
-test("J12.14 · milk added on both phones is two lines, because two lines are never one", () => {
+test("J12.13 · milk added on both phones is two lines, because two lines are never one", () => {
   const base = emptyPlan(1);
-  const merged = mergePlans(addItem(base, "milk", null, 2000), addItem(base, "milk", null, 2001));
+  const merged = mergePlans(addItem(base, "milk", 2000), addItem(base, "milk", 2001));
   assert.equal(liveItems(merged).length, 2);
 });
 
-test("J12.14 · a line taken off stays off when an older copy of the list arrives", () => {
-  const base = addItem(emptyPlan(1), "milk", null, 1000);
+test("J12.13 · a line taken off stays off when an older copy of the list arrives", () => {
+  const base = addItem(emptyPlan(1), "milk", 1000);
   const id = base.items[0].id;
   const removed = setItemState(base, id, "removed", 5000);
 
@@ -579,17 +535,17 @@ test("J12.14 · a line taken off stays off when an older copy of the list arrive
   }
 });
 
-test("J12.14 · a tick and a removal from a clock that is behind still take effect", () => {
+test("J12.13 · a tick and a removal from a clock that is behind still take effect", () => {
   // The other phone added it at 9000 by its own clock; this one's reads 100.
-  const base = addItem(emptyPlan(1), "milk", null, 9000);
+  const base = addItem(emptyPlan(1), "milk", 9000);
   const id = base.items[0].id;
   const ticked = setItemState(base, id, "got", 100);
   assert.ok(ticked.items[0].at > 9000, "stamped past what it replaces, not at a clock that is behind");
   assert.equal(mergePlans(base, ticked).items[0].state, "got");
 });
 
-test("J12.14 · two phones meeting in one millisecond land on the same list whichever way round", () => {
-  const base = addItem(emptyPlan(1), "milk", null, 1000);
+test("J12.13 · two phones meeting in one millisecond land on the same list whichever way round", () => {
+  const base = addItem(emptyPlan(1), "milk", 1000);
   const id = base.items[0].id;
   const got = { ...base, items: [{ ...base.items[0], state: "got", at: 5000 }] };
   const gone = { ...base, items: [{ ...base.items[0], state: "removed", at: 5000 }] };
@@ -597,22 +553,8 @@ test("J12.14 · two phones meeting in one millisecond land on the same list whic
   assert.equal(setItemState(base, id, "nonsense", 2000), base, "a state that is not one changes nothing");
 });
 
-test("J12.14 · a line whose meal this copy has lost is still on the list", () => {
-  let base = addNamedMeal(emptyPlan(1), "Frozen pizza", 1000);
-  const pizza = base.meals[0].id;
-  // One phone adds a line to pizza night; the other, later, replaced the
-  // meals with a body that has no pizza in it.
-  const mine = addItem(base, "2 frozen pizzas", pizza, 2000);
-  const theirs = { ...addMeal(base, CURRY, 3000) };
-  theirs.meals = theirs.meals.filter((m) => m.id !== pizza);
-  const merged = mergePlans(mine, theirs);
-  assert.deepEqual(merged.meals.map((m) => m.name), ["Curry"]);
-  assert.deepEqual(liveItems(merged).map((i) => i.text), ["2 frozen pizzas"],
-    "something to buy is not thrown away on the strength of a merge");
-});
-
-test("J12.14 · Put back on one phone beats the ✗ an older copy still holds", () => {
-  const base = addItem(emptyPlan(1), "milk", null, 1000);
+test("J12.13 · Put back on one phone beats the ✗ an older copy still holds", () => {
+  const base = addItem(emptyPlan(1), "milk", 1000);
   const id = base.items[0].id;
   const crossed = setItemState(base, id, "have", 2000);
   const putBack = setItemState(crossed, id, "", 3000);
@@ -625,7 +567,7 @@ test("J12.14 · Put back on one phone beats the ✗ an older copy still holds", 
 });
 
 test("J14.13 · a new plan does not inherit the old one's list", () => {
-  const old = addItem(addMeal(emptyPlan(1), BOLOGNESE, 1000), "milk", null, 1500);
+  const old = addItem(addMeal(emptyPlan(1), BOLOGNESE, 1000), "milk", 1500);
   const fresh = emptyPlan(generationAfter(old, 2000));
   const merged = mergePlans(old, fresh);
   assert.equal(merged.id, fresh.id);
