@@ -23,6 +23,8 @@ const { asList, asStrings, asCount, tooMany } = require("./args.js");
 const { HOUSEHOLD_DATA } = require("./tools-read.js");
 const { mealsInBook, mealAmount, byHandLines } = require("./digest.js");
 
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 const CHANGES_THE_PLAN = {
   readOnlyHint: false,
   // Nothing here destroys anything: a meal can go back, and clearing
@@ -115,8 +117,8 @@ const addToPlan = {
     "Add recipes to the book's live plan, adding to what is there rather than replacing it. " +
     "Anything that is not a recipe — frozen pizza — goes on the list with add_to_list. " +
     "Gives back: `added` — the meals that landed, each with its mealId and amount — plus " +
-    "`dropped`, `missing`, `notScaled` and a `note` for anything that did not, and the plan as " +
-    "it now stands. A plan is a bag of meals: nothing in it belongs to a day or a date, so " +
+    "`dropped`, `missing`, `notRecipes`, `notScaled` and a note for anything that did not, and " +
+    "the plan as it now stands. A plan is a bag of meals: nothing in it belongs to a day or a date, so " +
     "keep the calendar on your side. " + HOUSEHOLD_DATA,
   annotations: CHANGES_THE_PLAN,
   inputSchema: {
@@ -183,12 +185,16 @@ const addToPlan = {
         // A meal is a recipe (J12.13). A name without one is something for
         // the list, and saying so is more use than calling it missing.
         if (!meal.recipeId && typeof meal.name === "string" && meal.name.trim()) {
-          notRecipes.push(meal.name.trim());
+          notRecipes.push(win.RecipePlanStore.clip(meal.name.trim(), limits(book).MAX_NAME_CHARS));
           continue;
         }
         const recipe = book.store.getById(meal.recipeId);
         if (!recipe) {
-          missing.push(meal.recipeId);
+          missing.push(
+            typeof meal.recipeId === "string"
+              ? win.RecipePlanStore.clip(meal.recipeId, limits(book).MAX_NAME_CHARS)
+              : meal.recipeId
+          );
           continue;
         }
         plan = win.RecipePlan.addMeal(plan, recipe, now);
@@ -233,22 +239,23 @@ const addToPlan = {
         wanted.push({ id: added.id, name: added.name });
       }
 
+      // A `missing` that is not even shaped like an id is most likely a
+      // name sent where the schema asks for a recipeId — the same mistake
+      // as `notRecipes`, and it gets the same pointer.
+      const named = missing.some((m) => typeof m === "string" && !UUID.test(m.trim()));
       const listNote =
-        "Only recipes go in the plan. Put anything else on the list with add_to_list — " +
-        "frozen pizza night is \"2 frozen pizzas\" there, and the night is on your calendar.";
-      if (!wanted.length) {
-        return {
-          added: [],
-          missing,
-          ...(notRecipes.length ? { notRecipes, note: listNote } : {}),
-          plan: planNow(book),
-        };
-      }
+        notRecipes.length || named
+          ? "Only recipes go in the plan, by recipeId. Put anything else on the list with " +
+            "add_to_list — frozen pizza night is \"2 frozen pizzas\" there, and the night is on " +
+            "your calendar."
+          : null;
+      const extras = {
+        ...(notRecipes.length ? { notRecipes } : {}),
+        ...(listNote ? { listNote } : {}),
+      };
+      if (!wanted.length) return { added: [], missing, ...extras, plan: planNow(book) };
       const done = await settle(book, { before, plan, wanted, verb: "added", missing });
-      if (notRecipes.length) {
-        done.notRecipes = notRecipes;
-        done.listNote = listNote;
-      }
+      Object.assign(done, extras);
       if (notScaled.length) {
         done.notScaled = notScaled;
         done.scalingNote =

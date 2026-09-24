@@ -485,7 +485,7 @@ test("J14.9 · recipes planned equally long ago keep the order they came in", ()
 });
 
 // ---------------------------------------------------------------------
-// A meal that is not a recipe, and what is added to the list by hand
+// What is added to the list by hand
 // ---------------------------------------------------------------------
 
 const { addItem, setItemState, liveItems } = win.RecipePlan;

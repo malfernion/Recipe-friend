@@ -743,6 +743,14 @@ so the app can tell them what to buy.
    than appearing to work, which is the exception J12.12's offline promise
    has to carry. A plan that recorded nothing (J14.3) has no record to
    take back, so its Undo works offline like everything else.
+
+   **Undo puts back what was finished and keeps what came since.** A line
+   added in the seconds after Done — on this phone before tapping Undo,
+   or on the other one — is still there afterwards. Undo means "put that
+   back", not "and forget everything since", and nothing says so if it
+   does forget. And **a Done pressed while a sync is running stays done**:
+   a sync that finds the plan changed under it merges again on top of
+   the change rather than writing back what it read before it.
 3. **Finishing needs something on the list, not something to record.**
    Somebody shopping from the list does not care which lines came from a
    recipe and which were typed in, and a shop of milk and bin bags is

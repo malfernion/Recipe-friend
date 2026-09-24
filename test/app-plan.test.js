@@ -1061,7 +1061,7 @@ test("J14.8 · the note sits on the line of particulars, not in a row of its own
 });
 
 // ---------------------------------------------------------------------
-// A meal that is not a recipe, and lines added by hand
+// Lines added by hand
 // ---------------------------------------------------------------------
 
 test("J12.13 · a line goes on the list with no recipe and no meal", () => {

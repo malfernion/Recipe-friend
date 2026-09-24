@@ -847,7 +847,7 @@ test("J12.13 · a meal sent by name is pointed at the list, not added and not ca
   assert.deepEqual(alone.added, []);
   assert.deepEqual(alone.missing, []);
   assert.deepEqual(alone.notRecipes, ["Frozen pizza"]);
-  assert.match(alone.note, /add_to_list/);
+  assert.match(alone.listNote, /add_to_list/);
   assert.equal(sent.livePlans.length, pushes, "nothing was written");
 
   const mixed = await call(ADD, { meals: [{ name: "Frozen pizza" }, { recipeId: idOf("Chicken pie") }] });
@@ -855,4 +855,19 @@ test("J12.13 · a meal sent by name is pointed at the list, not added and not ca
   assert.deepEqual(mixed.notRecipes, ["Frozen pizza"]);
   assert.match(mixed.listNote, /add_to_list/);
   assert.ok(mixed.plan.meals.every((m) => m.recipeId), "no meal without a recipe got in");
+});
+
+test("J12.13 · a name sent where the schema wants a recipeId gets the same pointer to the list", async () => {
+  const { call, win } = await aBook();
+
+  const out = await call(ADD, { meals: [{ recipeId: "Frozen pizza" }, "Fish fingers"] });
+
+  assert.deepEqual(out.missing, ["Frozen pizza", "Fish fingers"], "still missing: they are not recipes");
+  assert.match(out.listNote, /add_to_list/, "and told where they belong");
+
+  const gone = await call(ADD, { meals: [{ recipeId: win.RecipeStore.newId() }] });
+  assert.equal(gone.listNote, undefined, "an id that is not in the book is just missing");
+
+  const long = await call(ADD, { meals: [{ name: "x".repeat(5000) }] });
+  assert.equal(long.notRecipes[0].length, win.RecipePlanStore.limits.MAX_NAME_CHARS, "nothing is echoed back unbounded");
 });

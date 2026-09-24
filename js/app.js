@@ -1961,7 +1961,9 @@
 
   /**
    * Done: every recipe in the plan is stamped as planned, the plan is
-   * archived, and an empty one takes its place. It says what it did and
+   * archived, and an empty one takes its place — or, where there is no
+   * recipe in it, the list simply goes and nothing is recorded (J14.3).
+   * It says what it did and
    * offers Undo rather than asking first — pressing Done, or settling the
    * last line, is somebody saying they have finished, and you do not
    * interrogate them about it.

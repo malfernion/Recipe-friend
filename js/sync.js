@@ -77,6 +77,30 @@
     return Boolean(a) && Boolean(b) && digest(a) === digest(b);
   }
 
+  /**
+   * A plan brought back by Undo, with what was put in the plan that
+   * replaced it since. Undo restores the old plan as a newer generation,
+   * and a newer generation wins whole (see mergePlans) — so without this,
+   * milk added on the other phone in the seconds after Done, or typed on
+   * this one before tapping Undo, would go with nobody saying so. Undo
+   * means "put back what I finished", not "and forget everything since".
+   */
+  function withWhatCameSince(restored, since) {
+    if (!since) return restored;
+    const meals = new Set(restored.meals.map((m) => m.id));
+    const items = new Set((restored.items || []).map((i) => i.id));
+    const settled = Object.assign(Object.create(null), restored.settled);
+    for (const [key, entry] of Object.entries(since.settled || {})) {
+      if (!(key in settled)) settled[key] = entry;
+    }
+    return {
+      ...restored,
+      meals: [...restored.meals, ...since.meals.filter((m) => !meals.has(m.id))],
+      items: [...(restored.items || []), ...(since.items || []).filter((i) => !items.has(i.id))],
+      settled,
+    };
+  }
+
   /** Nothing in it at all — no meal, no line added by hand, nothing settled. */
   function isBlank(plan) {
     return (
@@ -100,7 +124,7 @@
           .map((f) => (entry[f] ? `${f}=${entry[f].amount}@${entry[f].at}` : ""))].join(",");
       });
     const items = (plan.items || [])
-      .map((i) => [i.id, i.text, i.mealId, i.addedAt, i.state, i.at].join(":"))
+      .map((i) => [i.id, i.text, i.addedAt, i.state, i.at].join(":"))
       .sort();
     // `createdAt` is in here because it is the generation the merge
     // decides on, not decoration: two copies of one id that disagree
@@ -490,6 +514,14 @@
     async syncPlans() {
       if (!this.planStore || !this.bookId) return null;
 
+      // What this device held when the sync began. Everything below awaits
+      // the network, and a tap in the meantime — ✓ on the last line, which
+      // is Done (J14.2), or a line added — changes the plan under it. The
+      // merge is taken against these, so it has to be taken again against
+      // whatever is here by the time it is applied, or the tap is undone.
+      const startedWith = this.planStore.plan;
+      const archivedBefore = new Set(this.planStore.archive.map((p) => p.id));
+
       const row = await this.api.fetchLivePlan(this.bookId);
       const remote = row ? global.RecipePlanStore.sanitizePlan(row.data) : null;
       let plan = global.RecipePlan.mergePlans(this.planStore.plan, remote);
@@ -548,6 +580,18 @@
         if (clean) here.set(clean.id, clean);
       }
 
+      // Changed while the network was being asked: merge again, on top of
+      // what is here now. `mergePlans` already knows the rules — a newer
+      // generation (Done, Clear) wins whole, the list merges line by line
+      // — so a Done pressed during the sync stays done. A plan recorded
+      // here in the meantime is kept, and owed, rather than dropped from
+      // the archive by a list that was read before it existed.
+      if (this.planStore.plan !== startedWith) {
+        plan = global.RecipePlan.mergePlans(this.planStore.plan, plan);
+      }
+      for (const mine of this.planStore.archive) {
+        if (!archivedBefore.has(mine.id) && !here.has(mine.id)) here.set(mine.id, mine);
+      }
       this.planStore.applyMerge(plan, [...here.values()]);
       // What goes up is what the device holds, which is the coerced plan
       // (planstore.js's `applyMerge`). A merge takes the union of two
@@ -701,7 +745,7 @@
         // record never had it (J14.13); the caller kept it for this.
         items: Array.isArray(items) ? items : [],
       };
-      this.planStore.setPlan(restored);
+      this.planStore.setPlan(withWhatCameSince(restored, this.planStore.plan));
       await this.syncNow();
       return restored;
     }
@@ -719,13 +763,18 @@
       if (this.readOnly) throw new Error("this is a book you read, not one you plan");
       if (this.addOnly) throw new Error("an agent does not finish a plan");
       const createdAt = global.RecipePlan.generationAfter(this.planStore.plan, now);
-      return this.planStore.setPlan({
-        ...previous,
-        id: global.RecipeStore.newId(),
-        createdAt,
-        updatedAt: Math.max(now, createdAt),
-        completedAt: null,
-      });
+      return this.planStore.setPlan(
+        withWhatCameSince(
+          {
+            ...previous,
+            id: global.RecipeStore.newId(),
+            createdAt,
+            updatedAt: Math.max(now, createdAt),
+            completedAt: null,
+          },
+          this.planStore.plan
+        )
+      );
     }
 
     /** Local edit happened: coalesce rapid changes into one round trip. */
