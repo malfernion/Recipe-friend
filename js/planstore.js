@@ -134,12 +134,14 @@
 
   /**
    * The first `max` UTF-16 units of a string, never ending half way
-   * through a character. A plain slice can cut an emoji in two, and a
-   * lone surrogate is JSON that Postgres refuses — so the push would fail
-   * for ever over a line that looked fine on the phone.
+   * through a character, and with no half of one anywhere. A lone
+   * surrogate is JSON that Postgres refuses — so the push would fail for
+   * ever over a line that looked fine on the phone — and one can arrive
+   * already alone, from a paste or a program, as well as be made by a
+   * plain slice cutting an emoji in two.
    */
   function clip(text, max) {
-    const s = String(text);
+    const s = String(text).replace(/[\ud800-\udbff](?![\udc00-\udfff])|(?<![\ud800-\udbff])[\udc00-\udfff]/g, "");
     if (s.length <= max) return s;
     const code = s.charCodeAt(max - 1);
     return s.slice(0, code >= 0xd800 && code <= 0xdbff ? max - 1 : max);
@@ -161,7 +163,7 @@
     // A meal that is not a recipe (J12.13) is a name and nothing else, and
     // without the name it is nothing at all.
     if (raw.recipeId === null || raw.recipeId === undefined) {
-      const name = clip(String(raw.name || "").trim(), MAX_NAME_CHARS);
+      const name = clip(String(raw.name || "").trim(), MAX_NAME_CHARS).trim();
       if (!name) return null;
       return {
         id: isUuid(raw.id) ? raw.id : global.RecipeStore.newId(),
@@ -178,7 +180,7 @@
     return {
       id: isUuid(raw.id) ? raw.id : global.RecipeStore.newId(),
       recipeId: raw.recipeId,
-      name: clip(String(raw.name || "").trim(), MAX_NAME_CHARS),
+      name: clip(String(raw.name || "").trim(), MAX_NAME_CHARS).trim(),
       portions,
       // A meal has to ask for some amount of its recipe. With neither
       // number readable it asks for one batch, which is what `factorFor`
@@ -245,7 +247,7 @@
     const byId = new Map();
     for (const one of raw) {
       if (!one || typeof one !== "object" || !isUuid(one.id)) continue;
-      const text = clip(String(one.text || "").trim().replace(/\s+/g, " "), MAX_ITEM_CHARS);
+      const text = clip(String(one.text || "").trim().replace(/\s+/g, " "), MAX_ITEM_CHARS).replace(/\s+/g, " ").trim();
       if (!text) continue;
       const addedAt = moment(one.addedAt) ?? 0;
       const item = {

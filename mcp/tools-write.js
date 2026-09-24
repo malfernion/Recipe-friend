@@ -284,7 +284,16 @@ const addToPlan = {
         const stamp = Date.now();
         for (const item of orphans) tidy = win.RecipePlan.setItemState(tidy, item.id, "removed", stamp);
         book.planStore.setPlan(tidy);
-        await book.pushNow();
+        try {
+          await book.pushNow();
+        } catch {
+          // The first write landed, so this is not a failure to report as
+          // one: a model told "nothing happened" would try again. The
+          // removal is held here and goes up with the next sync.
+          done.cleanupPending =
+            "The lines of a meal that did not go in are off the list here but not yet in the " +
+            "book; they go on the next call. Do not add them again.";
+        }
         done.plan = planNow(book);
       }
       // A meal that is not a recipe says which lines it put on the list.

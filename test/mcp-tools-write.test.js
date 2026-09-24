@@ -850,6 +850,27 @@ test("J17.14 · a meal that is not a recipe, lost to another phone's write, take
     "a retry must not find the pizzas already on the list");
 });
 
+test("J17.14 · a cleanup that cannot reach the book is reported as pending, not as a failure", async () => {
+  const { call, book, setRemotePlan, api } = await aBook();
+  await call(ADD, { meals: [{ name: "Soup night" }] });
+  await tick();
+  await book.refresh();
+  setRemotePlan({ ...book.plan, meals: [], updatedAt: Date.now() + 100000 });
+  // The first write lands; the one that takes the lines back off does not.
+  const push = api.pushLivePlan;
+  let pushes = 0;
+  api.pushLivePlan = async (bookId, plan) => {
+    pushes++;
+    if (pushes > 1) throw new Error("network");
+    return push(bookId, plan);
+  };
+
+  const out = await ADD.run(book, { meals: [{ name: "Frozen pizza", items: ["2 frozen pizzas"] }] });
+
+  assert.deepEqual(out.dropped, ["Frozen pizza"]);
+  assert.match(out.cleanupPending, /Do not add them again/);
+});
+
 test("J17.14 · lines past what one meal takes in a call are named, not dropped in silence", async () => {
   const { call } = await aBook();
   const lines = Array.from({ length: 23 }, (_, i) => `line ${i}`);

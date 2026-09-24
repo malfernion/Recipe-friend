@@ -1060,6 +1060,32 @@ test("J12.14 · lines off the server are sanitised, not trusted", () => {
   assert.equal(item.at, 7, "with no readable stamp it dates from when it was added");
 });
 
+test("J12.14 · half a character that arrives on its own is taken out, not pushed", () => {
+  const cloud = fakeCloud();
+  const d = device(cloud);
+  const plan = d.win.RecipePlanStore.sanitizePlan({
+    meals: [{ recipeId: null, name: "pizza \ud83d" }],
+    items: [{ id: d.win.RecipeStore.newId(), text: "milk \udc00 \ud83d\ude00" }],
+  });
+  assert.equal(plan.items[0].text, "milk \ud83d\ude00", "the lone half goes; the whole emoji stays");
+  assert.equal(plan.meals[0].name, "pizza");
+});
+
+test("J12.14 · past what a plan holds, the newest lines on the list are the ones kept", () => {
+  const cloud = fakeCloud();
+  const d = device(cloud);
+  const limits = d.win.RecipePlanStore.limits;
+  const uuid = () => d.win.RecipeStore.newId();
+  const lines = Array.from({ length: limits.MAX_ITEMS + 30 }, (_, i) => ({
+    id: uuid(), text: `line ${i}`, addedAt: 1000 + i, at: 1000 + i,
+  }));
+  const plan = d.win.RecipePlanStore.sanitizePlan({ meals: [], items: lines });
+  const texts = plan.items.map((i) => i.text);
+  assert.equal(texts.length, limits.MAX_ITEMS);
+  assert.ok(texts.includes(`line ${limits.MAX_ITEMS + 29}`), "the line just added is kept");
+  assert.ok(!texts.includes("line 0"), "the oldest is what goes");
+});
+
 test("J12.14 · two phones' lists meeting near the limit lose nothing and bring nothing back", async () => {
   const cloud = fakeCloud();
   const a = device(cloud);
