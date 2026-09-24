@@ -12,14 +12,16 @@
  *     id, createdAt, updatedAt,
  *     completedAt: null,          // set when finished; archived plans carry it
  *     meals:   [ {id, recipeId, name, portions, multiplier, addedAt} ],
- *     items:   [ {id, text, addedAt, state, at} ],
+ *     items:   [ {id, text, textAt, addedAt, state, at} ],
  *     settled: { [itemKey]: { have: {amount, at}, got: {amount, at} } }
  *   }
  *
  * `items` is what was added to the list by hand (J12.13, J13.15). Each is
  * text, exactly as typed, and is never summed or combined with anything.
  * `state` is "" (still to buy), "have" (✗), "got" (✓) or "removed", and
- * `at` is when it last changed, which is how two copies of it merge.
+ * `at` is when it last changed. `textAt` is when the words last changed
+ * (J13.16). The two merge apart, so an edit on one phone and a tick on
+ * the other both survive.
  *
  * `meals[].name` is a copy of the recipe's name taken when it was added,
  * so an archived plan still reads correctly after the recipe is deleted
@@ -151,6 +153,7 @@
     const item = {
       id: newId(),
       text: words,
+      textAt: now,
       addedAt: now,
       state: "",
       at: now,
@@ -174,6 +177,27 @@
     return {
       ...plan,
       items: itemsOf(plan).map((i) => (i.id === id ? { ...i, state, at } : i)),
+    };
+  }
+
+  /**
+   * Change what a line added by hand says (J13.16) — "6 eggs" to "7 eggs".
+   * The line keeps its id, its place and its tick; only the words and
+   * their stamp change, and the stamp is forced past the one it replaces
+   * for the reason `setItemState` gives. Nothing typed is not an edit: the
+   * caller decides whether an emptied line is a removal (it is, on the
+   * phone) or a mistake (it is, from a program).
+   */
+  function editItem(plan, id, text, now = Date.now()) {
+    const words = String(text || "").trim().replace(/\s+/g, " ");
+    if (!words) return plan;
+    const item = itemsOf(plan).find((i) => i.id === id);
+    if (!item || item.text === words) return plan;
+    const previous = Number(item.textAt);
+    const textAt = Number.isFinite(previous) ? Math.max(Number(now) || 0, previous + 1) : Number(now) || 0;
+    return {
+      ...plan,
+      items: itemsOf(plan).map((i) => (i.id === id ? { ...i, text: words, textAt } : i)),
     };
   }
 
@@ -297,6 +321,7 @@
     }
     for (const item of itemsOf(plan)) {
       if (Number(item.at) > at) at = Number(item.at);
+      if (Number(item.textAt) > at) at = Number(item.textAt);
     }
     return at;
   }
@@ -409,20 +434,48 @@
     const byId = new Map();
     for (const item of [...a, ...b]) {
       const held = byId.get(item.id);
-      byId.set(item.id, held ? laterItem(held, item) : item);
+      byId.set(item.id, held ? mergeItem(held, item) : item);
     }
     return [...byId.values()].sort(
       (x, y) => (Number(x.addedAt) || 0) - (Number(y.addedAt) || 0) || (x.id < y.id ? -1 : x.id > y.id ? 1 : 0)
     );
   }
 
-  function laterItem(a, b) {
+  /**
+   * Two copies of one line. The words and the tick are two facts, each
+   * with its own stamp, and each merges on its own (J13.16): "7 eggs"
+   * typed on this phone and ✓ tapped on that one both survive, where one
+   * stamp for the whole line would let whichever landed last take the
+   * other back. Ties are broken the same way whichever copy is `a`.
+   */
+  function mergeItem(a, b) {
+    const tick = laterTick(a, b);
+    const words = laterWords(a, b);
+    // Built field by field rather than from either copy, so that merging
+    // three copies comes out the same in any order.
+    return {
+      id: a.id,
+      text: words.text,
+      textAt: words.textAt,
+      addedAt: Math.min(Number(a.addedAt) || 0, Number(b.addedAt) || 0),
+      state: tick.state,
+      at: tick.at,
+    };
+  }
+
+  function laterTick(a, b) {
     const at = Number(a.at) || 0;
     const bt = Number(b.at) || 0;
     if (at !== bt) return at > bt ? a : b;
     const rank = (i) => ITEM_STATES.indexOf(i.state);
-    if (rank(a) !== rank(b)) return rank(a) > rank(b) ? a : b;
-    return JSON.stringify(a) >= JSON.stringify(b) ? a : b;
+    return rank(a) >= rank(b) ? a : b;
+  }
+
+  function laterWords(a, b) {
+    const at = Number(a.textAt) || 0;
+    const bt = Number(b.textAt) || 0;
+    if (at !== bt) return at > bt ? a : b;
+    return String(a.text) >= String(b.text) ? a : b;
   }
 
   function laterSettlement(a, b) {
@@ -560,6 +613,8 @@
     removeMeal,
     addItem,
     setItemState,
+    editItem,
+    mergeItem,
     liveItems,
     hasSomething,
     stepPortions,

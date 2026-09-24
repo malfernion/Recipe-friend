@@ -1917,6 +1917,28 @@ button.crumb:hover {
 }
 
 /* ---------- The shopping list ---------- */
+/*
+  A line added by hand is its own editor (J13.16). The faint dotted
+  underline is the whole affordance — no pencil, no edit mode — and it is
+  also what tells such a line from a recipe's at a glance. Focused, it
+  becomes a plain outlined box, so it is plain which line the keyboard is
+  typing into.
+*/
+.shop-edit {
+  text-decoration: underline dotted var(--ink-faint);
+  text-decoration-thickness: 1px;
+  text-underline-offset: 0.22em;
+  cursor: text;
+  border-radius: 2px;
+  -webkit-user-modify: read-write-plaintext-only;
+}
+
+.shop-edit:focus {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  text-decoration: none;
+}
+
 .shop-line {
   align-items: flex-start;
 }

@@ -55,11 +55,10 @@
   // of at most MAX_NAME_CHARS units 360, and three numbers 72 — 647
   // bytes, called 700.
   //
-  // One line added by hand is an object of five fields: 11 elements at 8 =
-  // 88, its key names 20, a uuid 36, text of at most MAX_ITEM_CHARS units
-  // 360, a state of at most seven characters 21, and two numbers 48 — 573
-  // bytes, called 650. (It had a sixth field, the meal it belonged to,
-  // when a meal could be a name; the room it left is kept as margin.)
+  // One line added by hand is an object of six fields: 13 elements at 8 =
+  // 104, its key names 26, a uuid 36, text of at most MAX_ITEM_CHARS units
+  // 360, a state of at most seven characters 21, and three numbers 72 —
+  // 619 bytes, called 650.
   //
   // One settled item is a key and an object of two fields, each an object
   // of two: 14 elements at 8 = 112, a key of at most MAX_KEY_CHARS units
@@ -146,6 +145,23 @@
     if (s.length <= max) return s;
     const code = s.charCodeAt(max - 1);
     return s.slice(0, code >= 0xd800 && code <= 0xdbff ? max - 1 : max);
+  }
+
+  /**
+   * A line's stamp, from a row another member wrote. Past 2^53 the
+   * one-millisecond-past a change is stamped with (plan.js) cannot be
+   * added at all, so a line stamped there could never be changed again.
+   * The cap is set at the year 2200 — absurd for any clock, and nowhere
+   * near 2^53 — and not at "a day past this device's clock": a phone
+   * whose clock is two days slow would then hold every other phone's
+   * stamps lower than they are, and its own edits and ticks, stamped
+   * past those, would lose to them everywhere.
+   */
+  const MAX_STAMP = Date.UTC(2200, 0, 1);
+  function stamp(value) {
+    const at = moment(value);
+    if (at === null) return null;
+    return Math.min(at, MAX_STAMP);
   }
 
   function positive(value, max) {
@@ -236,16 +252,20 @@
       if (!one || typeof one !== "object" || !isUuid(one.id)) continue;
       const text = clip(String(one.text || "").trim().replace(/\s+/g, " "), MAX_ITEM_CHARS).replace(/\s+/g, " ").trim();
       if (!text) continue;
-      const addedAt = moment(one.addedAt) ?? 0;
+      const addedAt = stamp(one.addedAt) ?? 0;
       const item = {
         id: one.id,
         text,
+        // A line saved before it could be edited has never been edited:
+        // its words date from when it was added.
+        textAt: stamp(one.textAt) ?? addedAt,
         addedAt,
         state: ITEM_STATES.includes(one.state) ? one.state : "",
-        at: moment(one.at) ?? addedAt,
+        at: stamp(one.at) ?? addedAt,
       };
       const held = byId.get(item.id);
-      if (!held || item.at > held.at) byId.set(item.id, item);
+      // Two copies of one id merge as any two copies do, field by field.
+      byId.set(item.id, held ? global.RecipePlan.mergeItem(held, item) : item);
     }
     const all = [...byId.values()];
     if (all.length <= MAX_ITEMS) return all;

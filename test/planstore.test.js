@@ -1470,3 +1470,102 @@ test("J14.4 · a tick on the old week, made while a sync brings in the new one, 
   assert.equal(a.planStore.plan.id, b.planStore.plan.id, "the cleared plan is the one the book is on");
   assert.deepEqual(a.plan.liveItems(a.planStore.plan), [], "and the old week's milk did not follow it in");
 });
+
+test("J13.16 · a line saved before lines could be edited dates its words from when it was added", () => {
+  const cloud = fakeCloud();
+  const d = device(cloud);
+  const id = d.win.RecipeStore.newId();
+  const plan = d.win.RecipePlanStore.sanitizePlan({
+    meals: [],
+    items: [{ id, text: "milk", addedAt: 1234, state: "got", at: 5000 }],
+  });
+  assert.equal(plan.items[0].textAt, 1234);
+});
+
+test("J13.16 · two copies of one line in a list off the server merge field by field", () => {
+  const cloud = fakeCloud();
+  const d = device(cloud);
+  const id = d.win.RecipeStore.newId();
+  const plan = d.win.RecipePlanStore.sanitizePlan({
+    meals: [],
+    items: [
+      { id, text: "7 eggs", textAt: 3000, addedAt: 1, state: "", at: 1 },
+      { id, text: "6 eggs", textAt: 1, addedAt: 1, state: "got", at: 4000 },
+    ],
+  });
+  assert.deepEqual(plan.items.map((i) => [i.text, i.state]), [["7 eggs", "got"]]);
+});
+
+test("J13.16 · an edit on one phone and a tick on the other survive a real round trip", async () => {
+  const cloud = fakeCloud();
+  const a = device(cloud);
+  const b = device(cloud);
+  a.planStore.setPlan(a.plan.addItem(a.planStore.plan, "6 eggs", 1000));
+  await a.sync.syncNow();
+  await b.sync.syncNow();
+  const id = a.planStore.plan.items[0].id;
+
+  a.planStore.setPlan(a.plan.editItem(a.planStore.plan, id, "7 eggs", Date.now()));
+  b.planStore.setPlan(b.plan.setItemState(b.planStore.plan, id, "got", Date.now() + 5));
+  await a.sync.syncNow();
+  await b.sync.syncNow();
+  await a.sync.syncNow();
+
+  for (const d of [a, b]) {
+    assert.deepEqual(d.planStore.plan.items.map((i) => [i.text, i.state]), [["7 eggs", "got"]]);
+  }
+});
+
+test("J13.16 · a line stamped far in the future off the server can still be changed", () => {
+  const cloud = fakeCloud();
+  const d = device(cloud);
+  const id = d.win.RecipeStore.newId();
+  const plan = d.win.RecipePlanStore.sanitizePlan({
+    meals: [],
+    items: [{ id, text: "zzz", textAt: 1e20, addedAt: 1, state: "got", at: 1e20 }],
+  });
+  assert.ok(plan.items[0].textAt + 1 > plan.items[0].textAt, "a stamp is kept where one past it can still be counted");
+  const edited = d.plan.editItem(plan, id, "milk", Date.now());
+  assert.equal(d.plan.mergePlans(plan, edited).items[0].text, "milk");
+  const unticked = d.plan.setItemState(plan, id, "", Date.now());
+  assert.equal(d.plan.mergePlans(plan, unticked).items[0].state, "");
+});
+
+test("J13.16 · a change only to when the words were changed is still pushed", async () => {
+  const cloud = fakeCloud();
+  const d = device(cloud);
+  d.planStore.setPlan(d.plan.addItem(d.planStore.plan, "milk", 1000));
+  await d.sync.syncNow();
+  const id = d.planStore.plan.items[0].id;
+  // Edited away and back on this phone: the same words, a later stamp.
+  let plan = d.plan.editItem(d.planStore.plan, id, "oat milk", 2000);
+  plan = d.plan.editItem(plan, id, "milk", 3000);
+  d.planStore.setPlan(plan);
+  await d.sync.syncNow();
+  assert.equal(cloud.db.live_plans[0].data.items[0].textAt, 3000);
+});
+
+test("J13.16 · a phone whose clock is days slow still has its edit and its tick count", async () => {
+  const cloud = fakeCloud();
+  const a = device(cloud);
+  const b = device(cloud);
+  const DAY = 24 * 60 * 60 * 1000;
+  // A's clock is right; its line carries stamps two days ahead of B's.
+  const ahead = Date.now() + 2 * DAY;
+  a.planStore.setPlan(a.plan.addItem(a.planStore.plan, "7 eggs", ahead));
+  const id = a.planStore.plan.items[0].id;
+  a.planStore.setPlan(a.plan.setItemState(a.planStore.plan, id, "got", ahead));
+  await a.sync.syncNow();
+  await b.sync.syncNow();
+
+  // B, two days slow, edits and unticks by its own clock.
+  let plan = b.plan.editItem(b.planStore.plan, id, "8 eggs", Date.now());
+  plan = b.plan.setItemState(plan, id, "", Date.now());
+  b.planStore.setPlan(plan);
+  await b.sync.syncNow();
+  await a.sync.syncNow();
+
+  for (const d of [a, b]) {
+    assert.deepEqual(d.planStore.plan.items.map((i) => [i.text, i.state]), [["8 eggs", ""]]);
+  }
+});

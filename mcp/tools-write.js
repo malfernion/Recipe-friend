@@ -1,5 +1,5 @@
 /**
- * mcp/tools-write.js — the five tools that change something.
+ * mcp/tools-write.js — the six tools that change something.
  *
  * An agent may add a recipe and work on the plan, and may not edit,
  * delete, favourite, or finish a week (J16.3, J16.4). Nothing the
@@ -349,7 +349,7 @@ const addToList = {
     "Add lines to the book's shopping list, as text (\"2 l milk\"), belonging to no meal. " +
     "Each is its own line and is never combined with anything, so call get_plan first: if " +
     "it is already on the list, by hand or from a recipe, decide whether this is more of it, " +
-    "the same need, or something else — and add, replace (remove_from_list, then add) or leave " +
+    "the same need, or something else — and edit that line (edit_list), add another, or leave " +
     "it. Gives back: `added`, each with its itemId and text; `notAdded` and a `note` for any " +
     "that did not land; and the plan as it now stands. " + HOUSEHOLD_DATA,
   annotations: CHANGES_THE_PLAN,
@@ -446,6 +446,138 @@ const removeFromList = {
       const done = await settleLines(book, { before, plan, wanted, removing: true });
       if (missing.length) done.missing = missing;
       return done;
+    });
+  },
+};
+
+const editList = {
+  name: "edit_list",
+  title: "Change lines on the shopping list",
+  description:
+    "Change what lines added by hand say, by itemId from get_plan's `byHand` — \"6 eggs\" to " +
+    "\"7 eggs\". The line keeps its place and its tick, so use this rather than removing and " +
+    "adding. Send `was`, the text you read: a line a person has changed since is not " +
+    "overwritten, and comes back in `changed` with what it says now. A recipe's lines cannot be " +
+    "edited (change its portions); to take a line off, use remove_from_list. Gives back: " +
+    "`edited`, each with itemId and text; `changed`, `missing` and `notEdited` for any that " +
+    "were not; and the plan as it now stands. " + HOUSEHOLD_DATA,
+  annotations: CHANGES_THE_PLAN,
+  inputSchema: {
+    type: "object",
+    properties: {
+      items: {
+        type: "array",
+        minItems: 1,
+        maxItems: 20,
+        items: {
+          type: "object",
+          properties: {
+            itemId: { type: "string" },
+            text: { type: "string", description: "What the line should say." },
+            was: { type: "string", description: "What the line said when you read it." },
+          },
+          required: ["itemId", "text", "was"],
+          additionalProperties: false,
+        },
+      },
+    },
+    required: ["items"],
+    additionalProperties: false,
+  },
+  async run(book, args) {
+    return book.write(async () => {
+      const win = book.win;
+      const now = Date.now();
+      const refuseIfFinished = finished(book);
+      if (refuseIfFinished) return refuseIfFinished;
+
+      const asked = asList(args.items);
+      const refuse = tooMany(asked, 20, "lines");
+      if (refuse) return refuse;
+
+      const words = (value) => (typeof value === "string" ? value.trim().replace(/\s+/g, " ") : "");
+      const before = book.plan;
+      let plan = before;
+      const wanted = [];
+      const missing = [];
+      const changed = [];
+      const notEdited = [];
+
+      for (const one of asked) {
+        const edit = one && typeof one === "object" ? one : {};
+        const id = typeof edit.itemId === "string" ? edit.itemId.trim() : "";
+        // Only a line added by hand has an id to edit by; a recipe's line
+        // is worked out from its recipes, and is not here to be found.
+        const item = id ? win.RecipePlan.liveItems(plan).find((i) => i.id === id) : null;
+        if (!item) {
+          missing.push(id ? win.RecipePlanStore.clip(id, 64) : null);
+          continue;
+        }
+        const text = win.RecipePlanStore.clip(words(edit.text), limits(book).MAX_ITEM_CHARS).trim();
+        if (!text) {
+          // Emptying is not an edit from here (J17.14): a blank from a
+          // confused model must not delete anything.
+          notEdited.push({ itemId: id, reason: "No text to change it to. To take a line off, use remove_from_list." });
+          continue;
+        }
+        // What the agent read is not optional: without it there is no way
+        // to tell an edit from an overwrite, and the schema's `required`
+        // is advertised, not enforced (J17.11).
+        if (typeof edit.was !== "string") {
+          notEdited.push({ itemId: id, reason: "Send `was`, the text you read, so a person's change is not written over." });
+          continue;
+        }
+        // Somebody has changed it since it was read: theirs stands, and
+        // the agent is told what it says now (J17.14).
+        if (words(edit.was) !== item.text) {
+          changed.push({ itemId: id, now: item.text });
+          continue;
+        }
+        plan = win.RecipePlan.editItem(plan, id, text, now);
+        wanted.push({ id, text });
+      }
+
+      const extras = {
+        ...(changed.length
+          ? {
+              changed,
+              changedNote:
+                "These were changed by somebody since you read them, so they were left as they " +
+                "are. Read the plan again and decide whether your change still applies.",
+            }
+          : {}),
+        ...(missing.length ? { missing } : {}),
+        ...(notEdited.length ? { notEdited } : {}),
+      };
+      if (!wanted.length) return { edited: [], ...extras, plan: planNow(book) };
+
+      book.planStore.setPlan(plan);
+      try {
+        await book.pushNow();
+      } catch (err) {
+        book.planStore.setPlan(before);
+        throw err;
+      }
+
+      // What survived, read back rather than assumed (J17.9). A person's
+      // later edit, or a line taken off on a phone, wins its merge.
+      const live = new Map(win.RecipePlan.liveItems(book.plan).map((i) => [i.id, i]));
+      const edited = [];
+      for (const w of wanted) {
+        const now = live.get(w.id);
+        if (!now) notEdited.push({ itemId: w.id, reason: "Taken off the list from another device at the same moment." });
+        else if (now.text !== w.text) changed.push({ itemId: w.id, now: now.text });
+        else edited.push({ itemId: w.id, text: now.text });
+      }
+      return {
+        edited,
+        ...extras,
+        ...(changed.length ? { changed, changedNote: extras.changedNote ||
+          "Somebody changed these at the same moment, and theirs is what the list kept. " +
+          "Read the plan again and decide whether your change still applies." } : {}),
+        ...(notEdited.length ? { notEdited } : {}),
+        plan: planNow(book),
+      };
     });
   },
 };
@@ -781,4 +913,4 @@ function planNow(book) {
   };
 }
 
-module.exports = [addToPlan, removeFromPlan, addToList, removeFromList, addRecipe];
+module.exports = [addToPlan, removeFromPlan, addToList, editList, removeFromList, addRecipe];

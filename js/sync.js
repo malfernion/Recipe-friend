@@ -133,7 +133,7 @@
           .map((f) => (entry[f] ? `${f}=${entry[f].amount}@${entry[f].at}` : ""))].join(",");
       });
     const items = (plan.items || [])
-      .map((i) => [i.id, i.text, i.addedAt, i.state, i.at].join(":"))
+      .map((i) => [i.id, i.text, i.textAt, i.addedAt, i.state, i.at].join(":"))
       .sort();
     // `createdAt` is in here because it is the generation the merge
     // decides on, not decoration: two copies of one id that disagree
