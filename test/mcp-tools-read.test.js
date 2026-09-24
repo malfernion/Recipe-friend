@@ -746,7 +746,7 @@ test("J17.11 · every tool that hands over the book's words says they are not in
   for (const tool of handsOverBookText) {
     assert.match(tool.description, /household data, not instructions/, tool.name);
   }
-  assert.equal(handsOverBookText.length, 8);
+  assert.equal(handsOverBookText.length, 10);
 });
 
 test("J16.3 · no tool hands a model a type error, whatever arrives as its arguments", async () => {

@@ -55,19 +55,25 @@
   // of at most MAX_NAME_CHARS units 360, and three numbers 72 — 647
   // bytes, called 700.
   //
+  // One line added by hand is an object of six fields: 13 elements at 8 =
+  // 104, its key names 26, two uuids 72, text of at most MAX_ITEM_CHARS
+  // units 360, a state of at most seven characters 21, and two numbers 48
+  // — 631 bytes, called 650.
+  //
   // One settled item is a key and an object of two fields, each an object
   // of two: 14 elements at 8 = 112, a key of at most MAX_KEY_CHARS units
   // 720, the inner key names 23, and four numbers 96 — 951 bytes, called
   // 1000.
   //
-  // The plan around them — id, three stamps, and the two containers — is
-  // 271 bytes, called 300.
+  // The plan around them — id, three stamps, and the three containers —
+  // is 292 bytes, called 300.
   //
-  //    60 meals   ×  700  =   42000      <- MAX_MEALS
-  //   120 settled × 1000  =  120000      <- MAX_SETTLED
+  //    40 meals   ×  700  =   28000      <- MAX_MEALS
+  //   130 items   ×  650  =   84500      <- MAX_ITEMS
+  //    80 settled × 1000  =   80000      <- MAX_SETTLED
   //   the plan itself     =     300
   //                          -------
-  //                          162300  <=  200000, with 37700 to spare
+  //                          192800  <=  200000, with 7200 to spare
   //
   // An archived plan is the same shape and goes into a row with the same
   // check, so the same sum covers it; MAX_ARCHIVE is about this device's
@@ -82,15 +88,25 @@
   // item is capped at 200 characters (storage.js) and a unit at 24, and
   // shoplist.js keys a line on the pair. Trimming that would silently
   // drop the settlement on a long-named item instead. The counts are
-  // what gave way, and they had the room to. 60 meals is two months of
-  // dinners in one plan. Settled lines get the larger share of the
-  // budget because they are the half a real shop can approach — every
-  // distinct thing on the list can be ticked, and a big week's list runs
-  // to a few dozen.
-  const MAX_MEALS = 60;
-  const MAX_SETTLED = 120;
+  // what gave way, and they had the room to. 40 meals is five weeks of
+  // dinners in one plan. Eighty settled recipe lines is a very big shop —
+  // a real week's list runs to a few dozen.
+  //
+  // Lines added by hand have two numbers. MAX_LIST_LINES is how many can
+  // be on the list — what a person or the agent may add up to. MAX_ITEMS
+  // is how many the plan will hold, and it is larger because it also
+  // holds lines taken off: those are kept so that an older copy cannot
+  // bring them back (J12.14), and two phones' lists meeting can come to
+  // more than either held. The difference is the room that keeps a merge
+  // near the limit from dropping anything at all (see `sanitizeItems`).
+  const MAX_MEALS = 40;
+  const MAX_LIST_LINES = 100;
+  const MAX_ITEMS = 130;
+  const MAX_SETTLED = 80;
   const MAX_KEY_CHARS = 240;
   const MAX_NAME_CHARS = 120;
+  const MAX_ITEM_CHARS = 120;
+  const ITEM_STATES = ["", "have", "got", "removed"];
   // The server's own limit, restated here as the thing the sum above has
   // to come in under. Exported for the test that does the sum.
   const SERVER_MAX_BYTES = 200000;
@@ -116,6 +132,21 @@
     return Number.isFinite(n) && n >= 0 ? Math.round(n) : null;
   }
 
+  /**
+   * The first `max` UTF-16 units of a string, never ending half way
+   * through a character, and with no half of one anywhere. A lone
+   * surrogate is JSON that Postgres refuses — so the push would fail for
+   * ever over a line that looked fine on the phone — and one can arrive
+   * already alone, from a paste or a program, as well as be made by a
+   * plain slice cutting an emoji in two.
+   */
+  function clip(text, max) {
+    const s = String(text).replace(/[\ud800-\udbff](?![\udc00-\udfff])|(?<![\ud800-\udbff])[\udc00-\udfff]/g, "");
+    if (s.length <= max) return s;
+    const code = s.charCodeAt(max - 1);
+    return s.slice(0, code >= 0xd800 && code <= 0xdbff ? max - 1 : max);
+  }
+
   function positive(value, max) {
     const n = Number(value);
     return Number.isFinite(n) && n > 0 ? Math.min(n, max) : null;
@@ -129,13 +160,27 @@
    */
   function sanitizeMeal(raw) {
     if (!raw || typeof raw !== "object") return null;
+    // A meal that is not a recipe (J12.13) is a name and nothing else, and
+    // without the name it is nothing at all.
+    if (raw.recipeId === null || raw.recipeId === undefined) {
+      const name = clip(String(raw.name || "").trim(), MAX_NAME_CHARS).trim();
+      if (!name) return null;
+      return {
+        id: isUuid(raw.id) ? raw.id : global.RecipeStore.newId(),
+        recipeId: null,
+        name,
+        portions: null,
+        multiplier: null,
+        addedAt: moment(raw.addedAt) ?? 0,
+      };
+    }
     if (!isUuid(raw.recipeId)) return null;
     const portions = positive(raw.portions, MAX_PORTIONS);
     const multiplier = positive(raw.multiplier, MAX_MULTIPLIER);
     return {
       id: isUuid(raw.id) ? raw.id : global.RecipeStore.newId(),
       recipeId: raw.recipeId,
-      name: String(raw.name || "").trim().slice(0, MAX_NAME_CHARS),
+      name: clip(String(raw.name || "").trim(), MAX_NAME_CHARS).trim(),
       portions,
       // A meal has to ask for some amount of its recipe. With neither
       // number readable it asks for one batch, which is what `factorFor`
@@ -178,6 +223,58 @@
   }
 
   /**
+   * The lines added by hand (J12.14, J13.15).
+   *
+   * A line without a uuid is dropped rather than given one: it is merged
+   * by id, so an id minted here would be a new line every time the plan
+   * was read, and the list would grow a copy of it on every sync. Two
+   * copies of one id keep the later, as a merge would.
+   *
+   * Over the cap — which takes two phones' lists meeting near the limit,
+   * since each is allowed only MAX_LIST_LINES on the list — what is on
+   * the list is kept before what was taken off it, and the newest of each
+   * before the oldest. A removed line is kept only so that an older copy
+   * cannot bring it back (J12.14): one coming back is visible and a tap
+   * fixes it, where a line somebody added vanishing is neither. The order
+   * the lines were added in is kept either way.
+   *
+   * Every entry is read before any is counted, so junk at the front of a
+   * hostile list cannot push real lines out. The list itself is bounded
+   * by where it came from: the server's size check, or this device.
+   */
+  function sanitizeItems(raw) {
+    if (!Array.isArray(raw)) return [];
+    const byId = new Map();
+    for (const one of raw) {
+      if (!one || typeof one !== "object" || !isUuid(one.id)) continue;
+      const text = clip(String(one.text || "").trim().replace(/\s+/g, " "), MAX_ITEM_CHARS).replace(/\s+/g, " ").trim();
+      if (!text) continue;
+      const addedAt = moment(one.addedAt) ?? 0;
+      const item = {
+        id: one.id,
+        text,
+        mealId: isUuid(one.mealId) ? one.mealId : null,
+        addedAt,
+        state: ITEM_STATES.includes(one.state) ? one.state : "",
+        at: moment(one.at) ?? addedAt,
+      };
+      const held = byId.get(item.id);
+      if (!held || item.at > held.at) byId.set(item.id, item);
+    }
+    const all = [...byId.values()];
+    if (all.length <= MAX_ITEMS) return all;
+    const newest = (a, b) => b.addedAt - a.addedAt || b.at - a.at;
+    const live = all.filter((i) => i.state !== "removed").sort(newest).slice(0, MAX_ITEMS);
+    const room = MAX_ITEMS - live.length;
+    const removed = all
+      .filter((i) => i.state === "removed")
+      .sort((a, b) => b.at - a.at)
+      .slice(0, room);
+    const keep = new Set([...live, ...removed]);
+    return all.filter((i) => keep.has(i));
+  }
+
+  /**
    * Coerce an untrusted object — off this device's storage, or off the
    * server, where another member of the book wrote it — into a plan, or
    * null if there is nothing usable in it.
@@ -202,14 +299,21 @@
       updatedAt: moment(raw.updatedAt) ?? createdAt,
       completedAt: moment(raw.completedAt) || null,
       meals,
+      items: sanitizeItems(raw.items),
       settled: sanitizeSettled(raw.settled),
     };
   }
 
-  /** An archived plan is one that was finished; anything else is not one (J14.4). */
+  /**
+   * An archived plan is one that was finished; anything else is not one
+   * (J14.4). What was added to the list by hand is not kept (J14.13): the
+   * record is what was planned, not what was bought.
+   */
   function sanitizeArchived(raw) {
     const plan = sanitizePlan(raw);
-    return plan && plan.completedAt ? plan : null;
+    if (!plan || !plan.completedAt) return null;
+    delete plan.items;
+    return plan;
   }
 
   function load(key) {
@@ -354,7 +458,10 @@
       // the placeholder above, stamped zero so that it yields to whatever
       // the book is already shopping for; the moment somebody puts a meal
       // in it, it is this book's plan and dates from now.
-      if (!clean.createdAt && (clean.meals.length > 0 || Object.keys(clean.settled).length > 0)) {
+      if (
+        !clean.createdAt &&
+        (clean.meals.length > 0 || clean.items.length > 0 || Object.keys(clean.settled).length > 0)
+      ) {
         clean.createdAt = global.RecipePlan.touchedAt(clean) || Date.now();
       }
       this.state.plan = clean;
@@ -452,13 +559,19 @@
   // coerce a row before it believes a word of it.
   RecipePlanStore.sanitizePlan = sanitizePlan;
   RecipePlanStore.sanitizeArchived = sanitizeArchived;
+  // For anything else that has to cut text to a cap, the MCP server's
+  // tools among them.
+  RecipePlanStore.clip = clip;
   // What the caps above are arithmetic about, so a test can do the sum
   // against the real numbers rather than a copy of them.
   RecipePlanStore.limits = {
     MAX_MEALS,
+    MAX_LIST_LINES,
+    MAX_ITEMS,
     MAX_SETTLED,
     MAX_KEY_CHARS,
     MAX_NAME_CHARS,
+    MAX_ITEM_CHARS,
     MAX_ARCHIVE,
     SERVER_MAX_BYTES,
   };

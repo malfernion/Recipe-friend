@@ -53,14 +53,15 @@ async function connect({ openBook, recipes = [SOUP] } = {}) {
   return client;
 }
 
-test("a host is offered nine tools, each saying what kind of thing it is", async () => {
+test("a host is offered eleven tools, each saying what kind of thing it is", async () => {
   const client = await connect();
 
   const { tools } = await client.listTools();
 
   assert.deepEqual(tools.map((t) => t.name).sort(), [
-    "add_recipe", "add_to_plan", "find_recipes", "get_plan", "get_recipe",
-    "list_recipes", "planning_history", "recipes_sharing_ingredients", "remove_from_plan",
+    "add_recipe", "add_to_list", "add_to_plan", "find_recipes", "get_plan", "get_recipe",
+    "list_recipes", "planning_history", "recipes_sharing_ingredients", "remove_from_list",
+    "remove_from_plan",
   ]);
   for (const tool of tools) {
     assert.ok(tool.description, `${tool.name} says what it is for`);
@@ -82,7 +83,10 @@ test("a host is offered nine tools, each saying what kind of thing it is", async
  * fails on the thing that actually happens: descriptions growing back
  * into essays about why the server is built the way it is.
  */
-const LISTING_BUDGET = 9000;
+// Raised from 9,000 when the list tools arrived (J17.14): two tools, and
+// the sentence telling a model to read the list before adding to it,
+// which is the one piece of reasoning a caller can act on.
+const LISTING_BUDGET = 11000;
 
 test("J17.13 · the tool list is what a caller needs, inside a budget every session pays", async () => {
   const client = await connect();
@@ -284,7 +288,7 @@ test("J17.1 · nothing but MCP messages ever reaches stdout, which on stdio is t
     assert.equal(message.jsonrpc, "2.0");
   }
   const listed = lines.map((l) => JSON.parse(l)).find((m) => m.id === 2);
-  assert.equal(listed.result.tools.length, 9);
+  assert.equal(listed.result.tools.length, 11);
 
   // The server does say something when it starts. It says it over there.
   assert.match(err, /recipe-friend 1\.0\.0: ready/);

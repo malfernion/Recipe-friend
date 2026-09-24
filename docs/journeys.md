@@ -524,7 +524,8 @@ so the app can tell them what to buy.
 1. **A plan is a bag of meals, not a calendar.** Recipes go in with the
    portions wanted; nothing is assigned to a day, a slot or a date. The
    shop does not care which night the curry is, and neither does the
-   question the plan exists to answer.
+   question the plan exists to answer. A meal is usually a recipe, and
+   need not be (J12.13).
 2. **A plan belongs to the book, the way its recipes and its favourites
    do** (J3.6). One household, one plan: whoever does the shop sees what
    whoever planned it chose. There is one live plan per book, and it needs
@@ -589,15 +590,52 @@ so the app can tell them what to buy.
     amounts merge **per item**, each carrying when it was settled, and
     each is an amount rather than a step — whoever's write lands last
     still says the right total. The meals in a plan merge whole, like a
-    recipe: nobody races to add the curry.
+    recipe: nobody races to add the curry. What is added to the list by
+    hand merges item by item (J12.14), because that is exactly what two
+    people do race to do.
 12. The plan works with no network, like the rest of the app (J9.1) — and
     it matters more here than anywhere else, because the supermarket is
     the one building where the phone has no signal.
+13. **A meal need not be a recipe.** Frozen-pizza night is one of the
+    week's meals and nobody is going to type up a recipe for it, so a
+    meal can be just a name. It counts as a meal everywhere a meal is
+    counted — the plan's count, and what Done needs (J14.3) — and it
+    has no portions, because there is nothing to scale. It can have
+    lines of its own on the shopping list ("2 frozen pizzas"), added to
+    it the way anything is added to the list by hand (J13.15), and
+    taking the meal out takes its lines with it.
+
+    **It is not planning history.** What the archive answers is which
+    recipes have been planned and when (J14.6, J14.9, J14.10); "Frozen
+    pizza, last planned 3 days ago" is not a question anybody is asking.
+    A finished plan keeps the meal's name, like any meal (J14.12), and
+    nothing reads it.
+14. **Anything can be added to the list by hand.** Milk and kitchen roll
+    belong to no meal, and they are the reason the list lived somewhere
+    else. What is typed is the line, exactly as typed — "2 l milk",
+    "kitchen roll" — added from the plan, and it works with no network
+    like the rest of it (J12.12). Adding to the list needs no recipe and
+    no meal: an empty plan opens and takes a line.
+
+    **Two phones adding at once both keep what they added.** The meals
+    merge whole (J12.11) because nobody races to add the curry, but
+    adding to the list all week, in the shop, often with no signal, is
+    exactly that race — so the list merges one line at a time. A line
+    taken off on one phone stays off when an older copy of the list
+    arrives from the other, because taking it off is stamped like
+    settling it is, and the later stamp wins.
+
+    **A line that belongs to a meal nobody has any more is still a
+    line.** The meals merge whole and the list does not, so a meal's
+    line can arrive on a phone whose copy of the plan has lost the meal.
+    Something to buy is not thrown away on the strength of a merge: it
+    reads as an ordinary line until somebody takes it off.
 
 ## J13 · Shopping from a plan
 
 1. The shopping list is every planned recipe's ingredients, scaled to the
-   portions planned, summed into one line per thing to buy.
+   portions planned, summed into one line per thing to buy — and, beside
+   them, whatever has been added to it by hand (J13.15).
 2. **Summing happens in base units and is formatted once, at the end.**
    Formatting first and adding the results loses ingredients: J4.8 renders
    anything below 0.05 as 0, and three lots of "0 tsp" is not none.
@@ -687,6 +725,22 @@ so the app can tell them what to buy.
     is the gesture that undoes it. The retraction is stamped like any
     other settlement, so it wins the merge (J12.11) rather than being
     quietly undone by an older device.
+15. **A line added by hand is one line, and stays one.** It is words,
+    not a quantity: it is never summed, converted or rounded, and it is
+    never combined — not with another line added by hand, and not with
+    what a recipe asks for. Milk added twice is two lines, and "2 l milk"
+    sits beside the pancakes' 300 ml rather than inside it. Whether two
+    of them are one need is for whoever keeps the list to decide, and
+    the app does not guess: combining words is the plural rule (J13.4)
+    without the recipes to show where each came from (J13.7).
+
+    It sits first under "to buy", because the lines added by hand are
+    the ones somebody has just thought of. It settles with the same ✗
+    and ✓ as every other line, and the same Put back, but whole — a line
+    of words has no amount for part of it to be settled. A meal's own
+    line (J12.13) says which meal it is for, where a recipe's line says
+    which recipes it came from. Copy takes it as it was typed (J13.13),
+    and the shop is not finished while it is outstanding (J14.2).
 
 ## J14 · What the plan remembers
 
@@ -702,8 +756,10 @@ so the app can tell them what to buy.
    server or another device will simply hand it back. It says so rather
    than appearing to work, which is the exception J12.12's offline promise
    has to carry.
-3. Finishing needs at least one recipe. An empty plan has nothing to
-   record and offers no Done.
+3. Finishing needs at least one meal, a recipe or not (J12.13). An
+   empty plan has nothing to record and offers no Done — and a plan that
+   is only lines added by hand is not a week that was planned, so it
+   offers none either. It is cleared when it is done with.
 4. **Clear discards a plan without recording it.** A week that never
    happened should not claim to have been planned.
 5. **What is recorded is that a recipe was planned, not that it was
@@ -770,6 +826,13 @@ so the app can tell them what to buy.
     archive is the record, and the recipe is left alone.
 12. An archived plan keeps the names of the recipes it held, so a recipe
     deleted afterwards does not leave a blank line in what was planned.
+13. **What was added to the list by hand is not kept.** It lasts as long
+    as the plan does: Done records the meals and not the list (J14.1),
+    Clear discards it with everything else (J14.4), and nothing added by
+    hand carries into the next plan. A line nobody got to is gone with
+    the week it was for — the list is a note for one shop, and the
+    record is what was planned, not what was bought. There are no
+    staples: milk every week is milk added every week.
 
 ## J15 · Choosing what to look at
 
@@ -1221,6 +1284,29 @@ release.
     whole listing and fails when it grows past what nine tools can
     justify, and names the phrases that were shipping before this was
     written down — the point being that descriptions grow back.
+14. **The whole of the week, not only the recipes.** A meal that is not
+    a recipe (J12.13) goes into the plan through the same tool as one
+    that is, by name, with its own lines if it has any, and comes out
+    through the same tool too. Lines added by hand (J13.15) have a pair of
+    tools of their own, to add and to take off, and the plan says what
+    each line is and how it stands, so that anything put on can be taken
+    off again by the id it was given.
+
+    **Deciding that two lines are one need is the agent's job when the
+    agent is adding.** The app never combines a line added by hand with
+    anything (J13.15), and the server is not a second opinion on that:
+    it adds what it is given. So the tool says to read the list first,
+    and where the thing is already on it — added by somebody, or asked
+    for by a recipe — to decide whether this is more of it, the same
+    need, or something else, and to add, replace or leave it. Somebody
+    saying "we need milk" twice in a chat should not become two lines of
+    milk.
+
+    **It is held to what a person is held to.** A line is taken as text
+    and capped as a person's is; the list is full at the same size; a
+    finished week is not one to add to (J17.9). What is reported is what
+    survived the merge, and because the list merges line by line
+    (J12.14), what survives is nearly always what was asked for.
 
 ---
 
@@ -1354,12 +1440,26 @@ accident:
   proving it is human, which it is not.
 - Plans are shared with the book, so a read-only member cannot plan or
   settle a line at all (J12.10).
-- The shopping list holds only what the planned recipes ask for. There is
-  no free-text item to add "bin bags", no pantry of staples that settles
+- The shopping list is what the planned recipes ask for and what was
+  added to it by hand (J13.15). There is no pantry of staples that settles
   itself, and no ordering by aisle — which would need the app to know what
   a supermarket is.
+- **A line added by hand is never combined with anything** (J13.15), so
+  milk added twice is two lines until somebody takes one off. Deciding
+  that two lines are one need is the list keeper's job, and the agent's
+  when the agent is adding (J17.14).
 - Nothing carries from one plan to the next. Saying "we have onions" is
-  about this shop (J13.9).
+  about this shop (J13.9), and a line added by hand is about this shop
+  too (J14.13).
+- **Two phones' lists merge without loss up to what a plan holds, and
+  not past it** (J12.14). A list takes a hundred lines, and a plan holds
+  a hundred and thirty, counting lines taken off, so that two phones
+  near the limit can meet and keep everything. Past that — both phones
+  adding thirty or more lines apiece, offline, to a list already nearly
+  full — the plan keeps what is on the list before what was taken off,
+  and the newest before the oldest. That is a list nobody keeps, and
+  the size check the server applies (007) is why there is a limit at
+  all.
 - **Two plans are two plans, and the newer one wins whole.** Settlements
   merge per item within a plan (J12.11), but never between one plan and
   the next, or "we have onions" — said about a shop that is over — comes
@@ -1408,7 +1508,7 @@ those an agent is allowed to reach for — and one of them runs the real
 program in a real subprocess, because the rule that nothing but protocol
 messages reaches stdout cannot be checked any other way.
 
-**Sixteen of the 177 criteria have no test naming them** — J4.15,
+**Sixteen of the 182 criteria have no test naming them** — J4.15,
 J4.16, J4.19, J4.25, J5.10, J6.3, J10.4, J11.1 to J11.5, J12.12, J15.9,
 J15.11 and J16.5.
 

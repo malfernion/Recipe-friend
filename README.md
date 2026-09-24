@@ -105,7 +105,7 @@ dependencies, so `npm install` comes first if you want to run everything.
 
 Every test name quotes a criterion from [`docs/journeys.md`](docs/journeys.md),
 so a failure points at behaviour that was agreed rather than at an
-implementation detail. **161 of the 177 criteria have a test naming
+implementation detail. **166 of the 182 criteria have a test naming
 them**; the sixteen that do not are listed at the end of the journeys,
 along with the database, which is deliberately outside the net.
 
@@ -287,7 +287,7 @@ test/                          Tests, named for the criteria they check
 `mcp/` is a [Model Context Protocol](https://modelcontextprotocol.io)
 server: a small program an assistant runs as a subprocess and talks to
 over stdin and stdout. It holds one agent's credential, opens the one
-book that credential names, and offers nine tools.
+book that credential names, and offers eleven tools.
 
 ### What it can do
 
@@ -302,15 +302,17 @@ instruction — some of it arrived from a web page.
 | `find_recipes` | `have`, a comma-separated list | what you can cook from those, best match first, saying which terms each answered |
 | `recipes_sharing_ingredients` | a recipe id, or a list of ingredients | what overlaps with it, and on what — for a week that buys one bunch of coriander |
 | `planning_history` | — | when each recipe was last planned and how often, least recently first |
-| `get_plan` | — | the live plan, and the one combined shopping list those meals add up to |
+| `get_plan` | — | the live plan, and the one shopping list it adds up to — including the lines added by hand, with their ids |
 
-Three that change something. The plan ones are reversible; filing a
-recipe is not.
+Five that change something. The plan and list ones are reversible;
+filing a recipe is not.
 
 | Tool | Takes | Does |
 | --- | --- | --- |
-| `add_to_plan` | recipes, with portions or a multiplier | puts meals in the book's plan, reading it first and reporting what survived |
-| `remove_from_plan` | meal ids from `get_plan` | takes them out again, saying the amount each was at so it can go back the same; nothing is recorded either way |
+| `add_to_plan` | recipes, with portions or a multiplier — or a meal that is not a recipe, by name, with its lines | puts meals in the book's plan, reading it first and reporting what survived |
+| `remove_from_plan` | meal ids from `get_plan` | takes them out again, saying the amount each was at (or its name and lines) so it can go back the same; nothing is recorded either way |
+| `add_to_list` | lines of text | puts them on the shopping list, each its own line — the assistant reads the list first and decides whether "milk" is already there |
+| `remove_from_list` | item ids from `get_plan` | takes lines added by hand off the list, saying what each was |
 | `add_recipe` | a recipe | files it into the book — **one way**, see below |
 
 Answers come from the app's own modules, so the shopping list the

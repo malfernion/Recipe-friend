@@ -77,6 +77,15 @@
     return Boolean(a) && Boolean(b) && digest(a) === digest(b);
   }
 
+  /** Nothing in it at all — no meal, no line added by hand, nothing settled. */
+  function isBlank(plan) {
+    return (
+      plan.meals.length === 0 &&
+      (plan.items || []).length === 0 &&
+      Object.keys(plan.settled).length === 0
+    );
+  }
+
   function digest(plan) {
     const meals = plan.meals
       .map((m) => [m.id, m.recipeId, m.name, m.portions, m.multiplier, m.addedAt].join(":"))
@@ -85,10 +94,14 @@
       .sort()
       .map((key) => {
         const entry = plan.settled[key] || {};
-        return ["have", "got"]
-          .map((f) => (entry[f] ? `${f}=${entry[f].amount}@${entry[f].at}` : ""))
-          .join(",");
+        // The key as well as the amounts: ✗ on the onions and ✗ on the
+        // tomatoes at the same moment are not the same list.
+        return [key, ...["have", "got"]
+          .map((f) => (entry[f] ? `${f}=${entry[f].amount}@${entry[f].at}` : ""))].join(",");
       });
+    const items = (plan.items || [])
+      .map((i) => [i.id, i.text, i.mealId, i.addedAt, i.state, i.at].join(":"))
+      .sort();
     // `createdAt` is in here because it is the generation the merge
     // decides on, not decoration: two copies of one id that disagree
     // about when it began are not the same plan to `mergePlans`, and
@@ -100,6 +113,7 @@
       plan.completedAt,
       meals,
       settled,
+      items,
     ]);
   }
 
@@ -557,7 +571,7 @@
       // debt arrives from somewhere else, which would otherwise be
       // pushed, refused, and park the sync.
       if (this.addOnly) {
-        const blank = plan.meals.length === 0 && Object.keys(plan.settled).length === 0;
+        const blank = isBlank(plan);
         const live = (!remote && blank) || samePlan(plan, remote) ? "unchanged" : "pushed";
         if (live === "pushed") await this.api.pushLivePlan(this.bookId, plan);
         return { pushed: 0, pulled: missingHere.length, live };
@@ -585,7 +599,7 @@
       }
 
       // A book nobody has planned in yet needs no row saying so.
-      const blank = plan.meals.length === 0 && Object.keys(plan.settled).length === 0;
+      const blank = isBlank(plan);
       const live = (!remote && blank) || samePlan(plan, remote) ? "unchanged" : "pushed";
       if (live === "pushed") await this.api.pushLivePlan(this.bookId, plan);
       return { pushed, pulled: missingHere.length, live };
@@ -629,7 +643,10 @@
       this.planStore.archivePlan(finished);
       this.planStore.setPlan(fresh);
       await this.syncNow();
-      return { archived: finished, plan: fresh };
+      // The record does not keep the lines added by hand (J14.13), so the
+      // one moment they can come back — Undo, seconds from now — is handed
+      // them here, and they go no further than the caller's memory.
+      return { archived: finished, plan: fresh, items: finished.items || [] };
     }
 
     /**
@@ -650,7 +667,7 @@
      * phone, and a restored plan that is older than it would lose the
      * merge and vanish again.
      */
-    async undoComplete(planId, now = Date.now()) {
+    async undoComplete(planId, now = Date.now(), items = []) {
       if (!this.planStore) return null;
       const archived = this.planStore.archive.find((p) => p.id === planId);
       if (!archived) return null;
@@ -669,6 +686,9 @@
         // last edit before its own birthday, and `touchedAt` reads it.
         updatedAt: Math.max(now, createdAt),
         completedAt: null,
+        // What was on the list by hand when the week was finished. The
+        // record never had it (J14.13); the caller kept it for this.
+        items: Array.isArray(items) ? items : [],
       };
       this.planStore.setPlan(restored);
       await this.syncNow();

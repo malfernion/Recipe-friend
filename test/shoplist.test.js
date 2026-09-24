@@ -652,3 +652,115 @@ test("J13.4 · the item key is the item and what it is measured in, and nothing 
   assert.equal(itemKey("garlic", "cloves"), itemKey("garlic", "clove"));
   assert.notEqual(itemKey("salt", "", true), itemKey("salt", "tsp"), "to taste is not a quantity");
 });
+
+// ---------------------------------------------------------------------
+// What was added to the list by hand (J13.15)
+// ---------------------------------------------------------------------
+
+const { addNamedMeal, addItem, setItemState } = win.RecipePlan;
+
+const PANCAKES = sanitize({
+  name: "Pancakes",
+  servings: 4,
+  ingredients: [{ amount: 300, unit: "ml", item: "milk" }],
+  steps: ["Fry them."],
+});
+
+test("J13.15 · a line added by hand is one line, never combined with anything", () => {
+  let plan = addMeal(emptyPlan(1), PANCAKES, 1000);
+  plan = addItem(plan, "2 l milk", null, 2000);
+  plan = addItem(plan, "milk", null, 2001);
+  const list = build(plan, [PANCAKES], METRIC);
+
+  assert.deepEqual(list.toBuy.map((l) => l.text), ["2 l milk", "milk", "300 ml milk"],
+    "milk twice is two lines, and neither is folded into the pancakes' 300 ml");
+  const hand = list.toBuy[0];
+  assert.equal(hand.byHand, true);
+  assert.equal(hand.amount, null, "words, not a quantity");
+  assert.ok(!hand.key.includes("|"), "and its key is not one an ingredient could have");
+});
+
+test("J13.15 · a line added by hand sits first under to buy", () => {
+  let plan = addMeal(emptyPlan(1), BOLOGNESE, 1000);
+  plan = addItem(plan, "kitchen roll", null, 9000);
+  assert.equal(build(plan, [BOLOGNESE], METRIC).toBuy[0].text, "kitchen roll");
+});
+
+test("J13.15 · it settles whole with ✗ and ✓, and Put back takes the settling back", () => {
+  let plan = addItem(emptyPlan(1), "milk", null, 1000);
+  let line = build(plan, [], METRIC).toBuy[0];
+
+  plan = settleLine(plan, line, "got", 2000);
+  let list = build(plan, [], METRIC);
+  assert.deepEqual(list.inBasket.map((l) => l.text), ["milk"]);
+  assert.equal(list.inBasket[0].partText, "", "no amount, so nothing part-settled");
+
+  plan = unsettleLine(plan, list.inBasket[0], "got", 3000);
+  list = build(plan, [], METRIC);
+  assert.deepEqual(list.toBuy.map((l) => l.text), ["milk"], "back on the list");
+
+  plan = settleLine(plan, list.toBuy[0], "have", 4000);
+  list = build(plan, [], METRIC);
+  assert.deepEqual(list.alreadyHave.map((l) => l.text), ["milk"]);
+  line = list.alreadyHave[0];
+  assert.equal(unsettleLine(plan, line, "got", 5000), plan, "taking back what was never said changes nothing");
+});
+
+test("J13.15 · settling a line added by hand leaves the recipe's line of the same thing alone", () => {
+  let plan = addMeal(emptyPlan(1), PANCAKES, 1000);
+  plan = addItem(plan, "milk", null, 2000);
+  plan = settleLine(plan, build(plan, [PANCAKES], METRIC).toBuy[0], "got", 3000);
+  const list = build(plan, [PANCAKES], METRIC);
+  assert.deepEqual(list.toBuy.map((l) => l.text), ["300 ml milk"]);
+  assert.deepEqual(list.inBasket.map((l) => l.text), ["milk"]);
+});
+
+test("J13.15 · Copy takes a line added by hand as it was typed", () => {
+  let plan = addMeal(emptyPlan(1), BOLOGNESE, 1000);
+  plan = addItem(plan, "2 l milk", null, 2000);
+  plan = addItem(plan, "bin bags", null, 2001);
+  plan = settleLine(plan, build(plan, [BOLOGNESE], METRIC).toBuy[1], "got", 3000);
+  const text = copyText(build(plan, [BOLOGNESE], METRIC));
+  assert.equal(text.split("\n")[0], "2 l milk");
+  assert.ok(!text.includes("bin bags"), "and not once it is in the basket");
+});
+
+test("J13.15 · the shop is not finished while a line added by hand is outstanding", () => {
+  let plan = addMeal(emptyPlan(1), CAKE, 1000);
+  plan = addItem(plan, "milk", null, 2000);
+  let list = build(plan, [CAKE], METRIC);
+  const cake = list.toBuy.find((l) => !l.byHand);
+  assert.equal(finishesShop(list, cake), false, "the milk is still to get");
+
+  plan = settleLine(plan, cake, "got", 3000);
+  list = build(plan, [CAKE], METRIC);
+  assert.equal(list.allSettled, false);
+  assert.equal(finishesShop(list, list.toBuy[0]), true, "and the milk is the last line");
+});
+
+test("J13.15 · a meal's own line says which meal it is for", () => {
+  let plan = addNamedMeal(emptyPlan(1), "Frozen pizza", 1000);
+  plan = addItem(plan, "2 frozen pizzas", plan.meals[0].id, 1001);
+  const [line] = build(plan, [], METRIC).toBuy;
+  assert.deepEqual(line.from.map((f) => f.name), ["Frozen pizza"]);
+  assert.equal(line.mealId, plan.meals[0].id);
+});
+
+test("J12.14 · a line whose meal has gone reads as an ordinary line", () => {
+  const plan = addItem(emptyPlan(1), "2 frozen pizzas", "99999999-9999-4999-8999-999999999999", 1000);
+  const [line] = build(plan, [], METRIC).toBuy;
+  assert.equal(line.text, "2 frozen pizzas");
+  assert.deepEqual(line.from, []);
+  assert.equal(line.mealId, null);
+});
+
+test("J12.14 · a line taken off is not on the list at all", () => {
+  let plan = addItem(emptyPlan(1), "milk", null, 1000);
+  plan = setItemState(plan, plan.items[0].id, "removed", 2000);
+  assert.deepEqual(build(plan, [], METRIC).lines, []);
+});
+
+test("J12.13 · a meal that is not a recipe puts nothing on the list by itself", () => {
+  const plan = addNamedMeal(emptyPlan(1), "Frozen pizza", 1000);
+  assert.deepEqual(build(plan, [], METRIC).lines, []);
+});

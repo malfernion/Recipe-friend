@@ -27,6 +27,12 @@
  * `from[].item` is what that recipe wrote, which the line's own `item`
  * need not be: J13.7 wants "3 peppers · Bolognese 2 (red pepper), Curry 1
  * (black pepper)", and only the contribution knows the second half of it.
+ *
+ * A line added by hand (J13.15) has the same shape, so everything that
+ * reads a line can read one, plus `byHand: true` and the `itemId` it is
+ * settled through. Its key is `hand:<id>`, which no ingredient's key can
+ * be — those always carry a "|" — so it never shares a settlement with a
+ * recipe's line. It is text: no amount, no unit, never summed.
  */
 (function (global) {
   "use strict";
@@ -172,7 +178,12 @@
       }
     }
 
-    const lines = [...quantified.values(), ...toTaste.values()].map((line) => finish(line, plan, prefs));
+    // Lines added by hand first: they are what somebody has just thought
+    // of (J13.15).
+    const lines = [
+      ...byHand(plan),
+      ...[...quantified.values(), ...toTaste.values()].map((line) => finish(line, plan, prefs)),
+    ];
     return {
       lines,
       // What is left to buy, what is struck out in place, and what
@@ -186,6 +197,49 @@
       // itself — see `finishesShop` (J14.2).
       allSettled: lines.length > 0 && lines.every((l) => l.outstanding === 0),
     };
+  }
+
+  /**
+   * The lines added by hand, as lines (J13.15). Each is one line and
+   * stays one: never summed, converted or combined, with another line
+   * added by hand or with anything a recipe asks for. It settles whole,
+   * because words have no amount for part of them to be settled.
+   *
+   * A meal's own line says which meal it is for (J12.13). One whose meal
+   * this copy of the plan no longer has is still something to buy, and
+   * reads as an ordinary line (J12.14).
+   */
+  function byHand(plan) {
+    const meals = new Map(((plan && plan.meals) || []).map((m) => [m.id, m]));
+    return global.RecipePlan.liveItems(plan).map((item) => {
+      const meal = item.mealId ? meals.get(item.mealId) : null;
+      const owner = meal && !global.RecipePlan.isRecipeMeal(meal) ? meal : null;
+      const settled = item.state === "have" || item.state === "got" ? item.state : "";
+      return {
+        key: `hand:${item.id}`,
+        itemId: item.id,
+        mealId: owner ? owner.id : null,
+        byHand: true,
+        item: item.text,
+        unit: "",
+        amount: null,
+        text: item.text,
+        family: "none",
+        baseUnit: "presence",
+        required: 1,
+        have: settled === "have" ? 1 : 0,
+        got: settled === "got" ? 1 : 0,
+        outstanding: settled ? 0 : 1,
+        shortfall: null,
+        shortfallText: item.text,
+        partText: "",
+        settled,
+        toTaste: false,
+        from: owner
+          ? [{ mealId: owner.id, recipeId: null, name: owner.name, item: item.text, amount: null, text: "" }]
+          : [],
+      };
+    });
   }
 
   /** Settle up one accumulated line and work out how it should read. */
@@ -414,11 +468,16 @@
   }
 
   function settleLine(plan, line, field, now) {
+    // A line added by hand settles whole, on the line itself (J13.15).
+    if (line.byHand) return global.RecipePlan.setItemState(plan, line.itemId, field, now);
     return global.RecipePlan.settle(plan, line.key, field, settleAmount(line, field), now);
   }
 
   /** One tap puts a removed line back (J13.14). */
   function unsettleLine(plan, line, field, now) {
+    if (line.byHand) {
+      return line.settled === field ? global.RecipePlan.setItemState(plan, line.itemId, "", now) : plan;
+    }
     return global.RecipePlan.unsettle(plan, line.key, field, now);
   }
 

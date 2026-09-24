@@ -22,7 +22,7 @@
  */
 "use strict";
 
-const { digest, full, ingredientKeys, mealsInBook, mealAmount } = require("./digest.js");
+const { digest, full, ingredientKeys, mealsInBook, mealAmount, byHandLines } = require("./digest.js");
 const { asList, asStrings, asCount, asChoice, tooMany } = require("./args.js");
 
 /** The orders the app offers (J15.6), named once for the schema and the check. */
@@ -457,8 +457,9 @@ const getPlan = {
   title: "The week's plan and the shopping list it makes",
   description:
     "The book's live plan and the one shopping list its meals add up to. Gives back: `meals`, " +
-    "each with mealId, recipeId, name and portions (or multiplier); and `shoppingList` — " +
-    "toBuy, partlySorted, alreadyHave, inBasket. A plan is a bag of meals: nothing in it " +
+    "each with mealId, recipeId, name and portions (or multiplier), or `recipe: false` for a " +
+    "meal that is not a recipe; and `shoppingList` — toBuy, partlySorted, alreadyHave, " +
+    "inBasket, and `byHand`: lines added by hand, each with itemId, text and state. A plan is a bag of meals: nothing in it " +
     "belongs to a day or a date, so keep the calendar on your side. " + HOUSEHOLD_DATA,
   annotations: LOOKS,
   inputSchema: { type: "object", properties: {}, additionalProperties: false },
@@ -482,6 +483,9 @@ const getPlan = {
           .map((line) => `${line.item}: ${line.partText}`),
         alreadyHave: list.alreadyHave.map((line) => line.text),
         inBasket: list.inBasket.map((line) => line.text),
+        // The lines added by hand again, with the ids to take them off
+        // by (J17.14). They are in the lists above too, as text.
+        byHand: byHandLines(list),
       },
     };
   },

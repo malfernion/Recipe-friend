@@ -155,11 +155,14 @@ function full(win, recipe, planned, scale = null) {
  */
 function mealsInBook(book) {
   const have = new Set(book.recipes.map((recipe) => recipe.id));
-  return book.plan.meals.filter((meal) => have.has(meal.recipeId));
+  // A meal that is not a recipe has no recipe to leave the book (J12.13).
+  return book.plan.meals.filter((meal) => !meal.recipeId || have.has(meal.recipeId));
 }
 
 /** How much of a recipe a meal is, said the way the screen says it. */
 function mealAmount(meal) {
+  // A meal that is not a recipe is a name and nothing to scale (J12.13).
+  if (!meal.recipeId) return { mealId: meal.id, recipeId: null, name: meal.name, recipe: false };
   return {
     mealId: meal.id,
     recipeId: meal.recipeId,
@@ -172,4 +175,20 @@ function mealAmount(meal) {
   };
 }
 
-module.exports = { digest, full, ingredientLine, ingredientKeys, minutesFor, mealsInBook, mealAmount, NO_PHOTO };
+/**
+ * The lines added by hand, with the ids to take them off by (J17.14) and
+ * how each stands. `meal` names the meal that is not a recipe it is for.
+ */
+function byHandLines(list) {
+  const words = { "": "to buy", have: "already have", got: "in basket" };
+  return list.lines
+    .filter((line) => line.byHand)
+    .map((line) => ({
+      itemId: line.itemId,
+      text: line.text,
+      state: words[line.settled] || "to buy",
+      ...(line.from.length ? { meal: line.from[0].name } : {}),
+    }));
+}
+
+module.exports = { byHandLines, digest, full, ingredientLine, ingredientKeys, minutesFor, mealsInBook, mealAmount, NO_PHOTO };
