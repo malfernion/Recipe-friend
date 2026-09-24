@@ -524,8 +524,7 @@ so the app can tell them what to buy.
 1. **A plan is a bag of meals, not a calendar.** Recipes go in with the
    portions wanted; nothing is assigned to a day, a slot or a date. The
    shop does not care which night the curry is, and neither does the
-   question the plan exists to answer. A meal is usually a recipe, and
-   need not be (J12.13).
+   question the plan exists to answer.
 2. **A plan belongs to the book, the way its recipes and its favourites
    do** (J3.6). One household, one plan: whoever does the shop sees what
    whoever planned it chose. There is one live plan per book, and it needs
@@ -591,26 +590,12 @@ so the app can tell them what to buy.
     each is an amount rather than a step — whoever's write lands last
     still says the right total. The meals in a plan merge whole, like a
     recipe: nobody races to add the curry. What is added to the list by
-    hand merges item by item (J12.14), because that is exactly what two
+    hand merges item by item (J12.13), because that is exactly what two
     people do race to do.
 12. The plan works with no network, like the rest of the app (J9.1) — and
     it matters more here than anywhere else, because the supermarket is
     the one building where the phone has no signal.
-13. **A meal need not be a recipe.** Frozen-pizza night is one of the
-    week's meals and nobody is going to type up a recipe for it, so a
-    meal can be just a name. It counts as a meal everywhere a meal is
-    counted — the plan's count, and what Done needs (J14.3) — and it
-    has no portions, because there is nothing to scale. It can have
-    lines of its own on the shopping list ("2 frozen pizzas"), added to
-    it the way anything is added to the list by hand (J13.15), and
-    taking the meal out takes its lines with it.
-
-    **It is not planning history.** What the archive answers is which
-    recipes have been planned and when (J14.6, J14.9, J14.10); "Frozen
-    pizza, last planned 3 days ago" is not a question anybody is asking.
-    A finished plan keeps the meal's name, like any meal (J14.12), and
-    nothing reads it.
-14. **Anything can be added to the list by hand.** Milk and kitchen roll
+13. **Anything can be added to the list by hand.** Milk and kitchen roll
     belong to no meal, and they are the reason the list lived somewhere
     else. What is typed is the line, exactly as typed — "2 l milk",
     "kitchen roll" — added from the plan, and it works with no network
@@ -625,11 +610,11 @@ so the app can tell them what to buy.
     arrives from the other, because taking it off is stamped like
     settling it is, and the later stamp wins.
 
-    **A line that belongs to a meal nobody has any more is still a
-    line.** The meals merge whole and the list does not, so a meal's
-    line can arrive on a phone whose copy of the plan has lost the meal.
-    Something to buy is not thrown away on the strength of a merge: it
-    reads as an ordinary line until somebody takes it off.
+    **A line belongs to the list, not to a meal.** Frozen-pizza night is
+    "2 frozen pizzas" on the list; which night it is belongs to whoever
+    keeps the calendar, as every other night does (J12.1). A meal that
+    was only a name was tried and taken out again: it added a box, a row
+    and a box under the row, and nothing a line did not already do.
 
 ## J13 · Shopping from a plan
 
@@ -737,16 +722,17 @@ so the app can tell them what to buy.
     It sits first under "to buy", because the lines added by hand are
     the ones somebody has just thought of. It settles with the same ✗
     and ✓ as every other line, and the same Put back, but whole — a line
-    of words has no amount for part of it to be settled. A meal's own
-    line (J12.13) says which meal it is for, where a recipe's line says
-    which recipes it came from. Copy takes it as it was typed (J13.13),
-    and the shop is not finished while it is outstanding (J14.2).
+    of words has no amount for part of it to be settled, and it says
+    nothing about where it came from, having come from nowhere but the
+    person who typed it. Copy takes it as it was typed (J13.13), and the
+    shop is not finished while it is outstanding (J14.2).
 
 ## J14 · What the plan remembers
 
 1. **Done finishes the plan**, and is the moment a plan is recorded: every
    recipe in it is stamped as planned, the plan is archived, and an empty
-   one takes its place.
+   one takes its place. A plan with no recipe in it is finished the same
+   way and records nothing (J14.3).
 2. Done happens by itself when the last outstanding line is settled — you
    have just said you are finished by settling it, so it does not also
    ask. It says what it did and offers Undo. Settling the last line with ✗
@@ -755,11 +741,27 @@ so the app can tell them what to buy.
    recorded for the whole book, and taking a record back has to reach the
    server or another device will simply hand it back. It says so rather
    than appearing to work, which is the exception J12.12's offline promise
-   has to carry.
-3. Finishing needs at least one meal, a recipe or not (J12.13). An
-   empty plan has nothing to record and offers no Done — and a plan that
-   is only lines added by hand is not a week that was planned, so it
-   offers none either. It is cleared when it is done with.
+   has to carry. A plan that recorded nothing (J14.3) has no record to
+   take back, so its Undo works offline like everything else.
+
+   **Undo puts back what was finished and keeps what came since.** A line
+   added in the seconds after Done — on this phone before tapping Undo,
+   or on the other one — is still there afterwards. Undo means "put that
+   back", not "and forget everything since", and nothing says so if it
+   does forget. And **a Done pressed while a sync is running stays done**:
+   a sync that finds the plan changed under it merges again on top of
+   the change rather than writing back what it read before it.
+3. **Finishing needs something on the list, not something to record.**
+   Somebody shopping from the list does not care which lines came from a
+   recipe and which were typed in, and a shop of milk and bin bags is
+   finished the way any shop is — by pressing Done, or by settling the
+   last line. An empty plan has nothing to finish and offers no Done.
+
+   **What is recorded is only ever recipes** (J14.5), so a plan with no
+   recipe in it is finished without a record: the list goes, an empty
+   plan takes its place, and nothing claims a week was planned. It says
+   what it did — "Shopping done", not "Planned 0 meals" — and offers
+   Undo like any Done.
 4. **Clear discards a plan without recording it.** A week that never
    happened should not claim to have been planned.
 5. **What is recorded is that a recipe was planned, not that it was
@@ -1284,13 +1286,12 @@ release.
     whole listing and fails when it grows past what nine tools can
     justify, and names the phrases that were shipping before this was
     written down — the point being that descriptions grow back.
-14. **The whole of the week, not only the recipes.** A meal that is not
-    a recipe (J12.13) goes into the plan through the same tool as one
-    that is, by name, with its own lines if it has any, and comes out
-    through the same tool too. Lines added by hand (J13.15) have a pair of
-    tools of their own, to add and to take off, and the plan says what
-    each line is and how it stands, so that anything put on can be taken
-    off again by the id it was given.
+14. **The whole of the list, not only the recipes.** Lines added by hand
+    (J13.15) have a pair of tools of their own, to add and to take off,
+    and the plan says what each line is and how it stands, so that
+    anything put on can be taken off again by the id it was given. A
+    night that is not a recipe — frozen pizza — is a line on the list
+    and an entry on the agent's own calendar, not a meal (J12.13).
 
     **Deciding that two lines are one need is the agent's job when the
     agent is adding.** The app never combines a line added by hand with
@@ -1306,7 +1307,7 @@ release.
     and capped as a person's is; the list is full at the same size; a
     finished week is not one to add to (J17.9). What is reported is what
     survived the merge, and because the list merges line by line
-    (J12.14), what survives is nearly always what was asked for.
+    (J12.13), what survives is nearly always what was asked for.
 
 ---
 
@@ -1452,7 +1453,7 @@ accident:
   about this shop (J13.9), and a line added by hand is about this shop
   too (J14.13).
 - **Two phones' lists merge without loss up to what a plan holds, and
-  not past it** (J12.14). A list takes a hundred lines, and a plan holds
+  not past it** (J12.13). A list takes a hundred lines, and a plan holds
   a hundred and thirty, counting lines taken off, so that two phones
   near the limit can meet and keep everything. Past that — both phones
   adding thirty or more lines apiece, offline, to a list already nearly
@@ -1508,7 +1509,7 @@ those an agent is allowed to reach for — and one of them runs the real
 program in a real subprocess, because the rule that nothing but protocol
 messages reaches stdout cannot be checked any other way.
 
-**Sixteen of the 182 criteria have no test naming them** — J4.15,
+**Sixteen of the 181 criteria have no test naming them** — J4.15,
 J4.16, J4.19, J4.25, J5.10, J6.3, J10.4, J11.1 to J11.5, J12.12, J15.9,
 J15.11 and J16.5.
 

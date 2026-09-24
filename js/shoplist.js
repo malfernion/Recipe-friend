@@ -205,20 +205,15 @@
    * added by hand or with anything a recipe asks for. It settles whole,
    * because words have no amount for part of them to be settled.
    *
-   * A meal's own line says which meal it is for (J12.13). One whose meal
-   * this copy of the plan no longer has is still something to buy, and
-   * reads as an ordinary line (J12.14).
+   * It says nothing about where it came from (J13.15): it came from the
+   * person who typed it.
    */
   function byHand(plan) {
-    const meals = new Map(((plan && plan.meals) || []).map((m) => [m.id, m]));
     return global.RecipePlan.liveItems(plan).map((item) => {
-      const meal = item.mealId ? meals.get(item.mealId) : null;
-      const owner = meal && !global.RecipePlan.isRecipeMeal(meal) ? meal : null;
       const settled = item.state === "have" || item.state === "got" ? item.state : "";
       return {
         key: `hand:${item.id}`,
         itemId: item.id,
-        mealId: owner ? owner.id : null,
         byHand: true,
         item: item.text,
         unit: "",
@@ -235,9 +230,7 @@
         partText: "",
         settled,
         toTaste: false,
-        from: owner
-          ? [{ mealId: owner.id, recipeId: null, name: owner.name, item: item.text, amount: null, text: "" }]
-          : [],
+        from: [],
       };
     });
   }

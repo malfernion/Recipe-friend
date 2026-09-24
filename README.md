@@ -105,7 +105,7 @@ dependencies, so `npm install` comes first if you want to run everything.
 
 Every test name quotes a criterion from [`docs/journeys.md`](docs/journeys.md),
 so a failure points at behaviour that was agreed rather than at an
-implementation detail. **166 of the 182 criteria have a test naming
+implementation detail. **165 of the 181 criteria have a test naming
 them**; the sixteen that do not are listed at the end of the journeys,
 along with the database, which is deliberately outside the net.
 
@@ -309,8 +309,8 @@ filing a recipe is not.
 
 | Tool | Takes | Does |
 | --- | --- | --- |
-| `add_to_plan` | recipes, with portions or a multiplier — or a meal that is not a recipe, by name, with its lines | puts meals in the book's plan, reading it first and reporting what survived |
-| `remove_from_plan` | meal ids from `get_plan` | takes them out again, saying the amount each was at (or its name and lines) so it can go back the same; nothing is recorded either way |
+| `add_to_plan` | recipes, with portions or a multiplier | puts meals in the book's plan, reading it first and reporting what survived; anything that is not a recipe is pointed at `add_to_list` |
+| `remove_from_plan` | meal ids from `get_plan` | takes them out again, saying the amount each was at so it can go back the same; nothing is recorded either way |
 | `add_to_list` | lines of text | puts them on the shopping list, each its own line — the assistant reads the list first and decides whether "milk" is already there |
 | `remove_from_list` | item ids from `get_plan` | takes lines added by hand off the list, saying what each was |
 | `add_recipe` | a recipe | files it into the book — **one way**, see below |

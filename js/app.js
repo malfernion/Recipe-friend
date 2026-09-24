@@ -1656,7 +1656,7 @@
     const barText = $("#plan-bar-text");
     if (barText && available && planMode) {
       const left = shopList().toBuy.length;
-      // A plan can be only lines added by hand (J12.14), and that is not
+      // A plan can be only lines added by hand (J12.13), and that is not
       // "nothing in the plan".
       const lines = RecipePlan.liveItems(thePlan()).length;
       const toBuy = left === 0 ? "nothing left to buy" : `${left} ${left === 1 ? "thing" : "things"} to buy`;
@@ -1714,23 +1714,21 @@
     // Offered only where there is something for it to do (J4.13).
     $("#plan-copy-btn").hidden = nothingToBuy;
     $("#plan-share-btn").hidden = nothingToBuy || !canShareText();
-    // Finishing needs at least one recipe: an empty plan has nothing to
-    // record and offers no Done (J14.3).
-    $("#plan-done-btn").hidden = plan.meals.length === 0;
-    // A plan that is only lines added by hand offers no Done (J14.3), but
-    // it still has to be clearable once the shop is over.
-    $("#plan-clear-btn").hidden = plan.meals.length === 0 && RecipePlan.liveItems(plan).length === 0;
+    // Finishing needs something on the list, recipe or not (J14.3); an
+    // empty plan has nothing to finish or clear.
+    const empty = !RecipePlan.hasSomething(plan);
+    $("#plan-done-btn").hidden = empty;
+    $("#plan-clear-btn").hidden = empty;
   }
 
   /**
-   * One text box and its button, for adding to the plan by hand (J12.13,
-   * J12.14). Offered only to somebody who may plan (J12.10). What is typed
-   * is what goes in.
+   * The box for adding to the list by hand (J12.13). Offered only to
+   * somebody who may plan (J12.10). What is typed is what goes in.
    */
-  function planAddFormHTML(kind, { id, label, placeholder, mealId = "" }) {
+  function planAddFormHTML({ id, label, placeholder }) {
     if (!canPlan()) return "";
     return `
-        <form class="plan-add-form" data-plan-add="${kind}" data-meal="${escapeHTML(mealId)}" autocomplete="off">
+        <form class="plan-add-form" data-plan-add="item" autocomplete="off">
           <input type="text" class="plan-add-input" id="${escapeHTML(id)}" name="text"
                  maxlength="${window.RecipePlanStore.limits.MAX_ITEM_CHARS}" enterkeyhint="done"
                  placeholder="${escapeHTML(placeholder)}" aria-label="${escapeHTML(label)}">
@@ -1739,52 +1737,22 @@
   }
 
   function planMealsHTML(plan) {
-    const addMeal = planAddFormHTML("meal", {
-      id: "plan-add-meal",
-      label: "Add a meal that isn't a recipe",
-      placeholder: "A meal that isn't a recipe — e.g. Frozen pizza",
-    });
     if (!plan || plan.meals.length === 0) {
       return `
         <section class="plan-section">
           <h3>Meals</h3>
           <p class="plan-empty">Nothing in the plan yet. Turn on Meal plan above the
              recipe list, then add recipes from there.</p>
-          ${addMeal}
         </section>`;
     }
     return `
       <section class="plan-section">
         <h3>Meals</h3>
         <ul class="plan-meals">${plan.meals.map(planMealHTML).join("")}</ul>
-        ${addMeal}
       </section>`;
   }
 
-  /**
-   * A meal that is not a recipe (J12.13): its name and a way out, and no
-   * stepper, because there is nothing to scale. Under it, a way to put
-   * its own lines on the list — which is where "2 frozen pizzas" goes.
-   */
-  function namedMealHTML(meal) {
-    const name = escapeHTML(meal.name);
-    const id = escapeHTML(meal.id);
-    return `
-          <li class="plan-meal plan-meal-named">
-            <span class="plan-meal-name">${name}</span>
-            <button type="button" class="icon-btn plan-meal-remove" data-plan="meal-remove"
-                    data-meal="${id}" aria-label="Take ${name} out of the plan">×</button>
-            ${planAddFormHTML("line", {
-              id: `plan-add-line-${meal.id}`,
-              label: `Add something ${meal.name} needs to the list`,
-              placeholder: `What it needs — e.g. 2 ${meal.name.toLowerCase()}`,
-              mealId: meal.id,
-            })}
-          </li>`;
-  }
-
   function planMealHTML(meal) {
-    if (!RecipePlan.isRecipeMeal(meal)) return namedMealHTML(meal);
     const recipe = store.getById(meal.recipeId);
     // The name the plan copied down, so an archived plan still reads
     // correctly after the recipe has gone (J14.12).
@@ -1807,8 +1775,8 @@
 
   function shopListHTML(list) {
     // Always there, and first: adding milk needs no recipe and no meal
-    // (J12.14), and it is the thing somebody reaches for in the shop.
-    const addItem = planAddFormHTML("item", {
+    // (J12.13), and it is the thing somebody reaches for in the shop.
+    const addItem = planAddFormHTML({
       id: "plan-add-item",
       label: "Add to the list",
       placeholder: "Add to the list — e.g. 2 l milk",
@@ -1909,35 +1877,23 @@
   }
 
   /**
-   * Something typed into one of the plan's boxes (J12.13, J12.14): a meal
-   * that is not a recipe, a line for the list, or a line for one such meal.
-   * Focus goes back to the same box, because the list is written a line
-   * at a time and usually several lines at once.
+   * Something typed into the list's box (J12.13). Focus goes back to the
+   * box, because the list is written a line at a time and usually several
+   * lines at once.
    */
-  function planAdd(kind, text, mealId) {
+  function planAdd(text) {
     if (!canPlan()) return false;
     const words = String(text || "").trim();
     if (!words) return false;
     const plan = thePlan();
     const limits = window.RecipePlanStore.limits;
-    if (kind === "meal") {
-      if (plan.meals.length >= limits.MAX_MEALS) {
-        toast(`The plan is full — it holds ${limits.MAX_MEALS} meals. Take one out first.`);
-        return false;
-      }
-      planStore.setPlan(RecipePlan.addNamedMeal(plan, words));
-    } else {
-      if (RecipePlan.liveItems(plan).length >= limits.MAX_LIST_LINES) {
-        toast(`The list is full — it holds ${limits.MAX_LIST_LINES} things added by hand. Clear some first.`);
-        return false;
-      }
-      const owner = kind === "line" ? plan.meals.find((m) => m.id === mealId) : null;
-      planStore.setPlan(RecipePlan.addItem(plan, words, owner ? owner.id : null));
+    if (RecipePlan.liveItems(plan).length >= limits.MAX_LIST_LINES) {
+      toast(`The list is full — it holds ${limits.MAX_LIST_LINES} things added by hand. Clear some first.`);
+      return false;
     }
+    planStore.setPlan(RecipePlan.addItem(plan, words));
     render();
-    const again = $(
-      kind === "meal" ? "#plan-add-meal" : kind === "line" ? `#plan-add-line-${mealId}` : "#plan-add-item"
-    );
+    const again = $("#plan-add-item");
     if (again && again.focus) again.focus();
     return true;
   }
@@ -2005,7 +1961,9 @@
 
   /**
    * Done: every recipe in the plan is stamped as planned, the plan is
-   * archived, and an empty one takes its place. It says what it did and
+   * archived, and an empty one takes its place — or, where there is no
+   * recipe in it, the list simply goes and nothing is recorded (J14.3).
+   * It says what it did and
    * offers Undo rather than asking first — pressing Done, or settling the
    * last line, is somebody saying they have finished, and you do not
    * interrogate them about it.
@@ -2016,7 +1974,7 @@
   async function finishPlan() {
     if (!canPlan()) return;
     const plan = thePlan();
-    if (!plan || plan.meals.length === 0) return; // J14.3
+    if (!RecipePlan.hasSomething(plan)) return; // J14.3
     const cloud = window.RecipeCloud;
     const sync = cloud && cloud.sync;
     if (!sync || !sync.completePlan) {
@@ -2033,15 +1991,38 @@
       return;
     }
     if (!done) return;
-    const count = done.archived.meals.length;
     if (planView.open) closeView(planView);
     render();
+    // A shop with no recipe in it recorded nothing (J14.3), so it says so
+    // in its own words, and its Undo is local: there is no record to take
+    // back.
+    if (!done.archived) {
+      toast("Shopping done.", { label: "Undo", run: () => undoUnrecorded(done.previous) });
+      return;
+    }
+    const count = done.archived.meals.length;
     toast(`Planned ${count} ${count === 1 ? "meal" : "meals"}.`, {
       label: "Undo",
       // The record keeps no lines added by hand (J14.13), so Undo is the
       // one place they can come back from — held here, and nowhere else.
       run: () => undoFinishPlan(done.archived.id, done.items || []),
     });
+  }
+
+  /** Undo after a Done that recorded nothing: no network needed (J14.2). */
+  function undoUnrecorded(previous) {
+    const cloud = window.RecipeCloud;
+    const sync = cloud && cloud.sync;
+    if (!sync || !sync.restoreUnrecorded) return;
+    try {
+      sync.restoreUnrecorded(previous, Date.now());
+    } catch (err) {
+      console.warn("Recipe Friend: could not undo finishing the plan.", err);
+      toast("Couldn't undo that.");
+      return;
+    }
+    render();
+    toast("The list is back.");
   }
 
   /**
@@ -2148,7 +2129,7 @@
     const text = input ? input.value : "";
     // Emptied only once it has gone in: a refusal — the list is full —
     // should not also throw away what somebody typed.
-    if (planAdd(form.dataset.planAdd, text, form.dataset.meal) && input) input.value = "";
+    if (planAdd(text) && input) input.value = "";
   });
 
 

@@ -77,6 +77,39 @@
     return Boolean(a) && Boolean(b) && digest(a) === digest(b);
   }
 
+  /**
+   * A plan brought back by Undo, with what was put in the plan that
+   * replaced it since. Undo restores the old plan as a newer generation,
+   * and a newer generation wins whole (see mergePlans) — so without this,
+   * milk added on the other phone in the seconds after Done, or typed on
+   * this one before tapping Undo, would go with nobody saying so. Undo
+   * means "put back what I finished", not "and forget everything since".
+   */
+  function withWhatCameSince(restored, since) {
+    if (!since) return restored;
+    const meals = new Set(restored.meals.map((m) => m.id));
+    const items = new Set((restored.items || []).map((i) => i.id));
+    // Per line and per field, the later word wins, as it does in any
+    // merge (J12.11): "we have four onions" said after Done is not undone
+    // by "we have one" said before it.
+    const settled = Object.assign(Object.create(null), restored.settled);
+    for (const [key, entry] of Object.entries(since.settled || {})) {
+      const mine = settled[key] || {};
+      const next = { ...mine };
+      for (const field of ["have", "got"]) {
+        const theirs = entry && entry[field];
+        if (theirs && (!mine[field] || Number(theirs.at) > Number(mine[field].at))) next[field] = theirs;
+      }
+      settled[key] = next;
+    }
+    return {
+      ...restored,
+      meals: [...restored.meals, ...since.meals.filter((m) => !meals.has(m.id))],
+      items: [...(restored.items || []), ...(since.items || []).filter((i) => !items.has(i.id))],
+      settled,
+    };
+  }
+
   /** Nothing in it at all — no meal, no line added by hand, nothing settled. */
   function isBlank(plan) {
     return (
@@ -100,7 +133,7 @@
           .map((f) => (entry[f] ? `${f}=${entry[f].amount}@${entry[f].at}` : ""))].join(",");
       });
     const items = (plan.items || [])
-      .map((i) => [i.id, i.text, i.mealId, i.addedAt, i.state, i.at].join(":"))
+      .map((i) => [i.id, i.text, i.addedAt, i.state, i.at].join(":"))
       .sort();
     // `createdAt` is in here because it is the generation the merge
     // decides on, not decoration: two copies of one id that disagree
@@ -490,6 +523,14 @@
     async syncPlans() {
       if (!this.planStore || !this.bookId) return null;
 
+      // What this device held when the sync began. Everything below awaits
+      // the network, and a tap in the meantime — ✓ on the last line, which
+      // is Done (J14.2), or a line added — changes the plan under it. The
+      // merge is taken against these, so it has to be taken again against
+      // whatever is here by the time it is applied, or the tap is undone.
+      const startedWith = this.planStore.plan;
+      const archivedBefore = new Set(this.planStore.archive.map((p) => p.id));
+
       const row = await this.api.fetchLivePlan(this.bookId);
       const remote = row ? global.RecipePlanStore.sanitizePlan(row.data) : null;
       let plan = global.RecipePlan.mergePlans(this.planStore.plan, remote);
@@ -548,6 +589,33 @@
         if (clean) here.set(clean.id, clean);
       }
 
+      // Changed while the network was being asked: merge again, on top of
+      // what is here now. `mergePlans` already knows the rules — a newer
+      // generation (Done, Clear) wins whole, the list merges line by line
+      // — so a Done pressed during the sync stays done. A plan recorded
+      // here in the meantime is kept, and owed, rather than dropped from
+      // the archive by a list that was read before it existed.
+      //
+      //
+      // One case needs more than that. A phone that has never seen this
+      // book's plan starts the sync holding the placeholder, stamped zero
+      // so that it yields (planstore.js). A first line added while the
+      // sync runs dates the placeholder "now", and as a generation it
+      // would then replace the book's plan outright. It is not a new
+      // week; it is an edit to the one the book is on, so it is replayed
+      // onto the result as a copy of that plan — meals by their stamp, the
+      // list line by line. Only then: an edit to a week that a newer one
+      // replaced during the sync belongs to the week that is over, and the
+      // generation rule is what keeps it there.
+      const now = this.planStore.plan;
+      if (now !== startedWith) {
+        const firstEdit = !startedWith.createdAt && now.id === startedWith.id && plan;
+        const edit = firstEdit ? { ...now, id: plan.id, createdAt: plan.createdAt } : now;
+        plan = global.RecipePlan.mergePlans(edit, plan);
+      }
+      for (const mine of this.planStore.archive) {
+        if (!archivedBefore.has(mine.id) && !here.has(mine.id)) here.set(mine.id, mine);
+      }
       this.planStore.applyMerge(plan, [...here.values()]);
       // What goes up is what the device holds, which is the coerced plan
       // (planstore.js's `applyMerge`). A merge takes the union of two
@@ -628,14 +696,25 @@
     async completePlan(now = Date.now()) {
       if (!this.planStore) return null;
       const live = this.planStore.plan;
-      const finished = global.RecipePlan.complete(live, now);
-      // An empty plan has nothing to record and offers no Done (J14.3).
-      if (!finished || finished === live) return null;
+      // An empty plan has nothing to finish and offers no Done (J14.3).
+      if (!global.RecipePlan.hasSomething(live)) return null;
       if (this.readOnly) throw new Error("this is a book you read, not one you plan");
       // Done is what records a week as planned (J14.1), and that record
       // is what an agent reads to decide what to suggest next (J14.9).
       // An agent does not write its own evidence (J16.4).
       if (this.addOnly) throw new Error("an agent does not finish a plan");
+
+      // A shop with no recipe in it is finished the same way and records
+      // nothing (J14.3): what is recorded is only ever recipes (J14.5).
+      // The list goes and a later generation takes its place, exactly as
+      // Clear does it, and the plan that was is handed back for Undo.
+      if (live.meals.length === 0) {
+        const fresh = global.RecipePlan.emptyPlan(global.RecipePlan.generationAfter(live, now));
+        this.planStore.setPlan(fresh);
+        await this.syncNow();
+        return { archived: null, previous: live, plan: fresh, items: live.items || [] };
+      }
+      const finished = global.RecipePlan.complete(live, now);
 
       // Strictly later than the plan it replaces, so the two are ordered
       // as generations on every device that meets them (see mergePlans).
@@ -690,9 +769,36 @@
         // record never had it (J14.13); the caller kept it for this.
         items: Array.isArray(items) ? items : [],
       };
-      this.planStore.setPlan(restored);
+      this.planStore.setPlan(withWhatCameSince(restored, this.planStore.plan));
       await this.syncNow();
       return restored;
+    }
+
+    /**
+     * Undo after a Done that recorded nothing (J14.3): the plan comes back
+     * as a new generation, for the reason `undoComplete` gives — the empty
+     * plan that replaced it may already be on another phone.
+     *
+     * No network: there is no record to take back, so this is an ordinary
+     * local edit, pushed on the usual debounce like any other (J12.12).
+     */
+    restoreUnrecorded(previous, now = Date.now()) {
+      if (!this.planStore || !previous) return null;
+      if (this.readOnly) throw new Error("this is a book you read, not one you plan");
+      if (this.addOnly) throw new Error("an agent does not finish a plan");
+      const createdAt = global.RecipePlan.generationAfter(this.planStore.plan, now);
+      return this.planStore.setPlan(
+        withWhatCameSince(
+          {
+            ...previous,
+            id: global.RecipeStore.newId(),
+            createdAt,
+            updatedAt: Math.max(now, createdAt),
+            completedAt: null,
+          },
+          this.planStore.plan
+        )
+      );
     }
 
     /** Local edit happened: coalesce rapid changes into one round trip. */
