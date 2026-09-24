@@ -1870,6 +1870,72 @@ button.crumb:hover {
   }
 }
 
+/*
+  Adding by hand (J12.13, J12.14): one box and its button. The box takes
+  the row, because what is typed is the line, and a line cut off while
+  it is being written is a line written wrong. 16px, because anything
+  smaller makes iOS zoom the page in on focus, which is the last thing
+  wanted one-handed in an aisle.
+*/
+.plan-add-form {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin: 0.4rem 0 0.6rem;
+}
+
+.plan-add-input {
+  flex: 1;
+  min-width: 0;
+  font-family: var(--serif);
+  font-size: 16px;
+  padding: 0.55rem 0.1rem;
+  border: none;
+  border-bottom: 1px solid var(--rule-strong);
+  border-radius: 0;
+  background: transparent;
+  color: var(--ink);
+}
+
+.plan-add-input::placeholder {
+  font-style: italic;
+  color: var(--ink-faint);
+}
+
+.plan-add-input:focus {
+  outline: none;
+  border-bottom-color: var(--accent);
+}
+
+.plan-add-input:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.plan-add-submit {
+  flex: none;
+}
+
+/*
+  A meal that is not a recipe has no stepper, so its name and × fit one
+  row even on a phone; the box for its own lines goes under them, across
+  the whole row.
+*/
+.plan-meal-named {
+  flex-wrap: wrap;
+}
+
+.plan-meal-named .plan-add-form {
+  flex: 1 0 100%;
+  margin: 0;
+}
+
+@media (max-width: 480px) {
+  .plan-meal-named .plan-meal-name {
+    flex: 1;
+  }
+}
+
 /* ---------- The shopping list ---------- */
 .shop-line {
   align-items: flex-start;

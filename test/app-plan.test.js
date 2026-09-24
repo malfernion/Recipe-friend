@@ -70,15 +70,18 @@ function fakeCloud(ui, { undoFails = false } = {}) {
         ui.planStore.archivePlan(finished);
         ui.planStore.setPlan(plan.emptyPlan(plan.generationAfter(finished, now)));
         calls.completed.push(finished);
-        return { archived: finished, plan: ui.planStore.plan };
+        // As sync.js does: the record keeps no lines added by hand
+        // (J14.13), so they are handed back for Undo and nowhere else.
+        return { archived: finished, plan: ui.planStore.plan, items: finished.items || [] };
       },
-      async undoComplete(planId, now = Date.now()) {
+      async undoComplete(planId, now = Date.now(), items = []) {
         if (undoFails) throw new Error("offline");
         const archived = ui.planStore.archive.find((p) => p.id === planId);
         if (!archived) return null;
         ui.planStore.removeArchived(planId);
         ui.planStore.setPlan({
           ...archived,
+          items,
           completedAt: null,
           createdAt: plan.generationAfter(ui.planStore.plan, now),
         });
@@ -122,6 +125,20 @@ function planning(recipes, options = {}) {
         target: { closest: (sel) => (sel === "[data-plan]" ? { dataset } : null) },
       }),
     open: () => ui.el("plan-open-btn").fire("click"),
+    /**
+     * Type into one of the plan's boxes and press Add (J12.13, J12.14):
+     * `kind` is "meal", "item" or "line", and a line names its meal.
+     */
+    add: (kind, text, meal = "") => {
+      const input = { value: text };
+      ui.el("plan-content").fire("submit", {
+        target: {
+          closest: (sel) =>
+            sel === "[data-plan-add]" ? { dataset: { planAdd: kind, meal }, elements: { text: input } } : null,
+        },
+      });
+      return input;
+    },
     readout: () => ui.el("plan-content").innerHTML,
     /** The readout as it reads, with the markup taken out of the way. */
     words: () =>
@@ -1027,4 +1044,145 @@ test("J14.8 · the note sits on the line of particulars, not in a row of its own
     "a card's rows are the scarcest thing it has, and this was spending one on three words");
   assert.match(html, /<p class="card-meta">[^<]*·\s*<span class="card-planned/,
     "it reads as one more particular, after the ones already there");
+});
+
+// ---------------------------------------------------------------------
+// A meal that is not a recipe, and lines added by hand
+// ---------------------------------------------------------------------
+
+test("J12.13 · a meal that is not a recipe goes in by name, with no stepper", () => {
+  const app = planMode([BOLOGNESE]);
+  app.open();
+  assert.match(app.readout(), /id="plan-add-meal"/, "there is a box for it");
+
+  const box = app.add("meal", "Frozen pizza");
+
+  assert.deepEqual(app.plan().meals.map((m) => [m.name, m.recipeId]), [["Frozen pizza", null]]);
+  assert.equal(box.value, "", "the box is emptied for the next one");
+  assert.match(app.words(), /Frozen pizza/);
+  const row = app.readout().split("plan-meal-named")[1];
+  assert.doesNotMatch(row.split("</li>")[0], /meal-up|meal-down/, "nothing to scale, so no stepper");
+  assert.equal(app.el("plan-count").textContent, "1", "it counts as a meal");
+  assert.equal(app.el("plan-done-btn").hidden, false, "and a week with a meal in it can be finished");
+});
+
+test("J12.13 · a meal's own lines go on the list, and go with it", async () => {
+  const app = planMode([]);
+  app.open();
+  app.add("meal", "Frozen pizza");
+  const pizza = app.plan().meals[0];
+  assert.match(app.readout(), new RegExp(`id="plan-add-line-${pizza.id}"`), "a box for what it needs");
+
+  app.add("line", "2 frozen pizzas", pizza.id);
+  assert.match(app.words(), /2 frozen pizzas Frozen pizza/, "the line says which meal it is for");
+  assert.equal(app.el(`plan-add-line-${pizza.id}`).focused, true, "and the box is ready for another");
+
+  await app.tap({ plan: "meal-remove", meal: pizza.id });
+  assert.deepEqual(app.list().lines, [], "taking the meal out takes its lines");
+});
+
+test("J12.14 · a line goes on the list with no recipe and no meal", () => {
+  const app = planMode([]);
+  app.open();
+  assert.match(app.readout(), /id="plan-add-item"/, "an empty plan still takes a line");
+
+  app.add("item", "2 l milk");
+  app.add("item", "   ");
+
+  assert.deepEqual(app.list().toBuy.map((l) => l.text), ["2 l milk"], "as typed, and nothing for nothing");
+  assert.equal(app.el("plan-add-item").focused, true, "focus goes back to the box");
+  assert.equal(app.el("plan-done-btn").hidden, true, "only lines added by hand is not a week (J14.3)");
+  assert.equal(app.el("plan-clear-btn").hidden, false, "but it can be cleared");
+  assert.equal(app.el("plan-copy-btn").hidden, false, "and copied");
+});
+
+test("J13.15 · a line added by hand sits first, settles with ✗ and ✓, and Copy takes it as typed", async () => {
+  const app = planMode([BOLOGNESE]);
+  app.card("add", app.named("Bolognese").id);
+  app.open();
+  app.add("item", "milk");
+  app.add("item", "milk");
+
+  const lines = app.list().toBuy;
+  assert.deepEqual(lines.slice(0, 2).map((l) => l.text), ["milk", "milk"], "twice is two lines, and first");
+
+  await app.tap({ plan: "got", key: lines[0].key });
+  assert.equal(app.list().inBasket.length, 1);
+  await app.tap({ plan: "unget", key: lines[0].key });
+  assert.equal(app.list().inBasket.length, 0, "and it can be taken back out of the basket");
+
+  await app.tap({ plan: "have", key: lines[1].key });
+  assert.match(app.readout(), /1 thing you already have/);
+
+  let copied = "";
+  app.win.navigator.clipboard.writeText = async (text) => { copied = text; };
+  await app.el("plan-copy-btn").fire("click");
+  assert.equal(copied.split("\n")[0], "milk", "what is left, as typed, first");
+});
+
+test("J14.2 · the shop finishes itself only once the lines added by hand are settled too", async () => {
+  const app = planMode([BOLOGNESE]);
+  const calls = fakeCloud(app);
+  app.card("add", app.named("Bolognese").id);
+  app.open();
+  app.add("item", "milk");
+
+  await app.tap({ plan: "have", key: app.keyFor("onion") });
+  await app.tap({ plan: "got", key: app.keyFor("tomato") });
+  await flush();
+  assert.equal(calls.completed.length, 0, "the milk is still to get");
+
+  await app.tap({ plan: "got", key: app.list().toBuy[0].key });
+  await flush();
+  assert.equal(calls.completed.length, 1);
+});
+
+test("J14.13 · Done keeps no list, and Undo puts it back", async () => {
+  const app = planMode([BOLOGNESE]);
+  const calls = fakeCloud(app);
+  app.card("add", app.named("Bolognese").id);
+  app.open();
+  app.add("item", "batteries");
+
+  await app.el("plan-done-btn").fire("click");
+  await flush();
+  assert.equal("items" in app.planStore.archive[0], false, "the record is what was planned");
+  assert.deepEqual(app.plan().items, [], "and nothing carries into the next plan");
+
+  await app.el("toast-action").fire("click");
+  await flush();
+  assert.equal(calls.undone.length, 1);
+  assert.deepEqual(app.list().toBuy.map((l) => l.text).slice(0, 1), ["batteries"], "Undo brings the list back");
+});
+
+test("J14.4 · Clear takes lines added by hand with it, and says so", async () => {
+  const app = planMode([]);
+  app.open();
+  app.add("item", "milk");
+  await app.el("plan-clear-btn").fire("click");
+  await flush();
+  assert.match(app.el("confirm-message").textContent, /Clear the plan\? 1 thing added to the list goes from it/);
+  assert.deepEqual(app.win.RecipePlan.liveItems(app.plan()), [], "the list is gone");
+});
+
+test("J12.14 · a full list says so rather than dropping the line", () => {
+  const app = planMode([]);
+  app.open();
+  const limit = app.win.RecipePlanStore.limits.MAX_ITEMS;
+  for (let i = 0; i < limit; i++) app.add("item", `thing ${i}`);
+  app.add("item", "one too many");
+  assert.equal(app.win.RecipePlan.liveItems(app.plan()).length, limit);
+  assert.match(app.el("toast").textContent, /The list is full/);
+});
+
+test("J12.10 · a viewer's add is refused, not merely hidden", () => {
+  const app = planMode([]);
+  app.open();
+  // A viewer never reaches the plan view (J12.10), so the boxes are never
+  // drawn for one; the answer still has to hold if a submit arrives.
+  app.app.setCanEdit(false);
+  app.add("item", "milk");
+  app.add("meal", "Frozen pizza");
+  assert.deepEqual(app.plan().items, []);
+  assert.deepEqual(app.plan().meals, []);
 });
