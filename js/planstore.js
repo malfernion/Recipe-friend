@@ -55,11 +55,10 @@
   // of at most MAX_NAME_CHARS units 360, and three numbers 72 — 647
   // bytes, called 700.
   //
-  // One line added by hand is an object of five fields: 11 elements at 8 =
-  // 88, its key names 20, a uuid 36, text of at most MAX_ITEM_CHARS units
-  // 360, a state of at most seven characters 21, and two numbers 48 — 573
-  // bytes, called 650. (It had a sixth field, the meal it belonged to,
-  // when a meal could be a name; the room it left is kept as margin.)
+  // One line added by hand is an object of six fields: 13 elements at 8 =
+  // 104, its key names 26, a uuid 36, text of at most MAX_ITEM_CHARS units
+  // 360, a state of at most seven characters 21, and three numbers 72 —
+  // 619 bytes, called 650.
   //
   // One settled item is a key and an object of two fields, each an object
   // of two: 14 elements at 8 = 112, a key of at most MAX_KEY_CHARS units
@@ -240,12 +239,16 @@
       const item = {
         id: one.id,
         text,
+        // A line saved before it could be edited has never been edited:
+        // its words date from when it was added.
+        textAt: moment(one.textAt) ?? addedAt,
         addedAt,
         state: ITEM_STATES.includes(one.state) ? one.state : "",
         at: moment(one.at) ?? addedAt,
       };
       const held = byId.get(item.id);
-      if (!held || item.at > held.at) byId.set(item.id, item);
+      // Two copies of one id merge as any two copies do, field by field.
+      byId.set(item.id, held ? global.RecipePlan.mergeItem(held, item) : item);
     }
     const all = [...byId.values()];
     if (all.length <= MAX_ITEMS) return all;

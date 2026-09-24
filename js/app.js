@@ -1704,8 +1704,23 @@
     return true;
   }
 
+  /**
+   * The line being edited, if one is (J13.16): its id and what it said when
+   * the edit began, which is what Escape puts back. While it is set the
+   * readout is not redrawn — a sync landing mid-word would take the words
+   * and the caret with it — and `planStale` remembers that a redraw is
+   * owed for when the line is left.
+   */
+  let editingLine = null;
+  let planStale = false;
+
   function renderPlan() {
     if (!planStore) return;
+    if (editingLine) {
+      planStale = true;
+      return;
+    }
+    planStale = false;
     const plan = thePlan();
     const list = shopList();
     planContent.innerHTML = planMealsHTML(plan) + shopListHTML(list);
@@ -1835,6 +1850,16 @@
       : "";
     const item = escapeHTML(line.item);
     const key = escapeHTML(line.key);
+    // A line added by hand is its own editor (J13.16): the words are
+    // editable in place, plain text only, and the dotted underline is the
+    // whole of the affordance. A recipe's line is worked out, not typed,
+    // and stays words to read.
+    const words =
+      line.byHand && canPlan()
+        ? `<span class="shop-edit" contenteditable="plaintext-only" role="textbox"
+                 aria-label="Edit ${item}" spellcheck="true" enterkeyhint="done"
+                 data-edit-item="${escapeHTML(line.itemId)}">${item}</span>`
+        : item;
     const buttons =
       state === "have"
         ? `<button type="button" class="btn btn-ghost shop-restore" data-plan="unhave" data-key="${key}"
@@ -1851,7 +1876,7 @@
               <div class="shop-line-text">
                 <p class="shop-what">${
                   measure ? `<span class="shop-amount">${escapeHTML(measure)}</span> ` : ""
-                }${item}${line.toTaste ? ' <span class="shop-taste">to taste</span>' : ""}${part}</p>
+                }${words}${line.toTaste ? ' <span class="shop-taste">to taste</span>' : ""}${part}</p>
                 ${shopFromHTML(line)}
               </div>
               <div class="shop-line-btns">${buttons}</div>
@@ -1896,6 +1921,52 @@
     const again = $("#plan-add-item");
     if (again && again.focus) again.focus();
     return true;
+  }
+
+  /**
+   * A line added by hand has been left after editing (J13.16). Leaving is
+   * saving; nothing was written while it was being typed.
+   *
+   * An edit is not followed by a redraw. The words on screen are already
+   * the words saved, and redrawing here — on the way out of the line —
+   * would replace the ✓ somebody tapped to leave it before the tap
+   * landed. The readout is redrawn only when it has to be: the line was
+   * emptied and has gone, or a sync arrived while it was being edited.
+   */
+  function finishEdit(id, text) {
+    editingLine = null;
+    if (!canPlan()) {
+      if (planStale) render();
+      return;
+    }
+    const plan = thePlan();
+    const item = RecipePlan.liveItems(plan).find((i) => i.id === id);
+    if (!item) {
+      // Taken off from the other phone while it was being edited.
+      render();
+      return;
+    }
+    const clip = window.RecipePlanStore.clip;
+    const words = clip(String(text || "").replace(/\s+/g, " ").trim(), window.RecipePlanStore.limits.MAX_ITEM_CHARS).trim();
+    if (!words) {
+      // Emptied is removed, with a way back (J13.16).
+      const prior = item.state;
+      planStore.setPlan(RecipePlan.setItemState(plan, id, "removed"));
+      render();
+      toast(`Took “${item.text}” off the list.`, {
+        label: "Undo",
+        run: () => {
+          const now = thePlan();
+          if (!RecipePlan.liveItems(now).some((i) => i.id === id)) {
+            planStore.setPlan(RecipePlan.setItemState(now, id, prior));
+          }
+          render();
+        },
+      });
+      return;
+    }
+    if (words !== item.text) planStore.setPlan(RecipePlan.editItem(plan, id, words));
+    if (planStale || words !== text) render();
   }
 
   /** A tap inside the readout: the meals above, the shop below. */
@@ -2119,6 +2190,37 @@
     const btn = event.target.closest("[data-plan]");
     if (!btn || !btn.dataset.plan) return undefined;
     return planAction(btn.dataset.plan, btn.dataset);
+  });
+
+  // Editing a line added by hand in place (J13.16). focusin and focusout,
+  // not focus and blur, because those are the ones that bubble up to here.
+  const editTarget = (event) =>
+    event.target && event.target.closest ? event.target.closest("[data-edit-item]") : null;
+
+  planContent.addEventListener("focusin", (event) => {
+    const el = editTarget(event);
+    if (!el || !canPlan()) return;
+    editingLine = { id: el.dataset.editItem, before: el.textContent };
+  });
+
+  planContent.addEventListener("keydown", (event) => {
+    const el = editTarget(event);
+    if (!el || event.isComposing) return;
+    if (event.key === "Enter") {
+      // One line is one line: Enter is Done, not a new paragraph.
+      event.preventDefault();
+      el.blur();
+    } else if (event.key === "Escape") {
+      event.preventDefault();
+      if (editingLine && editingLine.id === el.dataset.editItem) el.textContent = editingLine.before;
+      el.blur();
+    }
+  });
+
+  planContent.addEventListener("focusout", (event) => {
+    const el = editTarget(event);
+    if (!el) return;
+    finishEdit(el.dataset.editItem, el.textContent);
   });
 
   planContent.addEventListener("submit", (event) => {

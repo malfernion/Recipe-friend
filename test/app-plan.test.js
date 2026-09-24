@@ -153,6 +153,31 @@ function planning(recipes, options = {}) {
       });
       return input;
     },
+    /**
+     * Put the caret in a line added by hand (J13.16), the way a tap does,
+     * and hand back what a person can then do to it: type, press a key,
+     * or leave. Leaving is focusout, which is what the app listens for.
+     */
+    editLine: (itemId) => {
+      const content = ui.el("plan-content");
+      const el = {
+        dataset: { editItem: itemId },
+        textContent: (ui.planStore.plan.items.find((i) => i.id === itemId) || {}).text,
+        blur: () => content.fire("focusout", { target: at }),
+      };
+      const at = { closest: (sel) => (sel === "[data-edit-item]" ? el : null) };
+      content.fire("focusin", { target: at });
+      return {
+        el,
+        type: (text) => { el.textContent = text; },
+        press: (key, extra = {}) => {
+          let prevented = false;
+          content.fire("keydown", { target: at, key, preventDefault: () => { prevented = true; }, ...extra });
+          return prevented;
+        },
+        leave: () => el.blur(),
+      };
+    },
     readout: () => ui.el("plan-content").innerHTML,
     /** The readout as it reads, with the markup taken out of the way. */
     words: () =>
@@ -1211,4 +1236,133 @@ test("J14.3 · an empty plan offers no Done and no Clear", () => {
   app.open();
   assert.equal(app.el("plan-done-btn").hidden, true);
   assert.equal(app.el("plan-clear-btn").hidden, true);
+});
+
+// ---------------------------------------------------------------------
+// Changing a line added by hand where it stands (J13.16)
+// ---------------------------------------------------------------------
+
+/** The plan open, with these lines added by hand. */
+function withLines(...texts) {
+  const app = planMode([BOLOGNESE]);
+  app.open();
+  for (const t of texts) app.add(t);
+  const idOf = (text) => app.plan().items.find((i) => i.text === text).id;
+  return { app, idOf };
+}
+
+test("J13.16 · the words of a line added by hand are its editor, and a recipe's line has none", () => {
+  const { app, idOf } = withLines("6 eggs");
+  app.card("add", app.named("Bolognese").id);
+  app.el("plan-content").innerHTML = "";
+  app.open();
+  const html = app.readout();
+  assert.match(html, new RegExp(`contenteditable="plaintext-only"[^>]*data-edit-item="${idOf("6 eggs")}"`));
+  assert.equal((html.match(/data-edit-item=/g) || []).length, 1, "only the line typed in is editable");
+  assert.match(html, /class="shop-edit"/, "and it wears the dotted underline");
+  assert.doesNotMatch(html, /data-plan="edit"/, "there is no edit button");
+});
+
+test("J13.16 · leaving the line saves it, and it keeps its place and its tick", async () => {
+  const { app, idOf } = withLines("milk", "6 eggs", "bread");
+  const eggs = idOf("6 eggs");
+  await app.tap({ plan: "got", key: `hand:${eggs}` });
+
+  const line = app.editLine(eggs);
+  line.type("7 eggs");
+  assert.equal(app.plan().items.find((i) => i.id === eggs).text, "6 eggs", "nothing is written while typing");
+  line.leave();
+
+  const items = app.plan().items;
+  assert.deepEqual(items.map((i) => i.text), ["milk", "7 eggs", "bread"], "same place");
+  assert.equal(items[1].id, eggs, "same line");
+  assert.equal(items[1].state, "got", "still ticked");
+});
+
+test("J13.16 · Enter is Done, not a new line, and Escape puts back what was there", () => {
+  const { app, idOf } = withLines("piza");
+  const id = idOf("piza");
+
+  let line = app.editLine(id);
+  line.type("pizza");
+  assert.equal(line.press("Enter"), true, "Enter does not make a second line");
+  assert.equal(app.plan().items[0].text, "pizza");
+
+  line = app.editLine(id);
+  line.type("pizzzzza");
+  assert.equal(line.press("Escape"), true);
+  assert.equal(app.plan().items[0].text, "pizza", "abandoned, not saved");
+  assert.equal(line.el.textContent, "pizza", "and the words on screen are put back too");
+});
+
+test("J13.16 · Enter while a word is still being composed is left to the keyboard", () => {
+  const { app, idOf } = withLines("tofu");
+  const line = app.editLine(idOf("tofu"));
+  assert.equal(line.press("Enter", { isComposing: true }), false);
+});
+
+test("J13.16 · emptying a line takes it off the list, and Undo puts it back as it was", async () => {
+  const { app, idOf } = withLines("milk", "bin bags");
+  const bags = idOf("bin bags");
+  await app.tap({ plan: "have", key: `hand:${bags}` });
+
+  const line = app.editLine(bags);
+  line.type("   ");
+  line.leave();
+
+  assert.deepEqual(app.win.RecipePlan.liveItems(app.plan()).map((i) => i.text), ["milk"]);
+  assert.match(app.el("toast").textContent, /Took “bin bags” off the list/);
+  assert.equal(app.el("toast-action").hidden, false);
+
+  await app.el("toast-action").fire("click");
+  const back = app.plan().items.find((i) => i.id === bags);
+  assert.equal(back.state, "have", "back as it was, tick and all");
+  assert.equal(back.text, "bin bags");
+});
+
+test("J13.16 · the list does not redraw under a line being edited, and catches up after", () => {
+  const { app, idOf } = withLines("milk");
+  const line = app.editLine(idOf("milk"));
+  line.type("oat mi");
+  const drawn = app.readout();
+
+  // A sync lands mid-word: another phone added eggs.
+  app.planStore.setPlan(app.win.RecipePlan.addItem(app.plan(), "eggs", Date.now()));
+  app.app.render();
+  assert.equal(app.readout(), drawn, "the words and the caret are left alone");
+
+  line.type("oat milk");
+  line.leave();
+  assert.match(app.words(), /eggs/, "and the screen catches up once the line is left");
+  assert.match(app.words(), /oat milk/);
+});
+
+test("J13.16 · an edit does not redraw the list on its way out, so the tap that left it lands", () => {
+  const { app, idOf } = withLines("milk");
+  const line = app.editLine(idOf("milk"));
+  line.type("2 l milk");
+  const drawn = app.readout();
+  line.leave();
+  assert.equal(app.readout(), drawn, "the ✓ tapped to leave the line is still the ✓ it was");
+  assert.equal(app.plan().items[0].text, "2 l milk");
+});
+
+test("J13.16 · a line taken off on the other phone while it was being edited is not brought back", () => {
+  const { app, idOf } = withLines("milk");
+  const id = idOf("milk");
+  const line = app.editLine(id);
+  line.type("2 l milk");
+  app.planStore.setPlan(app.win.RecipePlan.setItemState(app.plan(), id, "removed", Date.now()));
+  line.leave();
+  assert.deepEqual(app.win.RecipePlan.liveItems(app.plan()), []);
+});
+
+test("J12.10 · a viewer's edit is refused", () => {
+  const { app, idOf } = withLines("milk");
+  const id = idOf("milk");
+  app.app.setCanEdit(false);
+  const line = app.editLine(id);
+  line.type("gin");
+  line.leave();
+  assert.equal(app.plan().items[0].text, "milk");
 });

@@ -608,7 +608,8 @@ so the app can tell them what to buy.
     exactly that race — so the list merges one line at a time. A line
     taken off on one phone stays off when an older copy of the list
     arrives from the other, because taking it off is stamped like
-    settling it is, and the later stamp wins.
+    settling it is, and the later stamp wins. Within a line, what it says
+    and whether it is ticked merge apart (J13.16).
 
     **A line belongs to the list, not to a meal.** Frozen-pizza night is
     "2 frozen pizzas" on the list; which night it is belongs to whoever
@@ -726,6 +727,38 @@ so the app can tell them what to buy.
     nothing about where it came from, having come from nowhere but the
     person who typed it. Copy takes it as it was typed (J13.13), and the
     shop is not finished while it is outstanding (J14.2).
+16. **A line added by hand can be changed where it stands.** A typo in
+    "piza", or 7 eggs rather than 6, is fixed by tapping the words and
+    typing — not by taking the line off and typing it again, and not by
+    a button that opens a form. The words are the editor.
+
+    **Leaving the line is saving it.** Tapping away, or the keyboard's
+    Enter, keeps what was typed; there is no Save. Escape puts back what
+    was there. Nothing is written until the line is left, so a half-typed
+    word never reaches the other phone.
+
+    **Emptying a line takes it off the list**, and says so with an Undo —
+    the one way a line added by hand is removed for good rather than
+    ✗'d into "already have", which is where a mistyped line used to have
+    to go.
+
+    **The line keeps its place and its tick.** Changing "milk" to "2 l
+    milk" after ticking it leaves it ticked: the app cannot tell a typo
+    from a change of mind, and taking a tick back is one tap.
+
+    **Only lines added by hand are words to edit.** A recipe's line is
+    worked out from its recipes (J13.1), and is changed through their
+    portions. The lines that can be edited wear a faint dotted underline,
+    which is also what tells them from a recipe's at a glance; there is
+    no pencil and no edit mode.
+
+    **The list does not redraw under a line being edited.** A sync
+    arriving mid-word would otherwise take the words and the caret with
+    it — the screen catches up when the line is left.
+
+    **An edit and a tick are two facts.** "7 eggs" typed on one phone and
+    ✓ tapped on the other both survive the merge (J12.13): the words and
+    the tick each carry their own stamp, and each merges on its own.
 
 ## J14 · What the plan remembers
 
@@ -1071,8 +1104,10 @@ release.
    a new agent and paste the new one; an unreachable project says to try
    again in a moment. Telling those two apart is the point of writing
    them separately.
-6. **There is no tool for anything the credential cannot do.** No edit,
-   no delete, no favourite, no Done (J16.3, J16.4). A tool that exists
+6. **There is no tool for anything the credential cannot do.** No
+   editing or deleting a recipe, no favourite, no Done (J16.3, J16.4).
+   Editing a line on the list is another thing, and an agent may
+   (J17.14). A tool that exists
    and is always refused is worse than one that does not exist: the model
    keeps trying it, and reads each refusal as its own mistake rather than
    as a rule.
@@ -1303,6 +1338,22 @@ release.
     saying "we need milk" twice in a chat should not become two lines of
     milk.
 
+    **A line is changed where it stands, not taken off and put back.**
+    "Make that 7 eggs", "actually oat milk" and "another bag of rice" are
+    all edits to a line already there: the tool that edits keeps the
+    line's id, its place and its tick, where taking it off and adding it
+    again loses the tick, moves it, and makes the list jump on somebody's
+    phone. So when the thing is already on the list, the choices are to
+    edit it, add another line, or leave it.
+
+    **An edit says what it thinks it is changing.** It carries the words
+    the agent read, and where a person has changed the line since — on
+    their phone, a minute ago — it is not written over: the answer is the
+    line as it now reads, to be read again and decided on. An agent
+    working from a snapshot must not put "6 eggs" back over somebody's
+    "7 eggs". Emptying a line is not an edit from here; taking a line off
+    is its own tool, so a blank from a confused model deletes nothing.
+
     **It is held to what a person is held to.** A line is taken as text
     and capped as a person's is; the list is full at the same size; a
     finished week is not one to add to (J17.9). What is reported is what
@@ -1445,6 +1496,9 @@ accident:
   added to it by hand (J13.15). There is no pantry of staples that settles
   itself, and no ordering by aisle — which would need the app to know what
   a supermarket is.
+- **Emptying a line added by hand removes it** (J13.16), with an Undo,
+  rather than putting back what it said. It is the only way to remove
+  such a line outright, and Escape is the way to abandon an edit.
 - **A line added by hand is never combined with anything** (J13.15), so
   milk added twice is two lines until somebody takes one off. Deciding
   that two lines are one need is the list keeper's job, and the agent's
@@ -1509,7 +1563,7 @@ those an agent is allowed to reach for — and one of them runs the real
 program in a real subprocess, because the rule that nothing but protocol
 messages reaches stdout cannot be checked any other way.
 
-**Sixteen of the 181 criteria have no test naming them** — J4.15,
+**Sixteen of the 182 criteria have no test naming them** — J4.15,
 J4.16, J4.19, J4.25, J5.10, J6.3, J10.4, J11.1 to J11.5, J12.12, J15.9,
 J15.11 and J16.5.
 

@@ -573,3 +573,68 @@ test("J14.13 · a new plan does not inherit the old one's list", () => {
   assert.equal(merged.id, fresh.id);
   assert.deepEqual(merged.items, [], "a generation ends, and the list goes with it");
 });
+
+// ---------------------------------------------------------------------
+// Changing a line where it stands (J13.16)
+// ---------------------------------------------------------------------
+
+const { editItem } = win.RecipePlan;
+
+test("J13.16 · an edit changes the words and nothing else about the line", () => {
+  let plan = addItem(emptyPlan(1), "6 eggs", 1000);
+  const id = plan.items[0].id;
+  plan = setItemState(plan, id, "got", 2000);
+  const before = plan.updatedAt;
+
+  const edited = editItem(plan, id, "  7   eggs ", 3000);
+
+  const [line] = edited.items;
+  assert.deepEqual([line.id, line.text, line.state, line.at, line.addedAt], [id, "7 eggs", "got", 2000, 1000]);
+  assert.equal(line.textAt, 3000);
+  assert.equal(edited.updatedAt, before, "an edit to the list does not make this phone win the meals");
+  assert.equal(touchedAt(edited), 3000, "but it is a change, so it is pushed");
+  assert.equal(editItem(plan, id, "   ", 4000), plan, "nothing typed is not an edit");
+  assert.equal(editItem(plan, id, "6 eggs", 4000), plan, "the same words are not an edit");
+});
+
+test("J13.16 · an edit on one phone and a tick on the other both survive, whichever way round", () => {
+  const base = addItem(emptyPlan(1), "6 eggs", 1000);
+  const id = base.items[0].id;
+  const edited = editItem(base, id, "7 eggs", 2000);
+  const ticked = setItemState(base, id, "got", 3000); // later, and knows nothing of the edit
+
+  for (const merged of [mergePlans(edited, ticked), mergePlans(ticked, edited)]) {
+    assert.equal(merged.items[0].text, "7 eggs", "the tick does not take the edit back");
+    assert.equal(merged.items[0].state, "got", "and the edit does not take the tick back");
+  }
+});
+
+test("J13.16 · two edits to one line: the later words win, on both phones", () => {
+  const base = addItem(emptyPlan(1), "milk", 1000);
+  const id = base.items[0].id;
+  const mine = editItem(base, id, "oat milk", 2000);
+  const theirs = editItem(base, id, "2 l milk", 2500);
+  for (const merged of [mergePlans(mine, theirs), mergePlans(theirs, mine)]) {
+    assert.equal(merged.items[0].text, "2 l milk");
+  }
+  const tie = editItem(base, id, "soya milk", 2000);
+  assert.deepEqual(mergePlans(mine, tie).items, mergePlans(tie, mine).items, "a tie lands the same both ways");
+});
+
+test("J13.16 · an edit does not bring back a line taken off on the other phone", () => {
+  const base = addItem(emptyPlan(1), "milk", 1000);
+  const id = base.items[0].id;
+  const gone = setItemState(base, id, "removed", 2000);
+  const edited = editItem(base, id, "oat milk", 3000);
+  for (const merged of [mergePlans(gone, edited), mergePlans(edited, gone)]) {
+    assert.equal(merged.items[0].state, "removed");
+  }
+});
+
+test("J13.16 · an edit from a clock that is behind still takes", () => {
+  const base = addItem(emptyPlan(1), "milk", 9000);
+  const id = base.items[0].id;
+  const edited = editItem(base, id, "oat milk", 100);
+  assert.ok(edited.items[0].textAt > 9000, "stamped past the words it replaces");
+  assert.equal(mergePlans(base, edited).items[0].text, "oat milk");
+});
