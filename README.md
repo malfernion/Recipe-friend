@@ -152,15 +152,16 @@ design; all protection is row-level security). One-time setup:
       turn it on. This is what lets an agent have an identity with no
       email address, and it is also a public endpoint that creates
       accounts — which is why the CAPTCHA goes on first.
-   4. Supabase → Authentication → **Advanced Settings**: switch **off**
-      "Detect and revoke potentially compromised refresh tokens". A
-      credential is a refresh token, and the program holding it cannot
-      promise to be the only copy of itself — one that is restarted, or
-      launched twice by whatever runs it, would present a token the
-      server has already seen and lose the session. Off, the pasted
-      credential keeps working. Order does not matter for this one, but
-      it is project-wide and costs every session the same protection;
-      the journeys' Boundaries section says why that is accepted.
+   4. Leave "Detect and revoke potentially compromised refresh tokens"
+      (Authentication → **Advanced Settings**) **on**. Earlier versions
+      of this README said to switch it off; that was never what kept a
+      credential working, and a project that followed it can switch it
+      back on once its agents run a server from this version. A
+      credential is a refresh token, and the server in `mcp/` only ever
+      presents the pasted one — which Supabase keeps accepting as the
+      parent of the token it last issued, however often the program is
+      restarted or launched twice. The journeys' Boundaries section has
+      the detail, and the Pro-plan session limits that would break it.
 
    **Why that order.** The app only sends a challenge answer once a site
    key is set, and Supabase only demands one once its setting is on, so

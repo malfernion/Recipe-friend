@@ -98,11 +98,12 @@ async function openBook(session, { api: injected } = {}) {
   sync.setBook(bookId, { readOnly: false, addOnly: true });
   store.useBook(bookId);
 
-  return new Book(win, api, store, planStore, sync, book);
+  return new Book(win, api, store, planStore, sync, book, session);
 }
 
 class Book {
-  constructor(win, api, store, planStore, sync, book) {
+  constructor(win, api, store, planStore, sync, book, session) {
+    this.session = session;
     this.lane = Promise.resolve();
     this.syncing = null;
     this.win = win;
@@ -181,6 +182,11 @@ class Book {
   }
 
   async syncOnce() {
+    // The access token first, renewed here if it is running down, so that
+    // a credential that has stopped working is reported as that (J16.9)
+    // rather than surfacing from inside a fetch as a book that cannot be
+    // reached.
+    if (this.session) await this.session.open();
     // `syncNow` reports a failure by returning null and setting its
     // status rather than by throwing — right for a status line that will
     // retry, wrong for a tool answering a question now.

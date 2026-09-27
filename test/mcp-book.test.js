@@ -48,12 +48,78 @@ function fakeSupabase({ fails = false, throws = null, unreachable = false } = {}
               error: { name: "AuthApiError", status: 400, message: "Invalid Refresh Token" },
             };
           }
-          return { data: { session: { access_token: "jwt" }, user: { id: "agent-1" } }, error: null };
+          return {
+            data: {
+              session: {
+                access_token: `jwt-${refreshed.length}`,
+                // What the server hands back and this must never present.
+                refresh_token: `rotated-${refreshed.length}`,
+                expires_in: 3600,
+              },
+              user: { id: "agent-1" },
+            },
+            error: null,
+          };
         },
       },
     };
   };
   return { createClient, made, refreshed };
+}
+
+/**
+ * The refresh-token rules Supabase Auth actually applies, and nothing
+ * kinder. A token is good once; after that the server accepts it again
+ * only as the parent of the token now current, and answers with the
+ * current one rather than a new one. Anything further back is refused
+ * with the 400 that reads as "revoked" — reuse detection off or not,
+ * which only decides whether the whole session goes with it.
+ */
+function authServer() {
+  const parent = new Map([["the-token", null]]);
+  let current = "the-token";
+  const used = new Set();
+  let n = 0;
+  const refreshed = [];
+  const refuse = { name: "AuthApiError", status: 400, message: "Invalid Refresh Token: Already Used" };
+
+  function grant(token) {
+    refreshed.push(token);
+    let issued;
+    if (!used.has(token) && token === current) {
+      used.add(token);
+      issued = `rt-${++n}`;
+      parent.set(issued, token);
+      current = issued;
+    } else if (parent.get(current) === token) {
+      issued = current;
+    } else {
+      return { data: { session: null, user: null }, error: refuse };
+    }
+    return {
+      data: {
+        session: { access_token: `jwt-${refreshed.length}`, refresh_token: issued, expires_in: 3600 },
+        user: { id: "agent-1" },
+      },
+      error: null,
+    };
+  }
+
+  const createClient = (url, key, options) => ({
+    auth: { refreshSession: async ({ refresh_token }) => grant(refresh_token) },
+    options,
+  });
+  return { createClient, grant, refreshed };
+}
+
+/** A clock the tests move by hand. */
+function clock(start = 1_000_000) {
+  let t = start;
+  const now = () => t;
+  now.advance = (minutes) => {
+    t += minutes * 60 * 1000;
+  };
+  return now;
 }
 
 /** The eight calls sync makes, and a record of what went up. */
@@ -115,7 +181,118 @@ test("J17.3 · nothing is persisted and no url is read: this is a process, not a
   assert.equal(key, CREDENTIAL.key);
   assert.equal(options.auth.persistSession, false);
   assert.equal(options.auth.detectSessionInUrl, false);
-  assert.equal(options.auth.autoRefreshToken, true, "an hour is shorter than a planning conversation");
+  assert.equal(options.auth.autoRefreshToken, false, "the exchange client never refreshes on its own");
+});
+
+test("J16.9 · the data client holds no refresh token, only a way to ask for an access token", async () => {
+  // A client holding a session is a client that can refresh it, and
+  // refreshing it is what put the pasted string out of date. With
+  // `accessToken` set the library builds no auth client at all.
+  const fake = fakeSupabase();
+  const s = new Session(CREDENTIAL, { createClient: fake.createClient });
+
+  await s.open();
+
+  const data = fake.made.find((m) => m.options.accessToken);
+  assert.ok(data, "the data client is built with accessToken");
+  assert.equal(data.options.auth, undefined, "and with no auth settings to refresh by");
+  assert.equal(await data.options.accessToken(), "jwt-1");
+});
+
+test("J16.9 · only the pasted token is ever exchanged, however long the process runs", async () => {
+  const fake = fakeSupabase();
+  const now = clock();
+  const s = new Session(CREDENTIAL, { createClient: fake.createClient, now });
+  const { client } = await s.open();
+  const data = fake.made.find((m) => m.options.accessToken);
+
+  // A day of questions, one every twenty minutes, with the data client
+  // asking for a token between them as a sync would.
+  for (let i = 0; i < 72; i++) {
+    now.advance(20);
+    assert.equal((await s.open()).client, client, "one data client for the life of the process");
+    await data.options.accessToken();
+  }
+
+  assert.ok(fake.refreshed.length > 1, "the access token was renewed as it ran down");
+  assert.ok(fake.refreshed.every((t) => t === "the-token"), "and never with a token the server handed back");
+});
+
+test("J16.9 · a token with time left on it is not renewed", async () => {
+  const fake = fakeSupabase();
+  const now = clock();
+  const s = new Session(CREDENTIAL, { createClient: fake.createClient, now });
+
+  await s.open();
+  now.advance(40);
+  await s.open();
+  assert.equal(fake.refreshed.length, 1, "forty minutes into an hour's token");
+
+  now.advance(10);
+  await s.open();
+  assert.equal(fake.refreshed.length, 2, "inside the last quarter of its life");
+});
+
+test("J16.9 · requests that find the token run down renew it once between them", async () => {
+  const fake = fakeSupabase();
+  const now = clock();
+  const s = new Session(CREDENTIAL, { createClient: fake.createClient, now });
+  await s.open();
+  const data = fake.made.find((m) => m.options.accessToken);
+
+  now.advance(55);
+  const tokens = await Promise.all([data.options.accessToken(), data.options.accessToken(), s.open()]);
+
+  assert.equal(fake.refreshed.length, 2);
+  assert.equal(tokens[0], tokens[1]);
+});
+
+test("J16.9 · against the server's real rules, the pasted string outlives a long run and a restart", async () => {
+  // What was going wrong. The server lets a spent token back in only as
+  // the parent of the current one; the old client refreshed in memory
+  // after an hour, the pasted string fell two links behind, and the next
+  // start was told the credential had been revoked.
+  const server = authServer();
+  const now = clock();
+
+  const first = new Session(CREDENTIAL, { createClient: server.createClient, now });
+  await first.open();
+  for (let i = 0; i < 18; i++) {
+    now.advance(20);
+    await first.open();
+  }
+
+  // A restart, and a second copy started alongside the first.
+  const second = new Session(CREDENTIAL, { createClient: server.createClient, now });
+  assert.equal((await second.open()).userId, "agent-1");
+  now.advance(55);
+  await first.open();
+  await second.open();
+
+  // And the rule has teeth: a client that presented what it was handed
+  // back, as the library's own refresh does, puts the string out of date.
+  const handedBack = server.grant("the-token").data.session.refresh_token;
+  assert.equal(server.grant(handedBack).error, null, "the library's refresh succeeds");
+  assert.equal(server.grant("the-token").error.status, 400, "and the pasted string is dead from then on");
+});
+
+test("J16.9 · a credential that stops working mid-run is reported as that, at the next question", async () => {
+  let refused = false;
+  const now = clock();
+  const createClient = () => ({
+    auth: {
+      refreshSession: async () =>
+        refused
+          ? { data: { session: null, user: null }, error: { name: "AuthApiError", status: 400, message: "no" } }
+          : { data: { session: { access_token: "jwt", expires_in: 3600 }, user: { id: "agent-1" } }, error: null },
+    },
+  });
+  const s = new Session(CREDENTIAL, { createClient, now });
+  await s.open();
+
+  refused = true;
+  now.advance(55);
+  await assert.rejects(() => s.open(), (err) => err.message === DEAD);
 });
 
 test("J16.9 · a refused exchange sends somebody to the Books dialog", async () => {
@@ -183,7 +360,7 @@ test("a failed exchange is not remembered, so the next call tries again", async 
       refreshSession: async () =>
         down
           ? { data: null, error: { message: "network" } }
-          : { data: { session: {}, user: { id: "agent-1" } }, error: null },
+          : { data: { session: { access_token: "jwt" }, user: { id: "agent-1" } }, error: null },
     },
   });
   const s = new Session(CREDENTIAL, { createClient });
@@ -194,6 +371,26 @@ test("a failed exchange is not remembered, so the next call tries again", async 
 });
 
 // --- the book ---------------------------------------------------------
+
+test("J16.9 · every sync renews the token first, and a dead credential says so rather than 'cannot reach'", async () => {
+  let opens = 0;
+  let dead = false;
+  const s = {
+    credential: CREDENTIAL,
+    open: async () => {
+      opens++;
+      if (dead) throw new SessionError(DEAD);
+      return { client: {}, userId: "agent-1" };
+    },
+  };
+  const book = await openBook(s, { api: fakeApi() });
+
+  await book.refresh();
+  assert.equal(opens, 2, "once to open the book, once before its first sync");
+
+  dead = true;
+  await assert.rejects(() => book.refresh(), (err) => err.message === DEAD);
+});
 
 test("J16.1 · the book the credential names is the book that is opened", async () => {
   const win = loadApp("units.js", "storage.js");

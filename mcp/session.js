@@ -7,14 +7,34 @@
  * 008 wrote governs the agent from there without a second authorisation
  * path being invented.
  *
- * **Nothing is written to disk.** Supabase rotates refresh tokens, and
- * this project has switched off the check that treats the old one coming
- * back as a stolen one (J16.9, and the Boundaries entry that says what
- * that costs). That is what lets this hold no state: the pasted string
- * stays good, so the client keeps the rotating token in memory, drops it
- * with the process, and the next start begins from the same string. A
- * server the host may spawn once per session, restart, or run twice can
- * afford no other arrangement.
+ * **Only the pasted token is ever exchanged.** A refresh token is good
+ * once. Supabase hands back a new one every time, and after that it
+ * accepts the old one again for only two reasons: within a few seconds
+ * of being used, or when it is the *parent* of the token now current —
+ * in which case it answers with the current one rather than a new one.
+ * Turning off reuse detection does not widen that; it only stops a
+ * refusal ending the whole session.
+ *
+ * So the pasted string (P0) stays good exactly as long as nothing
+ * exchanges the token it was swapped for (P1). The first exchange here
+ * makes P1; every exchange after it presents P0 again, gets P1 back
+ * unchanged, and a fresh access token with it. Nothing ever presents P1,
+ * so the chain never grows past one link, and a restart, a second copy
+ * or a start a week later from the configuration file all find P0 still
+ * the parent. This used to hand the session to the library with
+ * `autoRefreshToken` on, which after an hour exchanged P1 for P2, and
+ * from then on the pasted string was two links behind and every restart
+ * was told the credential had been revoked (J16.9).
+ *
+ * **Nothing is written to disk.** That arrangement is what lets this
+ * hold no state: the string is the whole of it, so a server the host may
+ * spawn once per session, restart, or run twice needs nothing else.
+ *
+ * **The data client holds no refresh token at all.** It is built with the
+ * library's `accessToken` option and asks `fresh()` for an access token
+ * on every request, so there is no session inside it for the library to
+ * refresh on its own. Each exchange uses a client of its own, built with
+ * auto-refresh off and dropped straight after.
  *
  * **The exchange happens on the first tool call, not at startup.** A host
  * that spawns servers speculatively should not spend a token-endpoint
@@ -76,46 +96,83 @@ const DEAD =
   "so this is what removing the agent looks like from out here: open the Books " +
   "dialog in Recipe Friend, remove the agent, add another, and paste the new one.";
 
+/**
+ * How long before an access token runs out this fetches the next one: a
+ * quarter of its life, and never less than a minute. Well ahead of the
+ * library's own margin, and wide enough that a sync started just before
+ * it does not run past the end of the token it started with.
+ *
+ * Counted from `expires_in` on this machine's clock rather than from the
+ * server's `expires_at`, so a clock that is out by a quarter of an hour
+ * does not renew on every question.
+ */
+function renewAt(session, now) {
+  const lifetime = Number(session.expires_in) > 0 ? Number(session.expires_in) * 1000 : 3600 * 1000;
+  return now + lifetime - Math.max(60 * 1000, lifetime / 4);
+}
+
 class Session {
   /**
-   * `createClient` is a seam rather than a hard import so that the tests
-   * can watch what this asks for without a network. Nothing else passes
-   * it.
+   * `createClient` and `now` are seams rather than hard imports so that
+   * the tests can watch what this asks for, and move the clock, without a
+   * network. Nothing else passes them.
    */
-  constructor(credential, { createClient } = {}) {
+  constructor(credential, { createClient, now } = {}) {
     this.credential = credential;
     this.createClient = createClient || require("@supabase/supabase-js").createClient;
-    this.opening = null;
+    this.now = now || Date.now;
+    this.token = null;
+    this.renewing = null;
+    this.opened = null;
   }
 
   /**
-   * The signed-in client, opened once and shared. Memoised on the promise
-   * rather than the result so that two tools called together exchange the
-   * credential once between them.
+   * The signed-in client, built once and shared, with an access token
+   * that has time left on it.
+   *
+   * Called before every sync (`Book.syncOnce`), which is where a token
+   * that has run down is renewed and where a credential that has stopped
+   * working is reported, in the same words as the first call.
    */
-  open() {
-    if (!this.opening) {
-      this.opening = this.exchange().catch((err) => {
-        // A failed exchange is not cached: the credential may be fine and
-        // the network may not have been.
-        this.opening = null;
-        throw err;
+  async open() {
+    await this.fresh();
+    if (!this.opened) {
+      const { url, key } = this.credential;
+      const client = this.createClient(url, key, { accessToken: () => this.fresh() });
+      this.opened = { client, userId: this.token.userId };
+    }
+    return this.opened;
+  }
+
+  /**
+   * An access token with time left on it, exchanging the pasted token for
+   * one if not. Memoised on the promise so that two tools called together
+   * — or two requests inside one sync — exchange once between them.
+   */
+  async fresh() {
+    if (this.token && this.now() < this.token.renewAt) return this.token.value;
+    if (!this.renewing) {
+      // A failed exchange is not kept: the credential may be fine and the
+      // network may not have been.
+      this.renewing = this.exchange().finally(() => {
+        this.renewing = null;
       });
     }
-    return this.opening;
+    this.token = await this.renewing;
+    return this.token.value;
   }
 
   async exchange() {
     const { url, key, refreshToken } = this.credential;
+    // A client for this one exchange, dropped after it. Nothing is
+    // persisted, no url is read, and it never refreshes on its own: the
+    // token it is handed back is P1, and presenting P1 is the one thing
+    // that would put the pasted string out of date.
     const client = this.createClient(url, key, {
       auth: {
-        // No storage, nothing persisted, and no url to read a session out
-        // of: this is a process, not a browser.
         persistSession: false,
         detectSessionInUrl: false,
-        // The access token lasts about an hour and a planning conversation
-        // can outlast it, so the client keeps it fresh in memory.
-        autoRefreshToken: true,
+        autoRefreshToken: false,
       },
     });
 
@@ -133,11 +190,18 @@ class Session {
     // and one-way (J16.7) — the wrong answer here is the irreversible
     // one, and this is the most network-exposed moment the server has.
     if (unreachable(error)) throw new SessionError(cannotReach(url, error.message));
-    if (error || !data || !data.session || !data.user) {
+    if (error || !data || !data.session || !data.session.access_token || !data.user) {
       throw new SessionError(DEAD);
     }
 
-    return { client, userId: data.user.id };
+    // Only the access token is kept. The refresh token that came back
+    // with it is deliberately dropped with the client: see the top of
+    // this file.
+    return {
+      value: data.session.access_token,
+      renewAt: renewAt(data.session, this.now()),
+      userId: data.user.id,
+    };
   }
 }
 
