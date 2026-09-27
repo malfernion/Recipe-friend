@@ -1033,14 +1033,21 @@ not somebody.
 
    **Nor does it quietly expire.** What the credential carries is a
    refresh token, and the server hands back a new one on every exchange.
-   By default it also watches for the old one coming back and reads a
-   replay as theft, which would mean a credential that died the first
-   time an agent was restarted from the string in its configuration
-   file. Nothing that runs as somebody's assistant can promise to be the
-   only copy of itself, so this project turns that check off and the
-   pasted string goes on working. The Boundaries section records what
-   that costs and why it is accepted; said here because it is the one
-   promise on this list the app keeps by a setting rather than by code.
+   A spent token is accepted again only as the *parent* of the one now
+   current, and the answer is then the current one rather than a new
+   one; anything further back is refused, whatever the reuse-detection
+   setting says. So the program on the other end (J17) only ever
+   presents the pasted token, and never the one it is handed back. The
+   chain stays one link long, and a restart, a second copy or a start a
+   week later all find the pasted string still the parent.
+
+   This was once promised by a setting — reuse detection switched off —
+   and that was a misreading: the setting only decides whether a refused
+   token takes the whole session with it, not whether it is refused. An
+   earlier server let the library refresh in memory after an hour, the
+   pasted string fell two links behind, and every restart after that was
+   told the credential had been revoked. The Boundaries section has the
+   rest.
 10. **An agent gets no stored photos.** It cannot read a photo out of
     private storage and cannot put one there, so it can neither see the
     pictures in the book nor add one. A picture *linked* by public URL is
@@ -1436,29 +1443,40 @@ accident:
   a way in for anybody at all, which is why redeeming one is closed to
   anonymous callers (J7.5). Both are paid whether or not anybody adds an
   agent, which is why they are written down here rather than under J16.
-- **Refresh token reuse detection is off, and it is the third cost of
-  agents.** A credential is a refresh token (J16.9), the server issues a
-  new one on every exchange, and by default it treats the old one coming
-  back as a stolen one and ends the session. A program somebody runs as
-  their assistant cannot promise to be the only copy of itself — it is
-  restarted, and it is often started twice by whatever launches it — so
-  the check is switched off and the pasted credential stays good. **The
-  cost falls on every session in the project**, not only on books with
-  agents in them, and it is accepted for three reasons: what a stolen
-  token reaches is a recipe book, this app has never put a token through
-  the address bar (PKCE rather than the implicit flow), and an agent's
-  copy lives in a configuration file rather than anywhere a log would
-  pick it up.
+- **An agent's credential leans on one rule of Supabase Auth, and it is
+  the third cost of agents.** A credential is a refresh token (J16.9),
+  and a refresh token is good once. What keeps the pasted string working
+  is the documented exception for a client that lost the answer to its
+  last refresh: the parent of the current token is accepted
+  indefinitely, and answered with the current token. `mcp/session.js`
+  presents nothing but the pasted string, so the pasted string is always
+  that parent. A program somebody runs as their assistant cannot promise
+  to be the only copy of itself — it is restarted, and it is often
+  started twice by whatever launches it — and under this rule it does
+  not have to.
 
-  **The reuse interval is not the answer and was checked before this
-  was.** That setting lets a spent token be presented again for a few
-  seconds, for two tabs refreshing at once — and it allows only the one
-  generation immediately behind the current token. An agent restarted a
-  week later presents a token spent a week ago, which no width of window
-  covers; an agent whose session outlived an hour has refreshed in
-  memory since, which puts the pasted string several generations back
-  and fails the second test whatever the first says. It is a window, and
-  what a credential in a configuration file needs is a property.
+  **Reuse detection is not what this rests on.** It was switched off on
+  the belief that it was, and it is not: the setting decides whether a
+  refused token ends the whole session, and a refused token is refused
+  either way. The parent is never refused, so the check can be switched
+  back on once every agent runs a server that only presents the pasted
+  string, and the cost of it being off — which fell on every session in
+  the project — goes with it.
+
+  **The reuse interval is not the answer either.** It lets a spent
+  token back in for a few seconds, for two tabs refreshing at once, and
+  an agent restarted a week later presents a token spent a week ago. It
+  is a window, and what a credential in a configuration file needs is a
+  property.
+
+  **Three things would break it.** A time-box, an inactivity timeout or
+  single-session-per-user (Pro plan settings) each end the session an
+  agent's credential belongs to. So does a project partway through
+  Supabase's move from its first refresh-token format to its second: the
+  first exchange converts the token and revokes the one it came from,
+  and the pasted string is refused a few seconds later. An agent that
+  stops working again after this change, straight after a restart, is
+  most likely that.
 
   If any of this stops being acceptable, the way back is a credential
   that is not a refresh token — a long-lived key exchanged for a short
