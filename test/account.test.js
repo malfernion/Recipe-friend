@@ -549,15 +549,59 @@ test("J1.6 · a missing vendor script lifts the gate too rather than locking the
   assert.equal(a.cloud(), undefined);
 });
 
-test("J1.6 · the shipped config is a real project, so the fallback is not what users get", () => {
-  const win = { window: null };
+/** Run a config script as a page at `href` would, and return what it set. */
+function configAt(src, href) {
+  const url = new URL(href);
+  const win = { window: null, location: { protocol: url.protocol, origin: url.origin } };
   win.window = win;
-  new Function("window", readSrc(path.join("js", "config.js")))(win);
-  const cfg = win.RECIPE_FRIEND_CONFIG;
+  new Function("window", src)(win);
+  return win.RECIPE_FRIEND_CONFIG;
+}
 
-  assert.match(cfg.supabaseUrl, /^https:\/\/[a-z0-9]+\.supabase\.co$/);
-  assert.ok(cfg.supabaseKey);
-  assert.equal(/service_role|^eyJ/.test(cfg.supabaseKey), false, "J11.5 · never the service_role key");
+/** The role a key's token claims, or null for a key that is not a JWT. */
+function roleOf(key) {
+  const [, payload] = String(key).split(".");
+  try {
+    return JSON.parse(Buffer.from(payload, "base64url").toString("utf8")).role;
+  } catch {
+    return null;
+  }
+}
+
+test("J1.6 · the shipped config is a real project, so the fallback is not what users get", () => {
+  // The page and the API share an origin, so the project is wherever the
+  // page came from — the home server, the dev stack, CI — with no host
+  // written into the file.
+  const cfg = configAt(readSrc(path.join("js", "config.js")), "https://recipes.dave-ernsting.com/");
+
+  assert.equal(cfg.supabaseUrl, "https://recipes.dave-ernsting.com");
+  assert.equal(configAt(readSrc(path.join("js", "config.js")), "http://localhost:8080/").supabaseUrl, "http://localhost:8080");
+  assert.equal(roleOf(cfg.supabaseKey), "anon", "J11.5 · never the service_role key");
+  assert.equal(typeof cfg.turnstileSiteKey, "string");
+});
+
+test("J1.6 · opened as a file there is no project, which is the development fallback", () => {
+  const cfg = configAt(readSrc(path.join("js", "config.js")), "file:///home/me/Recipe-friend/index.html");
+
+  assert.equal(cfg.supabaseUrl, "", "no origin to talk to, so local-only rather than a client pointed at 'null'");
+});
+
+test("J11.5 · the config a deployment serves is filled from its own environment, in the committed file's shape", () => {
+  // Every deployment answers /js/config.js from this template, so the key
+  // in it is the serving stack's and never one pasted into a commit.
+  const tmpl = readSrc(path.join("server", "config.js.tmpl"));
+  const env = { RECIPE_FRIEND_ANON_KEY: "eyJhbGciOiJIUzI1NiJ9.eyJyb2xlIjoiYW5vbiJ9.sig", RECIPE_FRIEND_TURNSTILE_SITE_KEY: "0xSITE" };
+  const filled = tmpl.replace(/\{\{env "([A-Z_]+)" \| js\}\}/g, (_, name) => env[name]);
+  assert.equal(/\{\{/.test(filled), false, "every placeholder is one Caddy fills from the environment");
+
+  const served = configAt(filled, "https://recipes.dave-ernsting.com/");
+  const shipped = configAt(readSrc(path.join("js", "config.js")), "https://recipes.dave-ernsting.com/");
+  assert.deepEqual(Object.keys(served).sort(), Object.keys(shipped).sort());
+  assert.deepEqual(served, {
+    supabaseUrl: "https://recipes.dave-ernsting.com",
+    supabaseKey: env.RECIPE_FRIEND_ANON_KEY,
+    turnstileSiteKey: "0xSITE",
+  });
 });
 
 // ---------------------------------------------------------------------

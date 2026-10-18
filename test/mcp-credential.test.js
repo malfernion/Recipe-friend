@@ -14,7 +14,7 @@ const { loadApp } = require("./helpers/load.js");
 const { decode, CredentialError } = require("../mcp/credential.js");
 
 const BOOK = "11111111-1111-4111-8111-111111111111";
-const COORDS = { url: "https://dveyxesgwohokenoomsf.supabase.co", key: "sb_publishable_J6rDrCnnu0" };
+const COORDS = { url: "https://recipes.dave-ernsting.com", key: "eyJhbGciOiJIUzI1NiJ9.eyJyb2xlIjoiYW5vbiJ9.anon" };
 // Shaped like the real thing: long, mixed case, and carrying the
 // characters that plain base64 would turn into "+" and "/".
 const TOKEN = "ffvz3s7g4l2m-_ABC123xyz~QWERTY.abcdefghijklmnop_-";
@@ -69,7 +69,7 @@ test("nothing at all says where to get one", () => {
 });
 
 test("something that is not a credential is told so by its prefix", () => {
-  assert.throws(() => decode("sb_publishable_J6rDrCnnu0"), /should begin "rfa1\."/);
+  assert.throws(() => decode(COORDS.key), /should begin "rfa1\."/);
 });
 
 test("a credential that lost its end says what probably happened", async () => {

@@ -32,8 +32,8 @@ jobs:
       - name: Run tests
         run: node --test test/*.test.js
 
-      # Cheap insurance that a syntax error can never reach Pages: the
-      # deploy workflow copies the repo as-is and would publish it.
+      # Cheap insurance that a syntax error can never reach the site: the
+      # server serves the checkout as-is, with no build step.
       - name: Check every script parses
         run: for f in js/*.js mcp/*.js; do node --check "$f" || exit 1; done
 

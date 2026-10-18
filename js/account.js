@@ -1,5 +1,5 @@
 /**
- * account.js — Sign in with Google via Supabase Auth (M1).
+ * account.js — Sign in with Google via the server's auth (GoTrue) (M1).
  *
  * Signed out, the app behaves exactly as before — this file only manages
  * the session and the header account controls. Later milestones build
@@ -277,7 +277,7 @@
     });
     if (error) {
       console.warn("Recipe Friend: sign-in failed.", error);
-      alert("Sign-in didn't start — check the Supabase auth configuration.");
+      alert("Sign-in didn't start — check the server's sign-in configuration.");
     }
   });
 })();

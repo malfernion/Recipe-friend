@@ -506,14 +506,17 @@ Covers a share link someone sent, and a recipe an assistant wrote out.
 
 ## J11 · Keeping the lights on
 
-1. The site is static and deploys to GitHub Pages on every push to `main`.
-2. A daily workflow pings Supabase so the free project does not pause after
-   7 days of inactivity. It reads the project URL and publishable key from
-   `js/config.js`; no repository secret is involved.
-3. That job fails loudly if Supabase does not answer, which doubles as an
-   uptime check.
-4. There is deliberately no automated backup job: it would need a key that
-   bypasses row-level security, in a public repository.
+1. The site is static and is served from the home server, from the same
+   origin as the API, by a checkout of this repository pinned to a commit.
+   A push to `main` changes nothing live; bumping the pin does.
+2. The server is reached only through a Cloudflare Tunnel, which the server
+   dials out to. Nothing on the home network is opened to the internet, and
+   nothing in the stack listens on more than the machine's own loopback.
+3. Nothing has to be kept awake. The server has no idle clock, so there is
+   no ping and no workflow standing in for visitors.
+4. There is deliberately no automated backup in this repository. The
+   server's data directory is the only server-side copy, and Export (J10)
+   is how anybody keeps their own.
 5. The `service_role` key is never used by the app and never committed.
 
 ## J12 · Planning a week
@@ -1433,7 +1436,7 @@ accident:
   paid in two places.** The identity behind an agent is an anonymous
   account, and offering those at all is a project-wide setting rather
   than a per-agent one. So the endpoint that makes them is open to
-  anybody who has the publishable key, and could be used to fill a free
+  anybody who has the publishable key, and could be used to fill the
   database with accounts nobody asked for. **The challenge in the app's
   own dialog (J16.2) does not answer that** — an abuser calls the
   endpoint directly and never opens the page. Only the server-side
@@ -1470,9 +1473,11 @@ accident:
   property.
 
   **Three things would break it.** A time-box, an inactivity timeout or
-  single-session-per-user (Pro plan settings) each end the session an
-  agent's credential belongs to. So does a project partway through
-  Supabase's move from its first refresh-token format to its second: the
+  single-session-per-user (GoTrue session settings, all left unset) each
+  end the session an agent's credential belongs to. So does a project
+  partway through Supabase Auth's move from its first refresh-token
+  format to its second — which, self-hosted, could only arrive with an
+  upgrade of the pinned GoTrue image: the
   first exchange converts the token and revokes the one it came from,
   and the pasted string is refused a few seconds later. An agent that
   stops working again after this change, straight after a restart, is
@@ -1622,8 +1627,8 @@ gap is visible:
   browser's canvas, not ours (J2.7). The tests check the size and quality
   the app asks for; that the result is a smaller, readable JPEG is taken on
   trust.
-- **Deployment and the keepalive ping** (J11) are a static host and two
-  workflow files. There is no code to exercise, and J5.10 records a reason
+- **Deployment and hosting** (J11) are a static host, a tunnel and a
+  pinned commit in another repository. There is no code to exercise, and J5.10 records a reason
   for a decision rather than a behaviour.
 - **That the plan keeps working with no network** (J12.12) is the local
   cache being the working copy, which J9.1 already holds tests for. There

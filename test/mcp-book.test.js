@@ -353,6 +353,70 @@ test("J17.5 · only a status the auth server refused the token with means start 
   assert.equal(await answer({ name: "AuthUnknownError", message: "Unexpected token <" }), "wait");
 });
 
+test("J17.5 · a revoked credential says to add a new agent; an unreachable project says to try again — as the real library reads the home server's answers", async () => {
+  // The test above hands Session error objects written by hand. This one
+  // goes through the real supabase-js, with only fetch replaced, so the
+  // shapes are the ones it builds from the bytes on the wire: GoTrue
+  // v2.197.0's own refusals of a refresh token (internal/tokens/service.go
+  // — every one a 400 with an error code), and what Caddy and Cloudflare
+  // answer when GoTrue or the whole box is down (an empty 502, and the
+  // HTML pages Cloudflare serves as 52x/530, or as a 403 challenge).
+  const { createClient } = require("@supabase/supabase-js");
+  const json = (status, body) =>
+    new Response(JSON.stringify(body), {
+      status,
+      headers: { "Content-Type": "application/json", "X-Supabase-Api-Version": "2024-01-01" },
+    });
+  const html = (status) =>
+    new Response("<!DOCTYPE html><html><title>Web server is down | Cloudflare</title></html>", {
+      status,
+      headers: { "Content-Type": "text/html; charset=UTF-8" },
+    });
+  // The library retries a retryable failure with backoff for up to 30
+  // seconds of Date.now() before returning it, which is right for a
+  // person waiting on a tool call and too slow for a test: its clock is
+  // moved on half a minute every time it is read, so it gives up after
+  // the first answer and returns exactly what it would have returned.
+  const answer = async (respond) => {
+    const fetch = async () => respond();
+    const make = (url, key, options) => createClient(url, key, { ...options, global: { fetch } });
+    const cred = { ...CREDENTIAL, url: "https://recipes.dave-ernsting.com", key: "eyJhbGciOiJIUzI1NiJ9.eyJyb2xlIjoiYW5vbiJ9.x" };
+    const realNow = Date.now;
+    let skew = 0;
+    Date.now = () => realNow() + (skew += 31 * 1000);
+    try {
+      await new Session(cred, { createClient: make, now: realNow }).open();
+      return "opened";
+    } catch (err) {
+      return err.message === DEAD ? "start again" : /Could not reach/.test(err.message) ? "wait" : err.message;
+    } finally {
+      Date.now = realNow;
+    }
+  };
+  const refused = (code, message) => () => json(400, { code, message });
+
+  assert.equal(await answer(refused("refresh_token_already_used", "Invalid Refresh Token: Already Used")), "start again");
+  assert.equal(await answer(refused("refresh_token_not_found", "Invalid Refresh Token: Refresh Token Not Found")), "start again");
+  assert.equal(await answer(refused("session_not_found", "Invalid Refresh Token: No Valid Session Found")), "start again");
+  assert.equal(await answer(refused("session_expired", "Invalid Refresh Token: Session Expired")), "start again");
+  assert.equal(await answer(refused("user_banned", "Invalid Refresh Token: User Banned")), "start again");
+
+  for (const status of [520, 521, 522, 523, 524, 530]) {
+    assert.equal(await answer(() => html(status)), "wait", `Cloudflare ${status} is the box, not the credential`);
+  }
+  assert.equal(await answer(() => html(403)), "wait", "a Cloudflare challenge page is not GoTrue refusing the token");
+  assert.equal(await answer(() => new Response("", { status: 502 })), "wait", "Caddy with GoTrue down");
+  assert.equal(await answer(() => json(500, { code: "unexpected_failure", message: "database" })), "wait");
+  assert.equal(await answer(() => json(429, { code: "over_request_rate_limit", message: "slow down" })), "wait");
+  assert.equal(
+    await answer(() => {
+      throw new TypeError("fetch failed");
+    }),
+    "wait",
+    "no answer at all"
+  );
+});
+
 test("a failed exchange is not remembered, so the next call tries again", async () => {
   let down = true;
   const createClient = () => ({

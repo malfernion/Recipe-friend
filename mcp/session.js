@@ -8,7 +8,7 @@
  * path being invented.
  *
  * **Only the pasted token is ever exchanged.** A refresh token is good
- * once. Supabase hands back a new one every time, and after that it
+ * once. The auth server hands back a new one every time, and after that it
  * accepts the old one again for only two reasons: within a few seconds
  * of being used, or when it is the *parent* of the token now current —
  * in which case it answers with the current one rather than a new one.
@@ -59,6 +59,20 @@ const { isAuthRetryableFetchError } = require("@supabase/supabase-js");
  *
  * The library's own predicate first; the shape behind it after, because
  * a stubbed client has no reason to import the library's error classes.
+ *
+ * Checked against the home server: GoTrue v2.197.0 behind Caddy and
+ * Cloudflare. GoTrue refuses a refresh token only with a 400 carrying an
+ * error code — refresh_token_already_used, refresh_token_not_found,
+ * session_not_found (which the library turns into AuthSessionMissingError,
+ * still 400), session_expired, user_banned — and rate-limits with a 429.
+ * What sits between here and it lands on the "wait" side: Caddy with
+ * GoTrue down answers an empty 502, and Cloudflare with the box down an
+ * HTML 52x or 530, both of which the library returns as retryable; an
+ * HTML challenge page, a 403 that is not JSON, comes back as
+ * AuthUnknownError with no status at all. The library retries a
+ * retryable failure for up to half a minute before returning it, so
+ * "cannot reach" arrives after that wait. test/mcp-book.test.js drives
+ * the real library through each of these.
  */
 const REFUSED = new Set([400, 401, 403]);
 

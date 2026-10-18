@@ -84,7 +84,7 @@ test("J5.7 · a share link can be pasted in the same box", async () => {
   const recipe = win.RecipeStore.sanitizeRecipe(aRecipe({ name: "Shared Soup" }));
   const encoded = await win.RecipeShare.encodeRecipeShare(recipe);
 
-  const out = await paste(`https://malfernion.github.io/Recipe-friend/#add=${encoded}`);
+  const out = await paste(`https://recipes.dave-ernsting.com/#add=${encoded}`);
   assert.equal(out.nameField, "Shared Soup");
   assert.equal(out.error, "");
 });
@@ -113,7 +113,7 @@ test("J5.8 · JSON that is not a usable recipe names the rule it breaks", async 
 });
 
 test("J5.8, J5.4 · a share link that was cut short says so", async () => {
-  const out = await paste("https://malfernion.github.io/Recipe-friend/#add=1.notrealbase64");
+  const out = await paste("https://recipes.dave-ernsting.com/#add=1.notrealbase64");
   assert.match(out.error, /couldn't be read/);
 });
 

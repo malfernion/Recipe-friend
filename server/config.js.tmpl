@@ -1,0 +1,17 @@
+/**
+ * config.js — served by Caddy from server/config.js.tmpl, not from js/.
+ *
+ * Every deployment fills this in from its own environment, so the anon
+ * key and Turnstile site key belong to the stack serving this page and no
+ * deployment's key lives in a commit. Both are public by design; the
+ * service_role key is never put here. The committed js/config.js is the
+ * development default and has the same shape.
+ *
+ *   RECIPE_FRIEND_ANON_KEY            the stack's anon JWT
+ *   RECIPE_FRIEND_TURNSTILE_SITE_KEY  Turnstile site key; empty for none
+ */
+window.RECIPE_FRIEND_CONFIG = {
+  supabaseUrl: window.location.origin,
+  supabaseKey: "{{env "RECIPE_FRIEND_ANON_KEY" | js}}",
+  turnstileSiteKey: "{{env "RECIPE_FRIEND_TURNSTILE_SITE_KEY" | js}}",
+};
