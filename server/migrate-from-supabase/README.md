@@ -60,7 +60,7 @@ JWT or an `sb_secret_` key. Set `MIGRATE_DEBUG=1` for stack traces (also redacte
 |---|---|---|
 | `HOSTED_DB_URL` | **yes** | Dashboard → **Connect** → *Session pooler* (IPv4) connection string, with the database password filled in: `postgres://postgres.<ref>:<password>@aws-0-<region>.pooler.supabase.com:5432/postgres` |
 | `HOSTED_URL` | no | `https://<ref>.supabase.co` |
-| `HOSTED_SERVICE_KEY` | **yes** | Dashboard → Settings → API Keys: the **secret** key (`sb_secret_…`), or the legacy `service_role` key. Either works. |
+| `HOSTED_SERVICE_KEY` | **yes** | Dashboard → Settings → API Keys → **Legacy API keys**: the `service_role` key (starts `eyJ`). Not the new `sb_secret_…` key: hosted Storage refuses it as a bearer (400, then 403 *Invalid Compact JWS*; found on the first rehearsal), and the scripts stop with that message if given one. |
 | `HOSTED_DB_CA_FILE` | no | path (as the script sees it) to Supabase's CA: Dashboard → Database → Settings → *SSL configuration* → **Download certificate**. Without it the pooler's certificate is checked against the system CAs, which may not include Supabase's. |
 | `HOSTED_DB_SSL_NO_VERIFY` | no | `1` to skip checking the hosted certificate. Last resort only; it warns. |
 | `TARGET_DB_URL` | **yes** | `postgres://postgres:<POSTGRES_PASSWORD>@recipe-friend-db-1:5432/postgres` — the password from the stack's `.env` on the box |
@@ -115,7 +115,7 @@ In an SSH session on the box, in **bash**:
 
 ```bash
 read -rsp 'Hosted session-pooler URL: ' HOSTED_DB_URL; echo; export HOSTED_DB_URL
-read -rsp 'Hosted service/secret key: ' HOSTED_SERVICE_KEY; echo; export HOSTED_SERVICE_KEY
+read -rsp 'Hosted service_role key (legacy, eyJ…): ' HOSTED_SERVICE_KEY; echo; export HOSTED_SERVICE_KEY
 export HOSTED_URL=https://<ref>.supabase.co
 export HOSTED_DB_CA_FILE=/app/supabase-ca.crt     # the path inside the container
 

@@ -347,11 +347,11 @@ function selections() {
 const BUCKET = "recipe-photos";
 
 /**
- * Headers for a service-role call: the key in both headers, as supabase-js
- * sends it. A legacy key is a JWT, which the self-hosted stack (no gateway)
- * checks directly. A new `sb_secret_…` key is not a JWT; hosted Supabase's
- * gateway swaps it for one, but Storage still refuses a request with no
- * `authorization` header at all (HTTP 400, found on the first rehearsal).
+ * Headers for a service-role call: the key, a JWT, in both headers. Storage
+ * checks the bearer itself, so a new `sb_secret_…` key does not work there:
+ * hosted Storage answers 400 without an authorization header and 403
+ * "Invalid Compact JWS" with one (both found on the first rehearsal).
+ * hostedStorage() therefore asks for the legacy service_role key.
  */
 function storageHeaders(key) {
   return { apikey: key, authorization: `Bearer ${key}` };
@@ -400,7 +400,14 @@ async function safeText(res) {
 
 /** The hosted project's Storage, and the target's (through Caddy). */
 function hostedStorage() {
-  return { base: `${need("HOSTED_URL").replace(/\/$/, "")}/storage/v1`, key: need("HOSTED_SERVICE_KEY") };
+  const key = need("HOSTED_SERVICE_KEY");
+  if (!key.startsWith("eyJ")) {
+    throw new Error(
+      "HOSTED_SERVICE_KEY must be the legacy service_role key (starts eyJ): Dashboard → Settings → API Keys → Legacy API keys. " +
+        "Hosted Storage does not accept an sb_secret_ key as a bearer."
+    );
+  }
+  return { base: `${need("HOSTED_URL").replace(/\/$/, "")}/storage/v1`, key };
 }
 function targetStorage() {
   return { base: `${need("TARGET_URL").replace(/\/$/, "")}/storage/v1`, key: need("TARGET_SERVICE_KEY") };
