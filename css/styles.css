@@ -2857,11 +2857,12 @@ body.gated .view {
 }
 
 /* ---------- Agents (J16) ----------
-   The owner's list of agents (J16.13), the way to add one, and the one
-   place its key is shown with what to paste where (J16.14). An agent is
-   also drawn in the member list with everyone else (J16.7); the badge
-   there wears the accent so a program never reads as one of the
-   household at a glance.
+   The owner's list of agents (J16.13) and the two doors under it: a
+   dialog for connecting an app that signs in (J17.15), and one for adding
+   an agent with a key, the one place its key is shown with what to paste
+   where (J16.14). An agent is also drawn in the member list with everyone
+   else (J16.7); the badge there wears the accent so a program never reads
+   as one of the household at a glance.
 */
 .agent-badge {
   font-size: 0.64rem;
@@ -2871,10 +2872,17 @@ body.gated .view {
   color: var(--accent);
 }
 
+/* Connect an app, Add an agent with a key: wrap to two rows on a phone. */
+.agent-doors {
+  display: flex;
+  gap: 0.6rem;
+  margin-top: 0.85rem;
+  flex-wrap: wrap;
+}
+
 .agent-new {
   display: flex;
   gap: 0.5rem;
-  margin-top: 0.85rem;
   flex-wrap: wrap;
 }
 
@@ -2975,10 +2983,15 @@ body.gated .view {
   color: var(--ink-soft);
 }
 
-/* Which client to show settings for: a select, so it fits a phone. */
+/*
+  Which client to show settings for: a select, so it fits a phone. It
+  wraps under its label, and no wider than the panel, where the longest
+  option would otherwise push past the edge of a narrow screen.
+*/
 .agent-client-field {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: 0.5rem;
   margin-top: 1rem;
   padding-top: 0.75rem;
@@ -3031,28 +3044,47 @@ body.gated .view {
   user-select: all;
 }
 
-/* Hide key sits at the end of the row, away from the Copy it follows. */
-.agent-done {
-  margin-left: auto;
-}
-
 /*
-  Apps that sign in (J17.15): the address, under its own rule so it reads
-  as the other way in rather than as part of the key panel above it.
+  Connect an app (J17.15): each thing to copy is a box with its Copy
+  beside it, and the box takes whatever width is left — min-width: 0 is
+  what lets a long address wrap inside it rather than push the dialog
+  wider than a phone. Below a narrow width the button drops underneath.
 */
-.agent-signin {
-  margin-top: 1rem;
-  padding-top: 0.75rem;
-  border-top: 1px solid var(--rule);
-}
-
-.agent-signin-heading {
-  margin: 0 0 0.4rem;
+.agent-label {
+  display: block;
+  margin: 1rem 0 0;
   font-size: 0.68rem;
   font-weight: 600;
   letter-spacing: 0.14em;
   text-transform: uppercase;
   color: var(--ink-soft);
+}
+
+.agent-dialog h2 + .agent-label {
+  margin-top: 0;
+}
+
+.agent-copy-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.agent-copy-row .agent-config {
+  flex: 1 1 12rem;
+  min-width: 0;
+}
+
+.agent-copy-row .btn {
+  margin-top: 0.5rem;
+}
+
+.agent-line {
+  margin: 0.6rem 0 0;
+  font-size: 0.85rem;
+  line-height: 1.4;
+  color: var(--ink);
 }
 
 /* ---------- An app asking to sign in (J16.15) ---------- */
@@ -3079,6 +3111,10 @@ body.gated .view {
 #connect-book {
   flex: 1;
   min-width: 10rem;
+}
+
+#agent-client {
+  max-width: 100%;
 }
 
 .connect-status {

@@ -342,10 +342,12 @@ book you own, listed under **Books → Agents**, doing only what an agent may
 (J16.3).
 
 **Sign in from the app** — Claude.ai, the Claude apps, ChatGPT, Claude Code
-and anything else that speaks MCP's OAuth:
+and anything else that speaks MCP's OAuth. **Books → Agents → Connect an
+app** shows the address and command, each with a Copy:
 
 - **Claude.ai / ChatGPT**: add a custom connector with the address
-  `https://recipes.dave-ernsting.com/mcp`.
+  `https://recipes.dave-ernsting.com/mcp`. In Claude.ai, under OAuth client
+  choose *Register automatically* (published identity is not supported).
 - **Claude Code**: `claude mcp add --transport http recipe-friend
   https://recipes.dave-ernsting.com/mcp`, then `/mcp` in Claude Code to
   sign in.
@@ -359,14 +361,14 @@ not you, and the REST API refuses it outright (J16.15, J17.15–J17.17).
 
 **Or give it a key** — for something that runs unattended, like a household
 agent on a server, which should not depend on a refresh token. Open
-**Books → Agents** on a book you own, name the agent, and press
-**Add an agent**. The key (`rfk_…`) is shown once, with ready-to-paste
+**Books → Agents → Add an agent with a key** on a book you own, name it and
+press **Create**. The key (`rfk_…`) is shown once, with ready-to-paste
 settings for Claude Code, `mcpServers` JSON (Cursor, a project's
 `.mcp.json`), OpenClaw, and a plain URL + header with a `curl` check —
-pick the client, press Copy. Closing the panel discards the key; if it is
-lost, remove the agent there and add another. The same list shows each
-agent's key prefix, when it was added and when it was last used, and
-removes one with ×, which revokes its key at once.
+pick the client, press Copy. Closing that dialog discards the key; if it is
+lost, remove the agent and add another. The Agents list shows each
+agent's key prefix (or *connected app* and its host), when it was added and
+when it was last used, and × removes one, revoking it at once.
 
 For reference, the Claude Code form is `claude mcp add --transport http
 recipe-friend https://recipes.dave-ernsting.com/mcp --header

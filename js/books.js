@@ -110,13 +110,13 @@
   /**
    * For an app that signs in instead (J17.15): the address, and the one
    * command that needs more than the address. No key, so nothing in it is
-   * a secret, and it can be on screen whenever the section is.
+   * a secret, and it can be on screen whenever its dialog is.
    */
   function signInSettings(url) {
-    return [
-      `Address      ${url}`,
-      `Claude Code  claude mcp add --transport http recipe-friend ${url}`,
-    ].join("\n");
+    return {
+      address: url,
+      command: `claude mcp add --transport http recipe-friend ${url}`,
+    };
   }
 
   /**
@@ -148,11 +148,13 @@
       this.members = [];
       this.invites = [];
       this.agents = [];
-      // The key just made and nothing else: held only while the panel
+      // The key just made and nothing else: held only while the dialog
       // that shows it is open, so the connection settings can be redrawn
       // for another client without reading a secret back out of the page.
       this.revealed = null;
       this.dialog = $("#books-dialog");
+      this.keyDialog = $("#agent-key-dialog");
+      this.connectDialog = $("#agent-connect-dialog");
       this.wired = false;
     }
 
@@ -395,14 +397,10 @@
       // that is not yours to press reads better absent than greyed.
       const agents = $("#agents-section");
       if (agents) agents.hidden = !iOwn;
-      // A key belongs to the moment it was made (J16.6), and this is
-      // every moment after it. Keyed on the book it was minted for, it
-      // survived closing and reopening the dialog on the same book —
-      // which is the thing somebody actually does, and which made "it is
-      // not shown again" false where it was easiest to disprove. It is
-      // forgotten unless this very render is the one that drew it.
-      if (!this.credentialJustShown) this.forgetKey();
-      this.credentialJustShown = false;
+      // A book that stopped being ours under an open agent dialog (a
+      // refresh after a failing sync can say so) takes the dialog with
+      // it, and closing the key's dialog is what forgets the key.
+      if (!iOwn) this.closeAgentDialogs();
 
       this.renderInvites(iOwn);
       this.renderAgents(iOwn);
@@ -418,8 +416,6 @@
     renderAgents(iOwn) {
       const list = $("#agent-list");
       const empty = $("#agent-empty");
-      const signIn = $("#agent-signin-config");
-      if (signIn) signIn.textContent = iOwn ? signInSettings(`${location.origin}/mcp`) : "";
       if (!list) return;
       if (!iOwn) {
         list.innerHTML = "";
@@ -458,9 +454,49 @@
     }
 
     /**
+     * Open "Connect an app" (J17.15): the address and the Claude Code
+     * command, drawn from this page's own origin each time it opens, as
+     * text. There is no key in either, so nothing here needs forgetting.
+     */
+    openConnect() {
+      const { address, command } = signInSettings(`${location.origin}/mcp`);
+      const addr = $("#agent-address");
+      const cmd = $("#agent-command");
+      if (addr) addr.textContent = address;
+      if (cmd) cmd.textContent = command;
+      for (const id of ["#agent-address-copied", "#agent-command-copied"]) {
+        const el = $(id);
+        if (el) el.textContent = "";
+      }
+      if (this.connectDialog && !this.connectDialog.open) this.connectDialog.showModal();
+    }
+
+    /**
+     * Open "Add an agent with a key" at its first step, the name. It
+     * always starts fresh: a key from an earlier visit was forgotten when
+     * that visit's dialog closed, and is not here to be shown again.
+     */
+    openAddAgent() {
+      this.forgetKey();
+      const name = $("#new-agent-name");
+      if (name) name.value = "";
+      if (this.keyDialog && !this.keyDialog.open) this.keyDialog.showModal();
+      if (name) name.focus();
+    }
+
+    /** Close whichever agent dialog is open over the books dialog. */
+    closeAgentDialogs() {
+      for (const d of [this.keyDialog, this.connectDialog]) {
+        if (d && d.open) d.close();
+      }
+    }
+
+    /**
      * Draw the one-time panel for a key just made: the key, and the
      * settings for whichever client is picked (J16.14). Text only, never
-     * markup — the key and the URL are the two things that vary.
+     * markup — the key and the URL are the two things that vary. The name
+     * step goes, since the agent it would make already exists, and the
+     * dialog's one button becomes Done.
      */
     showKey(key) {
       this.revealed = { key };
@@ -472,6 +508,10 @@
       if (said) said.textContent = "";
       this.renderClientConfig();
       out.hidden = false;
+      const step = $("#agent-name-step");
+      if (step) step.hidden = true;
+      const done = $("#agent-done-btn");
+      if (done) done.textContent = "Done";
       // Where a screen reader lands is the first thing it says, and the
       // warning and the key are what it should say.
       const copy = $("#agent-copy-btn");
@@ -497,14 +537,19 @@
     }
 
     /**
-     * Put the key down: out of memory and out of the page. Closing the
-     * dialog, pressing Hide key, and every later render all come here, so
-     * the key is on screen for exactly as long as the panel is open.
+     * Put the key down: out of memory and out of the page, and the dialog
+     * back at its name step. However the key's dialog closes — Done,
+     * Escape, the books dialog closing under it — it comes here, so the
+     * key is on screen for exactly as long as that dialog is open.
      */
     forgetKey() {
       this.revealed = null;
       const out = $("#agent-out");
       if (out) out.hidden = true;
+      const step = $("#agent-name-step");
+      if (step) step.hidden = false;
+      const done = $("#agent-done-btn");
+      if (done) done.textContent = "Cancel";
       for (const id of ["#agent-secret", "#agent-config", "#agent-client-hint",
         "#agent-copied", "#agent-config-copied"]) {
         const el = $(id);
@@ -629,8 +674,12 @@
       });
       $("#books-close-btn").addEventListener("click", () => this.dialog.close());
       // However the dialog closes — the button, Escape, a tap outside —
-      // an agent's key goes with it (J16.6).
-      this.dialog.addEventListener("close", () => this.forgetKey());
+      // an agent's key goes with it (J16.6), and so does anything opened
+      // over it.
+      this.dialog.addEventListener("close", () => {
+        this.closeAgentDialogs();
+        this.forgetKey();
+      });
       this.dialog.addEventListener("click", (event) => {
         if (event.target === this.dialog) this.dialog.close();
       });
@@ -831,15 +880,39 @@
         });
       }
 
+      const connectBtn = $("#agent-connect-btn");
+      if (connectBtn) connectBtn.addEventListener("click", () => this.openConnect());
+      const addBtn = $("#agent-add-btn");
+      if (addBtn) addBtn.addEventListener("click", () => this.openAddAgent());
+
+      // Connect an app: two things to copy, each copied as it is shown.
+      const addressCopy = $("#agent-address-copy-btn");
+      if (addressCopy) {
+        addressCopy.addEventListener("click", () =>
+          copyAndSay(signInSettings(`${location.origin}/mcp`).address, $("#agent-address-copied")));
+      }
+      const commandCopy = $("#agent-command-copy-btn");
+      if (commandCopy) {
+        commandCopy.addEventListener("click", () =>
+          copyAndSay(signInSettings(`${location.origin}/mcp`).command, $("#agent-command-copied")));
+      }
+      const connectDone = $("#agent-connect-done-btn");
+      if (connectDone) connectDone.addEventListener("click", () => this.connectDialog.close());
+      if (this.connectDialog) {
+        this.connectDialog.addEventListener("click", (event) => {
+          if (event.target === this.connectDialog) this.connectDialog.close();
+        });
+      }
+
+      // Add an agent with a key. No tap-outside here, unlike the dialog
+      // above: a stray tap would throw away a key that cannot be shown
+      // again. Done and Escape are both on purpose.
+      if (this.keyDialog) this.keyDialog.addEventListener("close", () => this.forgetKey());
+
       const copyBtn = $("#agent-copy-btn");
       if (copyBtn) {
         copyBtn.addEventListener("click", () =>
           copyAndSay(this.revealed && this.revealed.key, $("#agent-copied")));
-      }
-      const signInCopy = $("#agent-signin-copy-btn");
-      if (signInCopy) {
-        signInCopy.addEventListener("click", () =>
-          copyAndSay(`${location.origin}/mcp`, $("#agent-signin-copied")));
       }
 
       const configCopy = $("#agent-config-copy-btn");
@@ -852,16 +925,18 @@
       const clientPick = $("#agent-client");
       if (clientPick) clientPick.addEventListener("change", () => this.renderClientConfig());
       const done = $("#agent-done-btn");
-      if (done) {
-        done.addEventListener("click", () => {
-          this.forgetKey();
-          const name = $("#new-agent-name");
-          if (name) name.focus();
-        });
-      }
+      if (done) done.addEventListener("click", () => this.keyDialog.close());
 
       const agentName = $("#new-agent-name");
       const addAgent = $("#create-agent-btn");
+      if (agentName && addAgent) {
+        agentName.addEventListener("keydown", (event) => {
+          if (event.key === "Enter") {
+            event.preventDefault();
+            addAgent.click();
+          }
+        });
+      }
       if (addAgent) {
         addAgent.addEventListener("click", async () => {
           const name = (agentName && agentName.value.trim()) || "";
@@ -870,6 +945,10 @@
             if (agentName) agentName.focus();
             return;
           }
+          // One press, one agent: a second tap while the first is out
+          // would make a second key nobody sees.
+          if (addAgent.disabled) return;
+          addAgent.disabled = true;
           try {
             const agent = await this.api.createAgent(this.sync.bookId, name);
             // Shown first, copied on purpose. This is a password in all
@@ -879,10 +958,10 @@
             // how a key gets half-copied and pasted broken. The buttons
             // are the answer; the warning above them is still the point.
             if (agentName) agentName.value = "";
-            // Before the refresh below, which is what redraws the dialog
-            // and would otherwise forget the key it is about to show.
-            this.credentialJustShown = true;
-            this.showKey(agent.key);
+            // Closed while the call was out: the key is not drawn into a
+            // dialog nobody is looking at, or held for one that might open
+            // later. The agent exists, so it is in the list to remove.
+            if (this.keyDialog && this.keyDialog.open) this.showKey(agent.key);
             // The agent exists and its key is on screen, so a refresh
             // that fails now must not report a failure to create it —
             // the list being stale is a smaller thing than telling
@@ -904,6 +983,8 @@
                 ? `Couldn't add that agent — ${err.message}`
                 : "Couldn't add that agent."
             );
+          } finally {
+            addAgent.disabled = false;
           }
         });
       }

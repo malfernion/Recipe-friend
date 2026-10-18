@@ -1985,8 +1985,12 @@ async function openBooks(h) {
   await flush();
 }
 
-/** Add an agent the way the dialog does, and let the click settle. */
+/**
+ * Add an agent the way somebody does — open "Add an agent with a key",
+ * type a name, press Create — and let the click settle.
+ */
 async function addAgent(h, name) {
+  h.el("agent-add-btn").fire("click", {});
   h.el("new-agent-name").value = name;
   h.el("create-agent-btn").fire("click", {});
   await flush();
@@ -2091,13 +2095,64 @@ test("J16.6 · the credential is shown once, and is not shown again", async () =
   assert.match(h.el("agent-secret").textContent, /^rfk_/, "the key itself");
   assert.equal(h.clipboard.length, 0,
     "a password in all but name is read before it is copied, not copied before it is read");
+  assert.equal(h.el("agent-name-step").hidden, true, "the name step gives way to the key");
+  assert.equal(h.el("agent-done-btn").textContent, "Done");
 
-  // Closing and reopening on the same book is the thing somebody
-  // actually does, and is where "not shown again" was false.
-  await openBooks(h);
+  // Closing it and opening it again is the thing somebody actually
+  // does, and is where "not shown again" was once false.
+  h.el("agent-key-dialog").close();
+  h.el("agent-add-btn").fire("click", {});
 
+  assert.equal(h.el("agent-key-dialog").open, true);
   assert.equal(h.el("agent-out").hidden, true, "gone, and not recoverable from the dialog");
   assert.equal(h.el("agent-secret").textContent, "", "and the secret itself is gone with it");
+  assert.equal(h.el("agent-name-step").hidden, false, "it starts again at the name");
+  assert.equal(h.el("new-agent-name").value, "");
+  assert.equal(h.el("new-agent-name").focused, true);
+  assert.equal(h.el("agent-done-btn").textContent, "Cancel");
+});
+
+test("J16.6 · a background refresh does not take the key from under somebody reading it", async () => {
+  const h = harness();
+  await openBooks(h);
+  await addAgent(h, "Meal planner");
+  const shown = h.el("agent-secret").textContent;
+
+  // A failing sync asks for the book list again, with nobody touching
+  // the dialog. The key's lifetime is its dialog's, not a render's.
+  await h.books.refresh();
+
+  assert.equal(h.el("agent-out").hidden, false);
+  assert.equal(h.el("agent-secret").textContent, shown);
+});
+
+test("J16.6 · a key that arrives after its dialog was closed is not shown or kept", async () => {
+  const h = harness();
+  await h.books.refresh();
+  h.el("agent-add-btn").fire("click", {});
+  h.el("new-agent-name").value = "Meal planner";
+  const pending = h.el("create-agent-btn").fire("click", {});
+  h.el("agent-key-dialog").close();
+  await pending;
+  await flush();
+
+  assert.equal(h.books.revealed, null, "nothing is held for a dialog that might open later");
+  assert.equal(h.el("agent-secret").textContent, "");
+  assert.equal(agentRows(h).length, 1, "and the agent it made is in the list to remove");
+});
+
+test("J16.2 · one press of Create makes one agent", async () => {
+  const h = harness();
+  await h.books.refresh();
+  h.el("agent-add-btn").fire("click", {});
+  h.el("new-agent-name").value = "Meal planner";
+  const first = h.el("create-agent-btn").fire("click", {});
+  const second = h.el("create-agent-btn").fire("click", {});
+  await Promise.all([first, second]);
+  await flush();
+
+  assert.equal(h.cloud.rpcCalls("create_agent").length, 1);
+  assert.equal(h.el("create-agent-btn").disabled, false, "and it can be pressed again afterwards");
 });
 
 test("J16.6 · Copy puts the credential on the clipboard, and says so", async () => {
@@ -2537,6 +2592,7 @@ test("J16.14 · closing the panel takes the key and every setting made from it o
 
   await h.el("agent-done-btn").fire("click", {});
 
+  assert.equal(h.el("agent-key-dialog").open, false, "Done closes it");
   assert.equal(h.el("agent-out").hidden, true);
   assert.equal(h.el("agent-secret").textContent, "");
   assert.equal(h.el("agent-config").textContent, "");
@@ -2553,12 +2609,39 @@ test("J16.14 · closing the dialog, however it closes, takes the key with it", a
   await addAgent(h, "Meal planner");
   assert.equal(h.el("agent-out").hidden, false);
 
-  h.el("books-dialog").close();
+  // Escape on a <dialog> is a cancel and then a close; the close is
+  // what carries the key off.
+  h.el("agent-key-dialog").close();
 
   assert.equal(h.el("agent-out").hidden, true);
   assert.equal(h.el("agent-secret").textContent, "");
   assert.equal(h.el("agent-config").textContent, "");
   assert.equal(h.books.revealed, null);
+});
+
+test("J16.14 · the books dialog closing takes the key's dialog, and the key, with it", async () => {
+  const h = harness();
+  await openBooks(h);
+  await addAgent(h, "Meal planner");
+
+  h.el("books-dialog").close();
+
+  assert.equal(h.el("agent-key-dialog").open, false);
+  assert.equal(h.el("agent-secret").textContent, "");
+  assert.equal(h.books.revealed, null);
+});
+
+test("J16.14 · Enter in the name box is Create", async () => {
+  const h = harness();
+  await h.books.refresh();
+  h.el("agent-add-btn").fire("click", {});
+  h.el("new-agent-name").value = "Meal planner";
+  h.el("new-agent-name").fire("keydown", { key: "Enter" });
+  await flush();
+  await flush();
+
+  assert.equal(h.cloud.rpcCalls("create_agent").length, 1);
+  assert.match(h.el("agent-secret").textContent, /^rfk_/);
 });
 
 test("J16.13 · last used is said the way somebody would say it", () => {
@@ -2630,20 +2713,64 @@ test("J17.17 · removing a connected app asks first, says it is signed out for g
   assert.match(h.lastToast(), /ChatGPT can no longer see this book/);
 });
 
-test("J17.15 · the section gives the address for apps that sign in, with no key in it", async () => {
+test("J17.15 · Connect an app shows the address and the Claude Code command, each with its own Copy, and no key", async () => {
   const h = harness();
   await h.books.refresh();
-  const text = h.el("agent-signin-config").textContent;
-  assert.match(text, /Address\s+https:\/\/test\.local\/mcp/);
-  assert.match(text, /claude mcp add --transport http recipe-friend https:\/\/test\.local\/mcp$/m,
-    "Claude Code with no header: it signs in");
-  assert.doesNotMatch(text, /Authorization|rfk_/);
+  assert.equal(h.el("agent-connect-dialog").open, false, "not until it is asked for");
 
-  await h.el("agent-signin-copy-btn").fire("click", {});
+  h.el("agent-connect-btn").fire("click", {});
+
+  assert.equal(h.el("agent-connect-dialog").open, true);
+  assert.equal(h.el("agent-address").textContent, "https://test.local/mcp", "the address itself, on screen");
+  assert.equal(h.el("agent-command").textContent,
+    "claude mcp add --transport http recipe-friend https://test.local/mcp",
+    "Claude Code with no header: it signs in");
+  for (const id of ["agent-address", "agent-command"]) {
+    assert.doesNotMatch(h.el(id).textContent, /Authorization|rfk_/);
+  }
+
+  await h.el("agent-address-copy-btn").fire("click", {});
   assert.equal(h.clipboard[h.clipboard.length - 1], "https://test.local/mcp");
-  assert.equal(h.el("agent-signin-copied").textContent, "Copied.");
+  assert.equal(h.el("agent-address-copied").textContent, "Copied.");
+  await h.el("agent-command-copy-btn").fire("click", {});
+  assert.equal(h.clipboard[h.clipboard.length - 1],
+    "claude mcp add --transport http recipe-friend https://test.local/mcp");
+  assert.equal(h.el("agent-command-copied").textContent, "Copied.");
+
+  h.el("agent-connect-done-btn").fire("click", {});
+  assert.equal(h.el("agent-connect-dialog").open, false, "Done closes it");
+  h.el("agent-connect-btn").fire("click", {});
+  assert.equal(h.el("agent-address-copied").textContent, "", "a 'Copied' does not outlive its visit");
+});
+
+test("J17.15 · an agent dialog open over a book that stops being ours closes with it", async () => {
+  const h = harness();
+  await h.books.refresh();
+  h.el("agent-connect-btn").fire("click", {});
+  await addAgent(h, "Meal planner");
 
   await h.books.switchTo(SHARED);
   await flush();
-  assert.equal(h.el("agent-signin-config").textContent, "", "nothing for a book you only share");
+
+  assert.equal(h.el("agent-connect-dialog").open, false);
+  assert.equal(h.el("agent-key-dialog").open, false);
+  assert.equal(h.books.revealed, null);
+});
+
+test("J16.13 · the Agents panel is the list, one line on what agents do, and two doors", () => {
+  const html = fs.readFileSync(path.join(__dirname, "..", "index.html"), "utf8");
+  const section = /<div id="agents-section"[\s\S]*?\n    <\/div>/.exec(html)[0];
+  assert.match(section, /id="agent-connect-btn"[^>]*>Connect an app</);
+  assert.match(section, /id="agent-add-btn"[^>]*>Add an agent with a key</);
+  assert.doesNotMatch(section, /new-agent-name|agent-secret|agent-config/,
+    "the form and the key live in their own dialog, not in the panel");
+  const hints = section.match(/<p [^>]*class="books-hint"/g) || [];
+  assert.equal(hints.length, 2, "the empty line and the one line on what agents can do");
+
+  for (const id of ["agent-connect-dialog", "agent-key-dialog"]) {
+    assert.match(html, new RegExp(`<dialog id="${id}" class="recipe-dialog`), `${id} is a dialog like the rest`);
+  }
+  const connect = /<dialog id="agent-connect-dialog"[\s\S]*?<\/dialog>/.exec(html)[0];
+  assert.doesNotMatch(connect, /rfk_|Authorization|agent-secret/, "nothing secret in Connect an app");
+  assert.match(connect, /Register automatically/, "and Claude.ai's one setting that matters");
 });
