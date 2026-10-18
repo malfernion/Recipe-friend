@@ -15,7 +15,7 @@ import sys
 import uuid
 import zlib
 
-DEFAULT_BASE = "https://malfernion.github.io/Recipe-friend/"
+DEFAULT_BASE = "https://recipes.dave-ernsting.com/"
 
 # A share link is only safe to hand someone if it opens the real app. This
 # script runs on recipe text scraped from arbitrary pages, and that text is
@@ -23,7 +23,7 @@ DEFAULT_BASE = "https://malfernion.github.io/Recipe-friend/"
 # is trying to get a legitimate-looking link pointed at a copy of the app,
 # where the Sign in with Google button is a credential harvester. So the
 # origin comes from this list, and nothing a recipe says can change it.
-ALLOWED_HOSTS = ("malfernion.github.io", "localhost", "127.0.0.1")
+ALLOWED_HOSTS = ("recipes.dave-ernsting.com", "localhost", "127.0.0.1")
 
 # Raw deflate exceeds 1000:1, so an untrusted link is a decompression bomb
 # unless the read is bounded. No real recipe comes near this.

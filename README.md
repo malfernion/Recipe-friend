@@ -3,8 +3,10 @@
 A personal recipe box that syncs across the devices you cook from. Sign in
 with Google, and your recipes follow you; the browser keeps a local copy so
 the app stays instant and works offline. The site is plain HTML/CSS/JS with
-no build step, deployed to GitHub Pages, with Supabase behind it for
-accounts and sync.
+no build step. It is served from a home server at
+<https://recipes.dave-ernsting.com>, which also runs the self-hosted
+Supabase components behind it (Postgres, Auth, the REST API and Storage)
+for accounts and sync.
 
 ## Features
 
@@ -112,59 +114,79 @@ along with the database, which is deliberately outside the net.
 The database is deliberately not covered — see the note at the end of the
 journeys. Row-level security is verified by hand when a migration is run.
 
-## Backend (Supabase) setup
+## Backend setup
 
 Signing in is required: the app shows a sign-in screen until you do, and
-recipes live with your account. Sync uses Supabase
-(project coordinates in `js/config.js` — the publishable key is public by
-design; all protection is row-level security). One-time setup:
+recipes live with your account. Sync uses the open-source Supabase
+components, self-hosted: Postgres, GoTrue (sign-in), PostgREST (the API
+the app talks to) and Storage (photos), with Caddy in front routing
+`/auth/v1`, `/rest/v1` and `/storage/v1` and serving the site itself from
+the same origin. The project URL and `anon` key are in `js/config.js`; the
+key is public by design, and all protection is row-level security.
 
-1. **Schema**: open the Supabase dashboard → SQL Editor, paste all of
-   `supabase/schema.sql`, and run it. This creates the tables (profiles,
-   books, members, recipes, invites), every RLS policy, the new-user
-   bootstrap (profile + personal book), and the invite-redeem function.
-   Then run each file in `supabase/migrations/` in order — these are
-   additive changes made after the initial schema.
+There are two places that stack is described:
+
+- **Production** is `stacks/recipe-friend` in the private
+  `malfernion/homelab` repository. It runs on the home server and is
+  reached through a Cloudflare Tunnel, so nothing on the home network is
+  opened to the internet. Its `.env.example` lists every setting by name;
+  the values live only on the server.
+- **Local development** is `server/` in this repository, the same
+  components at the same pinned versions, so the schema is proven in CI on
+  the versions production runs.
+
+One-time setup:
+
+1. **Schema**: `supabase/schema.sql` and then each file in
+   `supabase/migrations/` in order, applied by the migration runner in
+   `server/` once GoTrue and Storage have run their own migrations — the
+   app's SQL refers to `auth.users` and `storage.objects`, which those
+   create. The schema creates the tables (profiles, books, members,
+   recipes, invites), every RLS policy, the new-user bootstrap (profile +
+   personal book), and the invite-redeem function; the migrations are
+   additive changes made after it.
 2. **Google auth**: in Google Cloud, create an OAuth Web client with
-   authorized origin `https://malfernion.github.io` and redirect URI
-   `https://dveyxesgwohokenoomsf.supabase.co/auth/v1/callback`; paste the
-   client ID and secret into Supabase → Authentication → Providers →
-   Google. Disable email auth. Add
-   `https://malfernion.github.io/Recipe-friend/` (and
-   `http://localhost:8000` for local dev) to Authentication → URL
-   Configuration → Redirect URLs.
+   authorised JavaScript origin `https://recipes.dave-ernsting.com` and
+   redirect URI `https://recipes.dave-ernsting.com/auth/v1/callback`. For
+   local development add the `http://localhost` origin `server/` serves on
+   and its `/auth/v1/callback`. Give GoTrue the client ID and secret
+   through its Google provider settings, and leave email sign-up off, so
+   Google is the only way in for a person (J1.2). Set GoTrue's site URL to
+   `https://recipes.dave-ernsting.com` and put that, and the local origin
+   for development, on its list of allowed redirect URLs.
 3. Sign in from the app's header. First sign-in auto-creates your profile
    and a personal "My recipes" book.
 4. **Agents** (optional — only needed to let a program read a book).
    Do these in this order; the middle step is what makes the first one
    safe.
 
-   1. Create a **Cloudflare Turnstile** widget. It is a CAPTCHA — a
-      "prove you are a person" checkbox — and Cloudflare's is the one
-      Supabase accepts. Put its **site key** in `js/config.js` as
-      `turnstileSiteKey` (public, like the publishable key beside it) and
-      keep the secret key for the next step.
-   2. Supabase → Authentication → **Attack Protection → CAPTCHA
-      protection**: switch it on, provider Turnstile, and paste the
-      **secret key**. Check that signing in with Google still works
-      before going further.
-   3. Supabase → Authentication → Providers → **Anonymous sign-ins**:
-      turn it on. This is what lets an agent have an identity with no
-      email address, and it is also a public endpoint that creates
-      accounts — which is why the CAPTCHA goes on first.
-   4. Leave "Detect and revoke potentially compromised refresh tokens"
-      (Authentication → **Advanced Settings**) **on**. Earlier versions
-      of this README said to switch it off; that was never what kept a
-      credential working, and a project that followed it can switch it
-      back on once its agents run a server from this version. A
+   1. Create a **Cloudflare Turnstile** widget for
+      `recipes.dave-ernsting.com` (and `localhost`, for development). It is
+      a CAPTCHA — a "prove you are a person" checkbox — and GoTrue accepts
+      Cloudflare's. Put its **site key** in `js/config.js` as
+      `turnstileSiteKey` (public, like the `anon` key beside it) and keep
+      the secret key for the next step.
+   2. Switch on GoTrue's **CAPTCHA protection**, provider Turnstile, with
+      the **secret key**, and restart it. Check that signing in with
+      Google still works before going further.
+   3. Switch on GoTrue's **anonymous sign-ins**. This is what lets an
+      agent have an identity with no email address, and it is also a
+      public endpoint that creates accounts — which is why the CAPTCHA
+      goes on first.
+   4. Leave GoTrue's **refresh-token rotation** on — the setting the
+      hosted dashboard called "Detect and revoke potentially compromised
+      refresh tokens". It was once switched off on the belief that agents
+      needed it off; that was never what kept a credential working. A
       credential is a refresh token, and the server in `mcp/` only ever
-      presents the pasted one — which Supabase keeps accepting as the
-      parent of the token it last issued, however often the program is
-      restarted or launched twice. The journeys' Boundaries section has
-      the detail, and the Pro-plan session limits that would break it.
+      presents the pasted one — which GoTrue keeps accepting as the parent
+      of the token it last issued, however often the program is restarted
+      or launched twice. Leave GoTrue's session time-box, inactivity
+      timeout and single-session-per-user unset: each of those would end
+      the session an agent's credential belongs to. The journeys'
+      Boundaries section has the detail.
 
    **Why that order.** The app only sends a challenge answer once a site
-   key is set, and Supabase only demands one once its setting is on, so
+   key is set, and GoTrue only demands one once its setting is on, so
    filling in the key first is what avoids a window where adding an agent
    fails. Turning on anonymous sign-ins first would open the
    account-creating endpoint while nothing is in front of it.
@@ -207,32 +229,17 @@ sync guarantees (J9).
 The `service_role` key is never used by the app and must never be
 committed.
 
-## Keeping the free project awake
+## Deploying
 
-Free Supabase projects pause after 7 days without API activity, and a
-project left paused for 90 days is deleted.
-`.github/workflows/supabase-keepalive.yml` sends one request a day to keep
-that clock reset. It reads the project URL and publishable key straight out
-of `js/config.js` — both are public by design, so no repository secret is
-involved.
+The site is served by the homelab stack from a checkout of this
+repository pinned to a commit. Merging to `main` does not change what is
+live; updating the site means bumping that pin in
+`stacks/recipe-friend` and redeploying the stack. A schema change goes
+out the same way, with its migration applied by the stack's runner.
 
-Two things worth knowing: GitHub disables scheduled workflows on a
-repository with no activity for 60 days (a push or a manual run re-enables
-them), and the job fails loudly if Supabase does not answer with 200, which
-doubles as a cheap uptime check. There is deliberately no automated backup
-job — that would need a key that bypasses row-level security, so **Export**
-remains the way to keep your own copy.
-
-## Deploying to GitHub Pages
-
-The included workflow (`.github/workflows/deploy-pages.yml`) deploys the site
-on every push to `main`. One-time setup:
-
-1. In the repository, go to **Settings → Pages**.
-2. Under **Build and deployment**, set **Source** to **GitHub Actions**.
-3. Push to `main` (or run the workflow manually from the Actions tab).
-
-The site will be published at `https://<username>.github.io/Recipe-friend/`.
+There is no automated backup in this repository. The server's data
+directory is the only server-side copy of the recipes and photos, so
+**Export** remains the way to keep your own copy.
 
 ## Project structure
 
@@ -258,7 +265,8 @@ js/ask.js                      The confirm dialog, asked before anything undoabl
 js/account.js                  Google sign-in, session, sync bootstrap
 js/sync.js                     Reconciling the local box with the book
 js/books.js                    Recipe books, members, and invite links
-js/config.js                   Supabase project URL and publishable key
+js/config.js                   Project URL, anon key and Turnstile site key
+server/                        Local stack and migration runner for development and CI
 supabase/schema.sql            Tables, RLS policies, triggers, functions
 supabase/migrations/           Additive schema changes, run in order
                                (004 creates the private photo bucket;
@@ -278,7 +286,8 @@ package.json                   The server's dependencies and its `bin`.
                                The site itself still has none and still
                                has no build step
 test/                          Tests, named for the criteria they check
-.github/workflows/deploy-pages.yml   GitHub Pages deployment
+.github/workflows/deploy-pages.yml   GitHub Pages deployment (removed at cutover)
+.github/workflows/supabase-keepalive.yml  Daily ping for hosted Supabase (removed at cutover)
 .github/workflows/test.yml           Tests on every pull request
 .claude/skills/recipe-share-link/     Agent skill: recipe -> share link
 ```
