@@ -402,6 +402,11 @@
       member list, because they are a different question: not "who else is
       in this book" but "what have I let read it". Owners only — the whole
       block is hidden for everyone else (J16.2).
+
+      The panel is the list and two doors. Connecting an app and making a
+      key are each a dialog of their own, opened over this one, so the
+      list is never pushed out of sight by instructions for the one of
+      them somebody is not doing.
     -->
     <div id="agents-section" hidden>
       <h3 class="books-heading">Agents</h3>
@@ -413,75 +418,99 @@
       -->
       <ul id="agent-list" class="member-list agent-list"></ul>
       <p id="agent-empty" class="books-hint" hidden>No agents can reach this book.</p>
-      <div class="agent-new">
-        <input type="text" id="new-agent-name" maxlength="80"
-               aria-label="Agent name"
-               placeholder="What to call it — e.g. Meal planner">
-        <button type="button" class="btn btn-ghost" id="create-agent-btn">Add an agent</button>
+      <p class="books-hint">Agents can read this book, add recipes and plan. They can't edit or delete.</p>
+      <div class="agent-doors">
+        <button type="button" class="btn btn-ghost" id="agent-connect-btn">Connect an app</button>
+        <button type="button" class="btn btn-ghost" id="agent-add-btn">Add an agent with a key</button>
       </div>
-      <!--
-        The key, shown once and never again (J16.6), and what to paste
-        into a client to use it (J16.14). It is a password in everything
-        but name, so it is never put on the clipboard on its own: it is
-        shown first, with the warning above it, and copying is a button
-        somebody presses. The parts are markup rather than a string built
-        in JS because the warning and the buttons never change, and the
-        two things that do are written as text, never as markup.
-      -->
-      <div id="agent-out" class="agent-out" hidden>
-        <p class="agent-credential">Shown once — copy it now</p>
-        <p class="agent-out-note">Only a fingerprint of it is kept, so it can't be shown again.
-           If it is lost, remove this agent and add another.</p>
-        <code id="agent-secret" class="agent-secret"></code>
-        <div class="agent-out-actions">
-          <button type="button" class="btn btn-ghost" id="agent-copy-btn">Copy key</button>
-          <span id="agent-copied" class="agent-copied" role="status" aria-live="polite"></span>
-        </div>
-        <label class="agent-client-field">
-          <span class="invite-role-label">Connect from</span>
-          <select id="agent-client">
-            <option value="claude-code">Claude Code</option>
-            <option value="json">JSON (Cursor, .mcp.json …)</option>
-            <option value="openclaw">OpenClaw</option>
-            <option value="plain">Anything else</option>
-          </select>
-        </label>
-        <p id="agent-client-hint" class="agent-client-hint"></p>
-        <pre id="agent-config" class="agent-config" tabindex="0" aria-label="Connection settings"></pre>
-        <div class="agent-out-actions">
-          <button type="button" class="btn btn-ghost" id="agent-config-copy-btn">Copy settings</button>
-          <span id="agent-config-copied" class="agent-copied" role="status" aria-live="polite"></span>
-          <button type="button" class="btn btn-ghost agent-done" id="agent-done-btn">Hide key</button>
-        </div>
-      </div>
-      <!--
-        The other way in (J17.15): an app that signs in rather than taking
-        a key — Claude.ai and ChatGPT connectors, Claude Code. Nothing to
-        copy but the address; the app sends the owner to the consent
-        screen (js/connect.js), and what it becomes is an agent in this
-        list like any other, marked as a connected app.
-      -->
-      <div class="agent-signin">
-        <h4 class="agent-signin-heading">Or let an app sign in</h4>
-        <p class="books-hint">Claude.ai, ChatGPT and other apps with custom connectors: add a
-           connector with this address. Claude Code: run the command. You'll be asked to
-           sign in here and choose a book — there is no key to copy.</p>
-        <pre id="agent-signin-config" class="agent-config" tabindex="0"
-             aria-label="Address for apps that sign in"></pre>
-        <div class="agent-out-actions">
-          <button type="button" class="btn btn-ghost" id="agent-signin-copy-btn">Copy address</button>
-          <span id="agent-signin-copied" class="agent-copied" role="status" aria-live="polite"></span>
-        </div>
-      </div>
-      <p class="books-hint">An agent is a program you let read this book — an assistant that
-         suggests what to cook, or files a recipe you liked. It can read the book, add
-         recipes and work on the plan. It cannot edit or delete a recipe, favourite one,
-         see the photos, or finish a plan. Its key is shown once when you add it, so keep
-         it somewhere safe; if it goes astray, remove the agent and add another.</p>
     </div>
 
     <div class="action-bar">
       <button type="button" class="btn btn-primary" id="books-close-btn">Done</button>
+    </div>
+  </dialog>
+
+  <!--
+    Connecting an app that signs in (J17.15): Claude.ai and ChatGPT
+    connectors, Claude Code. Nothing in it is a secret — the address and
+    the one command that needs more than the address — so both are on
+    screen as text, each with its own Copy. The app sends the owner to
+    the consent screen (#connect-dialog), and what it becomes is an agent
+    in the list like any other, marked as a connected app.
+  -->
+  <dialog id="agent-connect-dialog" class="recipe-dialog agent-dialog" aria-labelledby="agent-connect-title">
+    <h2 id="agent-connect-title">Connect an app</h2>
+    <span class="agent-label" id="agent-address-label">Address</span>
+    <div class="agent-copy-row">
+      <pre id="agent-address" class="agent-config" tabindex="0"
+           aria-labelledby="agent-address-label"></pre>
+      <button type="button" class="btn btn-ghost" id="agent-address-copy-btn">Copy</button>
+    </div>
+    <span id="agent-address-copied" class="agent-copied" role="status" aria-live="polite"></span>
+    <p class="agent-line">Claude / ChatGPT: add a custom connector with this address.</p>
+    <!--
+      Claude.ai offers to send a "published identity" in place of
+      registering; GoTrue only knows clients that registered themselves.
+    -->
+    <p class="books-hint">Claude.ai: under OAuth client, choose Register automatically — not published identity.</p>
+    <span class="agent-label" id="agent-command-label">Claude Code</span>
+    <div class="agent-copy-row">
+      <pre id="agent-command" class="agent-config" tabindex="0"
+           aria-labelledby="agent-command-label"></pre>
+      <button type="button" class="btn btn-ghost" id="agent-command-copy-btn">Copy</button>
+    </div>
+    <span id="agent-command-copied" class="agent-copied" role="status" aria-live="polite"></span>
+    <p class="agent-line">You'll sign in here and choose a book — no key needed.</p>
+    <div class="action-bar">
+      <button type="button" class="btn btn-primary" id="agent-connect-done-btn">Done</button>
+    </div>
+  </dialog>
+
+  <!--
+    Adding an agent with a key (J16.2, J16.6, J16.14): a name, then the
+    key, shown once and never again, with what to paste into a client to
+    use it. It is a password in everything but name, so it is never put
+    on the clipboard on its own: it is shown first, with the warning
+    above it, and copying is a button somebody presses. The parts are
+    markup rather than a string built in JS because the warning and the
+    buttons never change, and the two things that do are written as
+    text, never as markup. However this dialog closes, the key goes with
+    it.
+  -->
+  <dialog id="agent-key-dialog" class="recipe-dialog agent-dialog" aria-labelledby="agent-key-title">
+    <h2 id="agent-key-title">Add an agent with a key</h2>
+    <div id="agent-name-step" class="agent-new">
+      <input type="text" id="new-agent-name" maxlength="80"
+             aria-label="Agent name"
+             placeholder="Name — e.g. Meal planner">
+      <button type="button" class="btn btn-primary" id="create-agent-btn">Create</button>
+    </div>
+    <div id="agent-out" class="agent-out" hidden>
+      <p class="agent-credential">Shown once — copy it now</p>
+      <p class="agent-out-note">It can't be shown again. If it's lost, remove this agent and add another.</p>
+      <code id="agent-secret" class="agent-secret"></code>
+      <div class="agent-out-actions">
+        <button type="button" class="btn btn-ghost" id="agent-copy-btn">Copy key</button>
+        <span id="agent-copied" class="agent-copied" role="status" aria-live="polite"></span>
+      </div>
+      <label class="agent-client-field">
+        <span class="invite-role-label">Connect from</span>
+        <select id="agent-client">
+          <option value="claude-code">Claude Code</option>
+          <option value="json">JSON (Cursor, .mcp.json …)</option>
+          <option value="openclaw">OpenClaw</option>
+          <option value="plain">Anything else</option>
+        </select>
+      </label>
+      <p id="agent-client-hint" class="agent-client-hint"></p>
+      <pre id="agent-config" class="agent-config" tabindex="0" aria-label="Connection settings"></pre>
+      <div class="agent-out-actions">
+        <button type="button" class="btn btn-ghost" id="agent-config-copy-btn">Copy settings</button>
+        <span id="agent-config-copied" class="agent-copied" role="status" aria-live="polite"></span>
+      </div>
+    </div>
+    <div class="action-bar">
+      <button type="button" class="btn btn-primary" id="agent-done-btn">Cancel</button>
     </div>
   </dialog>
 

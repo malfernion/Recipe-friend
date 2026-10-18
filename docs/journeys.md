@@ -974,7 +974,8 @@ not somebody.
    id; without this, anybody in the household could attach it to a book
    of their own, where its owner could neither see it nor revoke it.
 2. **Only an owner may add one**, from the Agents section of the Books
-   dialog, and it is named when it is added. That name is what the member list shows — an agent
+   dialog (**Add an agent with a key**, which opens a dialog of its own),
+   and it is named when it is added. That name is what the member list shows — an agent
    nobody named is an agent nobody can recognise later. Adding one is a
    single call to the database, checked there against the caller owning
    the book and not being an agent; nothing signs in through the auth
@@ -1067,16 +1068,18 @@ not somebody.
     removing one asks first and says what is true of no other removal:
     the key stops working straight away, and for good — connecting again
     means adding a new agent.
-14. **Connecting a client is a copy and a paste.** Beside the key, shown
-    once (J16.6), are ready-made settings for the clients somebody is
+14. **Connecting a client is a copy and a paste.** Under the key, shown
+    once (J16.6) in the dialog that made it, are ready-made settings for the clients somebody is
     likely to use — the Claude Code command, an `mcpServers` JSON entry
     (Cursor, a project's `.mcp.json`), OpenClaw's server entry, and for
     anything else the address, the header and a one-line `curl` that
     lists the tools — each with its own Copy. They are built from the
     page's own address and the new key, so what is pasted is exactly
     what this server answers, and the JSON ones are JSON. They exist
-    only while the key does: closing the panel or the dialog takes the
-    key and every setting made from it off the page.
+    only while the key does: closing that dialog — Done, Escape, or the
+    Books dialog closing under it — takes the key and every setting made
+    from it off the page, and opening it again starts afresh at the name.
+    A refresh of the list while it is open does not.
 15. **An app that signs in is an agent too.** Claude.ai, ChatGPT and
     Claude Code sign in rather than take a key (J17.15). When one asks,
     the auth server sends the owner to the site's own consent screen,
@@ -1092,6 +1095,10 @@ not somebody.
     the auth server yes, so the token it issues has an agent to name.
     Deny tells it no and makes nothing. Connecting the same app again
     reuses its agent, or moves it to the book chosen this time.
+
+    What to give the app is under **Connect an app**, beside the list: a
+    dialog showing this server's address and the Claude Code command as
+    text, each with its own Copy, and nothing secret — there is no key.
 
     It is in the Agents list with the rest (J16.13), marked as a
     connected app with its host instead of a key prefix, and removed by
