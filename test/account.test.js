@@ -577,7 +577,6 @@ test("J1.6 · the shipped config is a real project, so the fallback is not what 
   assert.equal(cfg.supabaseUrl, "https://recipes.dave-ernsting.com");
   assert.equal(configAt(readSrc(path.join("js", "config.js")), "http://localhost:8080/").supabaseUrl, "http://localhost:8080");
   assert.equal(roleOf(cfg.supabaseKey), "anon", "J11.5 · never the service_role key");
-  assert.equal(typeof cfg.turnstileSiteKey, "string");
 });
 
 test("J1.6 · opened as a file there is no project, which is the development fallback", () => {
@@ -590,7 +589,7 @@ test("J11.5 · the config a deployment serves is filled from its own environment
   // Every deployment answers /js/config.js from this template, so the key
   // in it is the serving stack's and never one pasted into a commit.
   const tmpl = readSrc(path.join("server", "config.js.tmpl"));
-  const env = { RECIPE_FRIEND_ANON_KEY: "eyJhbGciOiJIUzI1NiJ9.eyJyb2xlIjoiYW5vbiJ9.sig", RECIPE_FRIEND_TURNSTILE_SITE_KEY: "0xSITE" };
+  const env = { RECIPE_FRIEND_ANON_KEY: "eyJhbGciOiJIUzI1NiJ9.eyJyb2xlIjoiYW5vbiJ9.sig" };
   const filled = tmpl.replace(/\{\{env "([A-Z_]+)" \| js\}\}/g, (_, name) => env[name]);
   assert.equal(/\{\{/.test(filled), false, "every placeholder is one Caddy fills from the environment");
 
@@ -600,7 +599,6 @@ test("J11.5 · the config a deployment serves is filled from its own environment
   assert.deepEqual(served, {
     supabaseUrl: "https://recipes.dave-ernsting.com",
     supabaseKey: env.RECIPE_FRIEND_ANON_KEY,
-    turnstileSiteKey: "0xSITE",
   });
 });
 

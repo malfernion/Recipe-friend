@@ -34,9 +34,8 @@
 	}
 
 	# js/config.js is answered from a template filled with this stack's
-	# own anon key and Turnstile site key (RECIPE_FRIEND_ANON_KEY,
-	# RECIPE_FRIEND_TURNSTILE_SITE_KEY), never from the committed file,
-	# which is only the dev default. Production's Caddyfile does the same.
+	# own anon key (RECIPE_FRIEND_ANON_KEY), never from the committed
+	# file, which is only the dev default. Production's Caddyfile does the same.
 	# no-cache so a changed key is not held by Cloudflare or a browser.
 	handle /js/config.js {
 		root * /srv/server

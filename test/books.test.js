@@ -106,6 +106,8 @@ function fakeCloud() {
     recipes: [],
     // Agents create_agent has made, by id (J16.1).
     agents: [],
+    // Their keys, as list_agents sees them: never the key, only its start.
+    agent_keys: [],
   };
   const calls = [];
   const failures = new Map(); // "table.op" or "storage.copy" -> Error
@@ -221,6 +223,11 @@ function fakeCloud() {
           db.recipes = db.recipes.filter((r) => r.book_id !== gone.id);
           db.invites = db.invites.filter((i) => i.book_id !== gone.id);
         }
+      }
+      if (q.table === "book_members") {
+        // agent_membership_gone (010): the row takes the key with it.
+        const gone = new Set(hit.filter((m) => m.role === "agent").map((m) => m.user_id));
+        db.agent_keys = db.agent_keys.filter((k) => !gone.has(k.agent_id));
       }
       data = hit;
     }
@@ -352,7 +359,23 @@ function fakeCloud() {
       db.profiles.push({ user_id: id, display_name: label });
       join(book, id, "agent");
       const key = `rfk_${String(db.agents.length).padStart(43, "k")}`;
-      return { agent_id: id, name: label, key, key_prefix: key.slice(0, 12), created_at: "2026-10-18T00:00:00Z" };
+      const created = "2026-10-18T12:00:00Z";
+      db.agent_keys.push({
+        agent_id: id, book_id: book, name: label, key_prefix: key.slice(0, 12),
+        created_at: created, last_used_at: null,
+      });
+      return { agent_id: id, name: label, key, key_prefix: key.slice(0, 12), created_at: created };
+    },
+    /** list_agents: the owner's, and never the key — only its prefix. */
+    list_agents({ book }) {
+      const target = db.books.find((b) => b.id === book);
+      if (!target || target.owner !== ME) {
+        throw new Error("only the owner of a book may list its agents");
+      }
+      return db.agent_keys
+        .filter((k) => k.book_id === book)
+        .map(({ agent_id, name, key_prefix, created_at, last_used_at }) =>
+          ({ agent_id, name, key_prefix, created_at, last_used_at }));
     },
   };
 
@@ -2323,4 +2346,211 @@ test("J16.7 · removing an agent takes its account with it", async () => {
   );
   assert.equal(h.cloud.rpcCalls("discard_orphan_agent").length, 0,
     "one delete is the whole of it: the database takes the key and the account with the row");
+});
+
+// ---------------------------------------------------------------------
+// J16.13–J16.14 · the Agents section: the list, and connecting a client
+// ---------------------------------------------------------------------
+
+/** The rows drawn in the Agents list, split so each can be read alone. */
+const agentRows = (h) => h.el("agent-list").innerHTML.split("<li").slice(1);
+
+test("J16.13 · the owner can see every agent in the book: name, key prefix, day added, last used", async () => {
+  const h = harness();
+  await h.books.refresh();
+  await addAgent(h, "Meal planner");
+  await addAgent(h, "Pantry bot");
+
+  let rows = agentRows(h);
+  assert.equal(rows.length, 2);
+  assert.match(rows[0], /Meal planner/);
+  assert.match(rows[0], /<code class="invite-code">rfk_kkkkkkkk…<\/code>/,
+    "the start of the key, enough to tell two apart, and never the rest");
+  assert.doesNotMatch(h.el("agent-list").innerHTML, /rfk_k{42}1/, "the key itself is nowhere in the list");
+  assert.match(rows[0], /added 18 Oct 2026/);
+  assert.match(rows[0], /never used/, "one that has not been used says so");
+  assert.equal(h.el("agent-empty").hidden, true);
+
+  h.db.agent_keys[0].last_used_at = new Date(Date.now() - 3 * HOURS - 60000).toISOString();
+  await h.books.refresh();
+  rows = agentRows(h);
+  assert.match(rows[0], /used 3 hours ago/);
+  assert.match(rows[1], /never used/);
+});
+
+test("J16.13 · a book with no agents says so, rather than showing an empty space", async () => {
+  const h = harness();
+  await h.books.refresh();
+
+  assert.equal(agentRows(h).length, 0);
+  assert.equal(h.el("agent-empty").hidden, false);
+});
+
+test("J16.13 · nobody else is shown the section, and nothing is asked for them", async () => {
+  const h = harness();
+  await h.books.refresh();
+  await addAgent(h, "Meal planner");
+  const asked = h.cloud.rpcCalls("list_agents").length;
+
+  await h.books.switchTo(SHARED);
+  await h.books.refresh();
+
+  assert.equal(h.el("agents-section").hidden, true);
+  assert.equal(h.el("agent-list").innerHTML, "", "the owner's list does not linger for a book you only share");
+  assert.equal(h.cloud.rpcCalls("list_agents").length, asked, "and list_agents is not asked about it");
+});
+
+test("J16.13 · a list that could not be loaded says so rather than looking like a book with no agents", async () => {
+  const h = harness();
+  h.cloud.fail("rpc.list_agents");
+  await h.books.refresh();
+
+  assert.match(h.el("agent-list").innerHTML, /Couldn’t load this book’s agents/);
+  assert.equal(h.el("agent-empty").hidden, true, "not 'no agents', which would be a guess");
+});
+
+test("J16.13 · removing one asks first, and says the key stops working straight away and for good", async () => {
+  const h = harness();
+  await h.books.refresh();
+  await addAgent(h, "Meal planner");
+  const agent = h.db.agent_keys[0].agent_id;
+
+  h.setConfirm(false);
+  await h.el("agent-list").fire("click", { target: control({ agentRemove: agent }) });
+  await flush();
+
+  const asked = h.confirms[h.confirms.length - 1];
+  assert.match(asked, /Meal planner/);
+  assert.match(asked, /straight away/);
+  assert.match(asked, /for good/);
+  assert.match(asked, /add a new agent/, "and how to connect again");
+  assert.equal(h.db.agent_keys.length, 1, "a removal that was not confirmed removes nothing");
+
+  h.setConfirm(true);
+  await h.el("agent-list").fire("click", { target: control({ agentRemove: agent }) });
+  await flush();
+
+  assert.equal(h.db.book_members.some((m) => m.user_id === agent), false, "out of the book");
+  assert.equal(h.db.agent_keys.length, 0, "and its key with it");
+  assert.equal(agentRows(h).length, 0, "and out of the list");
+  assert.match(h.lastToast(), /Meal planner can no longer see this book/);
+});
+
+/** Pick a client in the panel the way a person does. */
+function pickClient(h, value) {
+  h.el("agent-client").value = value;
+  h.el("agent-client").fire("change", {});
+  return h.el("agent-config").textContent;
+}
+
+test("J16.14 · the key comes with ready-made settings for each client, built from this page's address and the new key", async () => {
+  const h = harness();
+  await h.books.refresh();
+  await addAgent(h, "Meal planner");
+  const key = h.el("agent-secret").textContent;
+  const url = "https://test.local/mcp";
+
+  assert.equal(
+    h.el("agent-config").textContent,
+    `claude mcp add --transport http recipe-friend ${url} --header "Authorization: Bearer ${key}"`,
+    "Claude Code first, as a command to run"
+  );
+  assert.match(h.el("agent-client-hint").textContent, /terminal/);
+
+  const plain = pickClient(h, "plain");
+  assert.match(plain, new RegExp(`URL\\s+${url}`));
+  assert.match(plain, new RegExp(`Authorization: Bearer ${key}`));
+  assert.match(plain, /curl -s https:\/\/test\.local\/mcp /);
+  assert.match(plain, /"method":"tools\/list"/, "and a check that lists the tools");
+  assert.match(plain, /Accept: application\/json, text\/event-stream/,
+    "with the Accept header Streamable HTTP refuses to answer without");
+});
+
+test("J16.14 · the JSON ones are JSON, with the right address and header", async () => {
+  const h = harness();
+  await h.books.refresh();
+  await addAgent(h, "Meal planner");
+  const key = h.el("agent-secret").textContent;
+
+  const generic = JSON.parse(pickClient(h, "json"));
+  assert.deepEqual(generic, {
+    mcpServers: {
+      "recipe-friend": {
+        type: "http",
+        url: "https://test.local/mcp",
+        headers: { Authorization: `Bearer ${key}` },
+      },
+    },
+  });
+  assert.doesNotMatch(h.el("agent-client-hint").textContent, /Claude Desktop/,
+    "not claimed for a client whose config file has no place for a header");
+
+  const openclaw = JSON.parse(pickClient(h, "openclaw"));
+  assert.deepEqual(openclaw, {
+    url: "https://test.local/mcp",
+    transport: "streamable-http",
+    headers: { Authorization: `Bearer ${key}` },
+  });
+  assert.match(h.el("agent-client-hint").textContent, /mcp\.servers\.recipe-friend/);
+});
+
+test("J16.14 · each setting has its own Copy, and it copies exactly what is shown", async () => {
+  const h = harness();
+  await h.books.refresh();
+  await addAgent(h, "Meal planner");
+  const shown = pickClient(h, "openclaw");
+
+  await h.el("agent-config-copy-btn").fire("click", {});
+  await flush();
+
+  assert.deepEqual(h.clipboard, [shown]);
+  assert.match(h.el("agent-config-copied").textContent, /copied/i);
+  pickClient(h, "json");
+  assert.equal(h.el("agent-config-copied").textContent, "", "a 'Copied' does not outlive what it was about");
+});
+
+test("J16.14 · closing the panel takes the key and every setting made from it off the page", async () => {
+  const h = harness();
+  await h.books.refresh();
+  await addAgent(h, "Meal planner");
+
+  await h.el("agent-done-btn").fire("click", {});
+
+  assert.equal(h.el("agent-out").hidden, true);
+  assert.equal(h.el("agent-secret").textContent, "");
+  assert.equal(h.el("agent-config").textContent, "");
+  assert.equal(h.books.revealed, null, "nor is it kept anywhere else to be drawn again");
+  pickClient(h, "plain");
+  assert.equal(h.el("agent-config").textContent, "", "choosing another client brings nothing back");
+  await h.el("agent-copy-btn").fire("click", {});
+  assert.deepEqual(h.clipboard, [], "and Copy has nothing to copy");
+});
+
+test("J16.14 · closing the dialog, however it closes, takes the key with it", async () => {
+  const h = harness();
+  await openBooks(h);
+  await addAgent(h, "Meal planner");
+  assert.equal(h.el("agent-out").hidden, false);
+
+  h.el("books-dialog").close();
+
+  assert.equal(h.el("agent-out").hidden, true);
+  assert.equal(h.el("agent-secret").textContent, "");
+  assert.equal(h.el("agent-config").textContent, "");
+  assert.equal(h.books.revealed, null);
+});
+
+test("J16.13 · last used is said the way somebody would say it", () => {
+  const h = harness();
+  const { sinceWhen } = h.win.RecipeBooks;
+  const now = Date.parse("2026-10-18T12:00:00Z");
+  const ago = (ms) => new Date(now - ms).toISOString();
+
+  assert.equal(sinceWhen(ago(20000), now), "just now");
+  assert.equal(sinceWhen(ago(60000), now), "1 minute ago");
+  assert.equal(sinceWhen(ago(5 * 60000), now), "5 minutes ago");
+  assert.equal(sinceWhen(ago(HOURS), now), "1 hour ago");
+  assert.equal(sinceWhen(ago(2 * 24 * HOURS), now), "2 days ago");
+  assert.equal(sinceWhen("2026-07-01T12:00:00Z", now), "on 1 Jul 2026");
+  assert.equal(sinceWhen(ago(-60000), now), "just now", "a clock a little ahead is not the future");
 });

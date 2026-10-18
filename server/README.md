@@ -11,7 +11,7 @@ It exists so the database can be tested. The row-level security policies,
 the definer functions and the triggers in `supabase/` are the app's whole
 security model, and until now nothing ran them except the hosted project.
 It is also the stack the homelab runs in production, slimmed of the
-production settings (Google sign-in, Turnstile, real secrets).
+production settings (Google sign-in, real secrets).
 
 ## The versions live here
 
@@ -92,7 +92,7 @@ numbered file.
   without Google. Production turns it off and turns Google on.
 - **Anonymous sign-ins are off here too**, as in production. Agents are
   made by `create_agent` (migration 010) and never sign in through GoTrue,
-  so nothing needs them, and no captcha is configured.
+  so nothing needs them, and there is no captcha.
 - **No gateway key check.** Supabase's gateway refuses a request without
   an `apikey` header; Caddy does not ask. Nothing depends on that check —
   the key is public, PostgREST treats a request with no token as `anon`,

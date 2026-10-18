@@ -973,8 +973,8 @@ not somebody.
    Every member of a book can read its roster, and therefore an agent's
    id; without this, anybody in the household could attach it to a book
    of their own, where its owner could neither see it nor revoke it.
-2. **Only an owner may add one**, from the Sharing list, and it is named
-   when it is added. That name is what the member list shows — an agent
+2. **Only an owner may add one**, from the Agents section of the Books
+   dialog, and it is named when it is added. That name is what the member list shows — an agent
    nobody named is an agent nobody can recognise later. Adding one is a
    single call to the database, checked there against the caller owning
    the book and not being an agent; nothing signs in through the auth
@@ -1058,6 +1058,25 @@ not somebody.
     book answers only the hosted server's own role, never a signed-in
     caller and never the public. The old way of making an agent, an
     anonymous sign-in placed with `add_agent`, is refused for everybody.
+13. **The owner can see every agent in the book**, in the Agents section
+    of the Books dialog: its name, the start of its key (`rfk_` and a few
+    characters, enough to tell two apart), the day it was added, and when
+    it was last used — "never used" for one that has not been. Nobody
+    else is shown the section, and a list that could not be loaded says
+    so rather than looking like a book with no agents. Each has a ×, and
+    removing one asks first and says what is true of no other removal:
+    the key stops working straight away, and for good — connecting again
+    means adding a new agent.
+14. **Connecting a client is a copy and a paste.** Beside the key, shown
+    once (J16.6), are ready-made settings for the clients somebody is
+    likely to use — the Claude Code command, an `mcpServers` JSON entry
+    (Cursor, a project's `.mcp.json`), OpenClaw's server entry, and for
+    anything else the address, the header and a one-line `curl` that
+    lists the tools — each with its own Copy. They are built from the
+    page's own address and the new key, so what is pasted is exactly
+    what this server answers, and the JSON ones are JSON. They exist
+    only while the key does: closing the panel or the dialog takes the
+    key and every setting made from it off the page.
 
 ---
 
@@ -1822,7 +1841,7 @@ Four more, in `db-e2e.test.js`, run the app's own `RecipeApi` through the
 supabase-js it ships, over HTTP, against the whole stack: a recipe and its
 tombstone round-tripping (J9.4), an invite previewed, redeemed and refused
 the second time (J7.4), a photo uploaded and read back through a signed
-URL (J2.8), and an agent made the way the Sharing list makes one, adding a
+URL (J2.8), and an agent made the way the Agents section makes one, adding a
 recipe and refused an edit (J16.3). `db-mcp-http.test.js` does the same for
 the hosted MCP server: no key, a wrong key, a good key listing the twelve
 tools and reading the book, and a revoked key refused within the cache

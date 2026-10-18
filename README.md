@@ -49,8 +49,8 @@ for accounts and sync.
   single-use, expire in 48 hours, can be revoked, say which kind they are
   before anyone accepts, and never join anyone to anything without their
   say-so.
-- **Agents** — let a program read a book. An owner adds one from the
-  Sharing list, names it, and gets a key (`rfk_…`) for whatever assistant
+- **Agents** — let a program read a book. An owner adds one from
+  Books → Agents, names it, and gets a key (`rfk_…`) for whatever assistant
   they run, which reaches the book through the hosted MCP server. It can read the book, add recipes and work on the
   plan; it cannot edit or delete a recipe, favourite one, see the photos,
   finish a plan, or invite anybody — and it has no book of its own and
@@ -171,9 +171,10 @@ One-time setup:
 4. **Agents** need nothing switched on in GoTrue. An owner makes one with
    the `create_agent` function (migration 010), which never signs in
    through GoTrue, so leave GoTrue's **anonymous sign-ins off** and its
-   CAPTCHA unset. The hosted MCP server (`mcp/http.js`, the `mcp` service
-   in `server/compose.yaml`) needs the stack's JWT secret and a `/mcp`
-   route; see [The MCP server](#the-mcp-server).
+   captcha unset; the app has no captcha. The hosted MCP server
+   (`mcp/http.js`, the `mcp` service in `server/compose.yaml`) needs the
+   stack's JWT secret and a `/mcp` route; see
+   [The MCP server](#the-mcp-server).
 
 ### Recipe books and sync
 
@@ -241,7 +242,7 @@ js/ask.js                      The confirm dialog, asked before anything undoabl
 js/account.js                  Google sign-in, session, sync bootstrap
 js/sync.js                     Reconciling the local box with the book
 js/books.js                    Recipe books, members, and invite links
-js/config.js                   Project URL, anon key and Turnstile site key
+js/config.js                   Project URL and anon key
 server/                        Local stack and migration runner for development and CI
 supabase/schema.sql            Tables, RLS policies, triggers, functions
 supabase/migrations/           Additive schema changes, run in order
@@ -334,22 +335,20 @@ it, and one repository finds that out in the same test run.
 [`docs/journeys.md`](docs/journeys.md), with J16 beside it for what an
 agent is allowed to do.
 
-**Add an agent first** — Books → Sharing → Agents — and keep the key
-(`rfk_…`) it shows you; it is shown once. Then give your assistant the URL
-and the key as a bearer token, however it takes remote MCP servers:
+### Connecting an assistant
 
-```json
-{
-  "recipe-friend": {
-    "url": "https://recipes.dave-ernsting.com/mcp",
-    "transport": "streamable-http",
-    "headers": { "Authorization": "Bearer rfk_..." }
-  }
-}
-```
+Open **Books → Agents** on a book you own, name the agent, and press
+**Add an agent**. The key (`rfk_…`) is shown once, with ready-to-paste
+settings for Claude Code, `mcpServers` JSON (Cursor, a project's
+`.mcp.json`), OpenClaw, and a plain URL + header with a `curl` check —
+pick the client, press Copy. Closing the panel discards the key; if it is
+lost, remove the agent there and add another. The same list shows each
+agent's key prefix, when it was added and when it was last used, and
+removes one with ×, which revokes its key at once.
 
-Claude Code: `claude mcp add --transport http recipe-friend
-https://recipes.dave-ernsting.com/mcp --header "Authorization: Bearer rfk_..."`.
+For reference, the Claude Code form is `claude mcp add --transport http
+recipe-friend https://recipes.dave-ernsting.com/mcp --header
+"Authorization: Bearer rfk_..."`.
 
 **One key, one book.** The key belongs to the book it was made for, so a
 household with two books makes two agents. Removing the agent revokes the
