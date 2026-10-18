@@ -89,10 +89,10 @@ numbered file.
 ## What differs from the hosted project
 
 - **Email sign-up is on** and confirms itself, so tests can make a person
-  without Google. Production turns it off and turns Google on. It matters
-  that it is off there: with it on, an agent could add an email address
-  to its anonymous account and stop being anonymous, which is what the
-  agent rules ask.
+  without Google. Production turns it off and turns Google on. With it on,
+  an agent can add an email address to its anonymous account; migration
+  009 is why that no longer frees it from the agent rules, and production
+  keeps it off anyway.
 - **Anonymous sign-ins are limited to 1000 an hour**, not 30, because
   every test run makes agents.
 - **No gateway key check.** Supabase's gateway refuses a request without

@@ -258,45 +258,107 @@ db("J16.8 · an agent's role cannot be changed, to it or from it", async (s) => 
   assert.equal((await s.one("select role from book_members where user_id = $1", [agent.id])).role, "agent");
 });
 
-// A known gap, recorded as a failing test rather than fixed in passing.
+// An agent whose account stops being anonymous is still an agent (009).
 //
-// Every agent rule that is about *the account* rather than the membership
-// row asks whether the account is anonymous: the guard on creating a book
-// reads the token's is_anonymous claim, and redeem_invite reads
-// auth.users.is_anonymous. GoTrue lets an anonymous user become a
-// permanent one — by adding an email address, where email sign-in is on,
-// or by linking an identity, where manual linking is on. Proved against
-// the development stack, which has email on: the agent's own credential
-// is enough, and the next token says is_anonymous: false. From then on
-// the credential can make itself a book and redeem an invite link, which
-// is J16.1 and J7.5 undone. Its membership row still says 'agent', so the
-// book it was placed in stays as narrow as it was.
-//
-// Production is safe while email sign-in and manual identity linking stay
-// off: the README's setup turns email off, and manual linking is off
-// unless somebody switches it on. The schema should not have to lean on
-// that: "is this user an agent" is also "do they hold an agent membership
-// row", which conversion does not change.
-test(
-  "J16.1 · an agent has no book of its own and cannot make one, even once its account stops being anonymous",
-  { skip, todo: "the SQL asks is_anonymous, which GoTrue lets an anonymous account change; see the comment above" },
-  () =>
-    inTransaction(async (s) => {
-      const ann = await s.person("Ann");
-      const bob = await s.person("Bob");
-      const code = await s.invite(bob.book, bob);
-      const agent = await s.agentIn(ann.book);
-      // What converting the account does, and what its next token carries.
-      await s.q("update auth.users set is_anonymous = false, email = $2 where id = $1", [
-        agent.id,
-        `${agent.id}@example.test`,
-      ]);
-      const converted = { ...agent, anonymous: false };
+// GoTrue lets an anonymous user become a permanent one — by adding an
+// email address where email sign-in is on, or linking an identity where
+// manual linking is on — and the agent's own credential is enough to do
+// it. 008 decided who was an agent by asking about anonymity, so a
+// converted agent could make itself a book, redeem an invite link, and
+// outlive its own removal. 009 asks whether the account was ever placed
+// as an agent instead. `convert` does to the row what GoTrue does, and
+// the token that follows says is_anonymous: false.
 
-      await s.as(converted);
-      const made = await s.attempt("insert into books (name, owner) values ('Mine', $1)", [agent.id]);
-      assert.ok(made.error, "a converted agent made itself a book");
-      const joined = await s.attempt("select * from redeem_invite($1)", [code]);
-      assert.ok(joined.error, "a converted agent redeemed an invite");
-    })
-);
+async function placedAgent(s, owner, name) {
+  const agent = await s.anonymous(name);
+  await s.as(owner);
+  const placed = await addAgent(s, owner.book, agent);
+  assert.equal(placed.error, null);
+  return agent;
+}
+
+async function convert(s, agent) {
+  await s.asAdmin();
+  await s.q("update auth.users set is_anonymous = false, email = $2 where id = $1", [
+    agent.id,
+    `${agent.id}@example.test`,
+  ]);
+  return { ...agent, anonymous: false };
+}
+
+db("J16.1 · an agent has no book of its own and cannot make one, even once its account stops being anonymous", async (s) => {
+  const ann = await s.person("Ann");
+  const agent = await convert(s, await placedAgent(s, ann));
+
+  await s.as(agent);
+  const made = await s.attempt("insert into books (name, owner) values ('Mine', $1)", [agent.id]);
+  assert.equal(made.error && made.error.code, "42501");
+  // In the book it was placed in, it is exactly as narrow as before.
+  assert.equal((await s.q("select id from books")).rowCount, 1);
+  assert.equal((await s.q("update books set name = 'Taken' where id = $1", [ann.book])).rowCount, 0);
+
+  // A person's token says the same thing, and they still get their book.
+  await s.as(ann);
+  assert.equal((await s.attempt("insert into books (name, owner) values ('More', $1)", [ann.id])).error, null);
+});
+
+db("J7.5 · an invite is still something only a person can accept, an agent that stopped being anonymous included", async (s) => {
+  const ann = await s.person("Ann");
+  const bob = await s.person("Bob");
+  const code = await s.invite(bob.book, bob);
+  const agent = await convert(s, await placedAgent(s, ann));
+
+  await s.as(agent);
+  const joined = await s.attempt("select * from redeem_invite($1)", [code]);
+  assert.match(String(joined.error), /sign in first/);
+  await s.asAdmin();
+  assert.equal((await s.one("select used_count from invites where code = $1", [code])).used_count, 0);
+
+  // Ann, a person, redeems the same link.
+  await s.as(ann);
+  assert.equal((await s.attempt("select * from redeem_invite($1)", [code])).error, null);
+});
+
+db("J16.7 · removing an agent is immediate and entire, even once its account stops being anonymous", async (s) => {
+  const ann = await s.person("Ann");
+  const bob = await s.person("Bob");
+  const agent = await convert(s, await placedAgent(s, ann));
+  const exists = async (user) => {
+    await s.asAdmin();
+    return (await s.one("select count(*)::int as n from auth.users where id = $1", [user.id])).n;
+  };
+
+  await s.as(ann);
+  await s.q("delete from book_members where book_id = $1 and user_id = $2", [ann.book, agent.id]);
+  await s.q("select discard_orphan_agent($1)", [agent.id]);
+  assert.equal(await exists(agent), 0, "the converted agent's account outlived its removal");
+
+  // A person in no book is still never discarded, whoever asks.
+  await s.as(ann);
+  await s.q("delete from book_members where user_id = $1", [ann.id]);
+  await s.as(bob);
+  await s.q("select discard_orphan_agent($1)", [ann.id]);
+  assert.equal(await exists(ann), 1);
+});
+
+db("J16.1 · an agent belongs to one book for life, removed or converted", async (s) => {
+  const ann = await s.person("Ann");
+  const bob = await s.person("Bob");
+  const agent = await placedAgent(s, ann);
+
+  // Ann takes it out of her book but its account is left behind — a
+  // discard that failed. Bob read its id off the roster while it was there.
+  await s.as(ann);
+  await s.q("delete from book_members where book_id = $1 and user_id = $2", [ann.book, agent.id]);
+  await s.as(bob);
+  assert.match(String((await addAgent(s, bob.book, agent)).error), /already belongs to a book/);
+  // Converted, it is refused as not anonymous — never accepted as a person.
+  const converted = await convert(s, agent);
+  await s.as(bob);
+  assert.ok((await addAgent(s, bob.book, converted)).error);
+
+  // A fresh agent of Bob's own goes in.
+  const own = await s.anonymous();
+  await s.as(bob);
+  assert.equal((await addAgent(s, bob.book, own)).error, null);
+});

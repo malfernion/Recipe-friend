@@ -1855,7 +1855,8 @@ those count rows and read the row back. What they hold:
   (J16.1), placed only by the owner (J16.2), reading, adding and planning
   and nothing else (J16.3), never finishing or undoing a plan (J16.4),
   clearing one (J16.5), gone when removed (J16.7), and a role that cannot
-  be changed to or from (J16.8);
+  be changed to or from (J16.8) — all of it still true of an agent whose
+  account has been turned into a permanent one (below);
 - the Storage rules: members read a book's photos and strangers do not
   (J2.8), viewers cannot add or remove one (J7.17), and an agent gets none
   (J16.10).
@@ -1873,7 +1874,9 @@ The tests were themselves checked by breaking what they hold: dropping
 two of the immutability triggers, taking the agent clause out of the
 third, loosening the photo rule, the live-plan insert policy, the
 plans insert policy and the guard on creating a book, and taking the
-checks out of `redeem_invite`. Each turned the tests that name it red.
+checks out of `redeem_invite`; and for migration 009, answering "no"
+from `is_agent_user` and putting `add_agent` and `discard_orphan_agent`
+back to 008's rules. Each turned the tests that name it red.
 That was done once, by hand, and is not repeated in CI.
 
 What the database tests do not reach:
@@ -1881,12 +1884,17 @@ What the database tests do not reach:
 - **The two quotas** — 2000 recipes and 2000 recorded plans a book — are
   triggers no test fills.
 - **The sign-in settings** are GoTrue's configuration, not the schema, and
-  are not tested: that email sign-in is off, that Google is the only way in, that
-  anonymous sign-ins need a challenge, and that an anonymous account cannot
-  be turned into a permanent one. The agent rules lean on that last one —
-  an agent that could add an email address would stop being anonymous, and
-  `redeem_invite` and the guard on creating a book both ask exactly that —
-  so it is a setting to keep, not merely a default. On the development
-  stack, which has email on, an agent's own credential was enough to do
-  it. The test that would hold J16.1 against it is in `db-agents.test.js`,
-  marked todo, until the schema asks about the membership row instead.
+  are not tested: that email sign-in is off, that Google is the only way
+  in, and that anonymous sign-ins need a challenge.
+
+  The agent rules used to lean on one more: that an anonymous account
+  cannot be turned into a permanent one. GoTrue allows it wherever email
+  sign-in or manual identity linking is on, and on the development stack,
+  which has email on, an agent's own credential was enough. 008 asked
+  "is this account anonymous" to decide who was an agent, so a converted
+  agent could make itself a book, redeem an invite link, and outlive its
+  own removal. The tests found it; migration 009 closed it by asking
+  instead whether the account was ever placed as an agent, which
+  `add_agent` records and conversion cannot change. The tests for it act
+  on a converted account directly. Production keeps those settings off
+  regardless.
