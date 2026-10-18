@@ -34,10 +34,16 @@ async function household() {
   const owner = randomUUID();
   people.push(owner);
   await pool.query(
+    // Committed, so GoTrue reads it too (db-e2e lists users): its text
+    // columns are '' as GoTrue writes them, because a NULL 500s the list.
     `insert into auth.users (id, instance_id, aud, role, email, raw_user_meta_data, raw_app_meta_data,
-                             is_anonymous, created_at, updated_at)
+                             is_anonymous, created_at, updated_at, encrypted_password,
+                             confirmation_token, recovery_token, email_change_token_new, email_change,
+                             email_change_token_current, phone_change, phone_change_token,
+                             reauthentication_token)
      values ($1, '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated',
-             $2, '{"name":"Ann"}', '{"provider":"google","providers":["google"]}', false, now(), now())`,
+             $2, '{"name":"Ann"}', '{"provider":"google","providers":["google"]}', false, now(), now(), '',
+             '', '', '', '', '', '', '', '')`,
     [owner, `${owner}@example.test`]
   );
   const { rows } = await pool.query("select id from books where owner = $1", [owner]);
