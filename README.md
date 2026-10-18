@@ -289,7 +289,9 @@ supabase/migrations/           Additive schema changes, run in order
                                 plan a book keeps and the plans it has
                                 finished; 008 adds the agent role, and
                                 the checks that keep an agent to reading,
-                                adding and planning)
+                                adding and planning; 009 identifies an
+                                agent by having been placed, not by its
+                                account being anonymous)
 docs/journeys.md               What the app is meant to do, as criteria
 mcp/                           The MCP server: an agent's credential,
                                the book it opens with it, and the tools
@@ -298,8 +300,6 @@ package.json                   The server's dependencies and its `bin`.
                                The site itself still has none and still
                                has no build step
 test/                          Tests, named for the criteria they check
-.github/workflows/deploy-pages.yml   GitHub Pages deployment (removed at cutover)
-.github/workflows/supabase-keepalive.yml  Daily ping for hosted Supabase (removed at cutover)
 .github/workflows/test.yml           Tests on every pull request
 .claude/skills/recipe-share-link/     Agent skill: recipe -> share link
 ```
