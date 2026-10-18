@@ -140,7 +140,11 @@ class Session {
     return { id, name, book: book && book.id, anonymous: false };
   }
 
-  /** An agent's identity: an anonymous user, placed in no book yet. */
+  /**
+   * An anonymous GoTrue user, placed in no book: what anonymous sign-in
+   * made, back when agents were made that way. Kept for the guards that
+   * still have to refuse one.
+   */
   async anonymous(name = "Kitchen helper") {
     await this.asAdmin();
     const id = randomUUID();
@@ -155,15 +159,25 @@ class Session {
     return { id, name, anonymous: true };
   }
 
-  /** An agent already placed in `book`, the way add_agent leaves one. */
-  async agentIn(book, name) {
-    const agent = await this.anonymous(name);
+  /**
+   * An agent in `book`, made the way the app makes one: its owner calls
+   * create_agent (migration 010). Comes back with its key, which is the
+   * only time the key exists in plain text.
+   */
+  async agentIn(book, name = "Kitchen helper") {
     await this.asAdmin();
-    await this.q("insert into public.book_members (book_id, user_id, role) values ($1, $2, 'agent')", [
-      book,
-      agent.id,
-    ]);
-    return agent;
+    const { owner } = await this.one("select owner from public.books where id = $1", [book]);
+    await this.as({ id: owner, anonymous: false });
+    const { made } = await this.one("select public.create_agent($1, $2) as made", [book, name]);
+    await this.asAdmin();
+    return { id: made.agent_id, name, key: made.key, keyPrefix: made.key_prefix, anonymous: true };
+  }
+
+  /** Act as the hosted MCP server does when it resolves a key. */
+  async asMcp() {
+    await this.asAdmin();
+    await this.q("select set_config('request.jwt.claims', $1, true)", [JSON.stringify({ role: "recipe_friend_mcp" })]);
+    await this.q("set local role recipe_friend_mcp");
   }
 
   /** Put `user` in `book` with `role`, as a redeemed invite would. */
@@ -224,6 +238,10 @@ function stackConfig() {
     url: process.env.STACK_URL || `http://127.0.0.1:${env.HTTP_PORT || 8080}`,
     anonKey: env.ANON_KEY,
     serviceKey: env.SERVICE_ROLE_KEY,
+    // Only for the tests that act as the hosted MCP server would.
+    jwtSecret: env.JWT_SECRET,
+    // How long the mcp service believes a resolved key (server/compose.yaml).
+    mcpCacheSeconds: env.MCP_KEY_CACHE_SECONDS,
   };
 }
 

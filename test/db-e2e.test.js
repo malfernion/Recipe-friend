@@ -19,6 +19,7 @@ const assert = require("node:assert/strict");
 const { randomUUID } = require("node:crypto");
 const { loadApp, aRecipe } = require("./helpers/load.js");
 const { skip, stackConfig, vendoredSupabase, closePool } = require("./helpers/db.js");
+const { agentToken } = require("../mcp/auth.js");
 
 const e2e = (name, fn) => test(name, { skip }, fn);
 
@@ -143,24 +144,30 @@ e2e("J16.3 · an agent may add a recipe, and may not edit one or see the photos"
   await ann.api.pushRecipes([{ id: soup, book_id: ann.book, data: aRecipe({ name: "Soup" }), updated_at: new Date().toISOString() }]);
   const path = await ann.api.uploadPhoto(ann.book, soup, new Blob([Buffer.from([0xff, 0xd8])], { type: "image/jpeg" }));
 
-  // Made the way the Sharing list makes one: an anonymous sign-in in a scratch client, then add_agent.
-  const agent = await ann.api.createAgent(ann.book, "Kitchen helper", () => client(cfg.anonKey), {
-    url: cfg.url,
-    key: cfg.anonKey,
-  });
-  made.push(agent.userId);
+  // Made the way the Sharing list makes one: one create_agent call, which
+  // hands back the key once.
+  const agent = await ann.api.createAgent(ann.book, "Kitchen helper");
+  assert.match(agent.key, /^rfk_/);
   const members = await ann.api.listMembers(ann.book);
   assert.deepEqual(
     members.filter((m) => m.role === "agent").map((m) => m.name),
     ["Kitchen helper"]
   );
+  assert.deepEqual(
+    (await ann.api.listAgents(ann.book)).map((a) => [a.name, a.keyPrefix]),
+    [["Kitchen helper", agent.key.slice(0, 12)]]
+  );
+  // GoTrue can still read every user, the agent's principal included: a
+  // NULL where it expects a string would 500 the whole list.
+  const listed = await admin.auth.admin.listUsers({ page: 1, perPage: 50 });
+  if (listed.error) throw listed.error;
+  const one = await admin.auth.admin.getUserById(agent.userId);
+  if (one.error) throw one.error;
+  assert.equal(one.data.user.is_anonymous, true);
 
-  // The agent, holding the refresh token its credential carries.
-  const json = Buffer.from(agent.credential.slice("rfa1.".length), "base64url").toString("utf8");
-  const { refresh_token } = JSON.parse(json);
-  const c = client(cfg.anonKey);
-  const session = await c.auth.refreshSession({ refresh_token });
-  if (session.error) throw session.error;
+  // The agent, holding the token the hosted MCP server would mint for it.
+  const token = agentToken({ agentId: agent.userId, bookId: ann.book }, cfg.jwtSecret);
+  const c = supabase.createClient(cfg.url, cfg.anonKey, { accessToken: async () => token });
   const api = new (loadApp("api.js").RecipeApi)(c);
   api.userId = agent.userId;
 

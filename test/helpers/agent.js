@@ -74,7 +74,7 @@ async function agentBook({ recipes = [], archive = () => [], role = "agent" } = 
     },
   };
 
-  const session = { credential: { book: BOOK }, open: async () => ({ client: {}, userId: "agent-1" }) };
+  const session = { bookId: BOOK, open: async () => ({ client: {}, userId: "agent-1" }) };
   const book = await openBook(session, { api });
   // Opening is the credential and the membership row; the contents
   // arrive on the first tool call, which the server makes happen for

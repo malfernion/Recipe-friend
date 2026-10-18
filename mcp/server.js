@@ -2,16 +2,15 @@
  * mcp/server.js — the tools, met by the protocol.
  *
  * Everything interesting is in the modules beside this one; this is the
- * adapter. It is separate from `index.js` so that a test can drive the
+ * adapter. It is separate from `http.js` so that a test can drive the
  * whole surface — list the tools, call one, watch a failure become an
- * answer — without a subprocess and without stdio.
+ * answer — without a network.
  *
- * **The book is opened on the first call, not at startup**, and pulled
- * before every call after it. A host may spawn this speculatively, and a
- * server that spends a token exchange per spawn is one somebody turns
- * off. It is also where a dead credential should be reported: a failure
- * at boot happens where nobody is looking, and one in a tool result is
- * something the model can read out to the person who can fix it.
+ * **The book is opened on the first tool call, not on initialize**, and
+ * pulled before every call after it. `initialize` and `tools/list` are
+ * asked at the start of every conversation and need no book, and a
+ * failure in a tool result is something the model can read out to the
+ * person who can fix it.
  */
 "use strict";
 
@@ -37,7 +36,7 @@ function answer(value) {
 
 /**
  * `openBook` is a seam for the tests, which hand over a book already
- * standing rather than a credential and a network.
+ * standing rather than a session and a network.
  */
 function makeServer({ session, version = "0.0.0", openBook = require("./book.js").openBook }) {
   const server = new Server(
@@ -52,8 +51,8 @@ function makeServer({ session, version = "0.0.0", openBook = require("./book.js"
   function book() {
     if (!opening) {
       opening = openBook(session).catch((err) => {
-        // Not cached: a credential that is fine and a network that was
-        // not should not leave the server dead for the rest of its life.
+        // Not cached: a key that is fine and a network that was not
+        // should not leave the server dead for the rest of the request.
         opening = null;
         throw err;
       });
@@ -83,15 +82,15 @@ function makeServer({ session, version = "0.0.0", openBook = require("./book.js"
     let opened;
     try {
       opened = await book();
-      // Every tool call, read or write. A stdio server outlives the
-      // question it was started for, and the household goes on cooking:
+      // Every tool call, read or write. A request can carry a batch, and
+      // the household goes on cooking:
       // answering a question about the plan from a snapshot taken an
       // hour ago is the same wrong shopping list as computing it with
       // the wrong code (J17.9). Concurrent calls queue on one sync
       // rather than racing, which `Book.refresh` arranges.
       await opened.refresh();
     } catch (err) {
-      // The credential, the membership, or the network — all three are
+      // The membership or the network — both are
       // written to be read by somebody who can act on them.
       return refuse(err.message);
     }

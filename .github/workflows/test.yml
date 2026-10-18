@@ -59,6 +59,8 @@ jobs:
         run: npm ci
 
       # The development values, which are fakes and committed as such.
+      # `up` builds the mcp service from this checkout (mcp/Dockerfile),
+      # so db-mcp-http.test.js runs against the code under review.
       - name: Start the stack
         run: |
           cp server/.env.example server/.env

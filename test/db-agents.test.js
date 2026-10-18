@@ -1,10 +1,10 @@
 /**
  * J16 · Letting a program help — held by the database.
  *
- * An agent is an anonymous user with a membership row whose role is
- * 'agent' (migration 008). Everything it may and may not do is a policy,
- * a function or a trigger, and these are the checks 008 asked a reviewer
- * to make by hand. See db-people.test.js for how they run.
+ * An agent is a principal with a membership row whose role is 'agent'
+ * (migration 008), made by its owner with create_agent (010). Everything
+ * it may and may not do is a policy, a function or a trigger. Its key is
+ * db-agent-keys.test.js. See db-people.test.js for how these run.
  */
 "use strict";
 
@@ -16,77 +16,102 @@ const { skip, inTransaction, closePool } = require("./helpers/db.js");
 const db = (name, fn) => test(name, { skip }, () => inTransaction(fn));
 after(closePool);
 
-const addAgent = (s, book, agent) => s.attempt("select add_agent($1, $2)", [book, agent.id]);
+const createAgent = (s, book, name = "Helper") => s.attempt("select create_agent($1, $2) as made", [book, name]);
 
 db("J16.1 · an agent has no book of its own and cannot make one", async (s) => {
-  const agent = await s.anonymous("Kitchen helper");
+  const ann = await s.person("Ann");
+  const agent = await s.agentIn(ann.book, "Kitchen helper");
 
   // The new-user trigger gives it a profile, where its name lives, and no book.
   const profile = await s.one("select display_name from profiles where user_id = $1", [agent.id]);
   assert.equal(profile.display_name, "Kitchen helper");
   assert.equal((await s.q("select 1 from books where owner = $1", [agent.id])).rowCount, 0);
-  assert.equal((await s.q("select 1 from book_members where user_id = $1", [agent.id])).rowCount, 0);
+  assert.deepEqual((await s.q("select book_id, role from book_members where user_id = $1", [agent.id])).rows, [
+    { book_id: ann.book, role: "agent" },
+  ]);
+  // No email, no phone, no password: nothing anybody could sign in as.
+  const row = await s.one("select email, phone, encrypted_password, is_anonymous from auth.users where id = $1", [agent.id]);
+  assert.deepEqual(row, { email: null, phone: null, encrypted_password: "", is_anonymous: true });
 
   // Creating one is refused outright.
   await s.as(agent);
   const made = await s.attempt("insert into books (name, owner) values ('Mine', $1)", [agent.id]);
   assert.equal(made.error && made.error.code, "42501");
 
-  // The same insert from a person goes through: the guard reads the token, not auth.users.
-  const ann = await s.person("Ann");
+  // The same insert from a person goes through.
   await s.as(ann);
   assert.equal((await s.attempt("insert into books (name, owner) values ('More', $1)", [ann.id])).error, null);
 });
 
-db("J16.1 · an agent is a member, not an account: a person cannot be placed as one", async (s) => {
+db("J16.1 · an anonymous account nobody placed gets no book either", async (s) => {
+  const loose = await s.anonymous();
+  await s.as(loose);
+  const made = await s.attempt("insert into books (name, owner) values ('Mine', $1)", [loose.id]);
+  assert.equal(made.error && made.error.code, "42501");
+});
+
+db("J16.12 · the old way in is closed: add_agent places nobody, for anybody", async (s) => {
   const ann = await s.person("Ann");
-  const bob = await s.person("Bob");
-  const agent = await s.anonymous();
+  const loose = await s.anonymous();
 
   await s.as(ann);
-  const conscripted = await addAgent(s, ann.book, bob);
-  assert.match(String(conscripted.error), /not a person's account/);
-  assert.equal((await addAgent(s, ann.book, agent)).error, null);
-
+  const placed = await s.attempt("select add_agent($1, $2)", [ann.book, loose.id]);
+  assert.match(String(placed.error), /permission denied/);
+  // Not even as postgres, which the grant does not stop.
   await s.asAdmin();
-  const rows = (await s.q("select user_id, role from book_members where book_id = $1 order by role", [ann.book])).rows;
-  assert.deepEqual(rows.map((r) => [r.user_id, r.role]), [
-    [agent.id, "agent"],
-    [ann.id, "owner"],
-  ]);
+  const forced = await s.attempt("select add_agent($1, $2)", [ann.book, loose.id]);
+  assert.match(String(forced.error), /create_agent now/);
+  assert.equal((await s.q("select 1 from book_members where user_id = $1", [loose.id])).rowCount, 0);
 });
 
 db("J16.1 · an agent belongs to one book and cannot be added to a second", async (s) => {
   const ann = await s.person("Ann");
   const bob = await s.person("Bob");
   await s.member(ann.book, bob, "editor");
-  const agent = await s.anonymous();
-
-  await s.as(ann);
-  assert.equal((await addAgent(s, ann.book, agent)).error, null);
-  // A retried create is a quiet no-op.
-  assert.equal((await addAgent(s, ann.book, agent)).error, null);
+  const agent = await s.agentIn(ann.book);
 
   // Bob read the agent's id off the roster, and owns a book of his own.
+  // create_agent takes no id, so the only way to try is a row of his own.
   await s.as(bob);
-  const stolen = await addAgent(s, bob.book, agent);
-  assert.match(String(stolen.error), /already belongs to a book/);
+  const stolen = await s.attempt("insert into book_members (book_id, user_id, role) values ($1, $2, 'agent')", [
+    bob.book,
+    agent.id,
+  ]);
+  assert.ok(stolen.error, "an agent was attached to a second book");
 
   await s.asAdmin();
   assert.equal((await s.q("select 1 from book_members where user_id = $1", [agent.id])).rowCount, 1);
 });
 
-db("J16.2 · only an owner may add one", async (s) => {
+db("J16.2 · only an owner may add one, and it is named", async (s) => {
   const ann = await s.person("Ann");
   const ed = await s.person("Ed");
+  const vi = await s.person("Vi");
   await s.member(ann.book, ed, "editor");
+  await s.member(ann.book, vi, "viewer");
+  const agent = await s.agentIn(ann.book);
 
-  await s.as(ed);
-  const agent = await s.anonymous();
-  await s.as(ed);
-  assert.match(String((await addAgent(s, ann.book, agent)).error), /only the owner/);
+  for (const who of [ed, vi]) {
+    await s.as(who);
+    assert.match(String((await createAgent(s, ann.book)).error), /only the owner/);
+  }
+  await s.as(agent);
+  assert.match(String((await createAgent(s, ann.book)).error), /an agent cannot add an agent/);
+  await s.asAnon();
+  assert.match(String((await createAgent(s, ann.book)).error), /permission denied/);
+
   await s.as(ann);
-  assert.equal((await addAgent(s, ann.book, agent)).error, null);
+  assert.match(String((await createAgent(s, ann.book, "   ")).error), /needs a name/);
+  const made = await createAgent(s, ann.book, "  Meal planner  ");
+  assert.equal(made.error, null);
+  assert.equal(made.rows[0].made.name, "Meal planner");
+
+  await s.asAdmin();
+  const names = (await s.q(
+    "select p.display_name from book_members m join profiles p using (user_id) where m.book_id = $1 and m.role = 'agent' order by 1",
+    [ann.book]
+  )).rows.map((r) => r.display_name);
+  assert.deepEqual(names, ["Kitchen helper", "Meal planner"]);
 });
 
 db("J16.3 · an agent may read the book, add recipes, and work on the plan — and no more", async (s) => {
@@ -199,29 +224,60 @@ db("J16.7 · removing an agent is immediate and entire", async (s) => {
   const bob = await s.person("Bob");
   await s.recipe(ann.book);
   const agent = await s.agentIn(ann.book);
-  const accounts = async () => {
+  const left = async () => {
     await s.asAdmin();
-    return (await s.one("select count(*)::int as n from auth.users where id = $1", [agent.id])).n;
+    return (await s.one(
+      `select (select count(*) from auth.users where id = $1)::int as account,
+              (select count(*) from agent_keys where agent_id = $1)::int as key,
+              (select count(*) from agent_accounts where user_id = $1)::int as record`,
+      [agent.id]
+    ));
   };
+  assert.deepEqual(await left(), { account: 1, key: 1, record: 1 });
 
   // While it is in a book, nobody can discard its account — not even its owner.
   await s.as(ann);
   await s.q("select discard_orphan_agent($1)", [agent.id]);
-  assert.equal(await accounts(), 1);
+  assert.equal((await left()).account, 1);
 
+  // The × is one delete, and the key and the account go with the row.
   await s.as(ann);
   assert.equal((await s.q("delete from book_members where book_id = $1 and user_id = $2", [ann.book, agent.id])).rowCount, 1);
+  assert.deepEqual(await left(), { account: 0, key: 0, record: 0 });
+  await s.asMcp();
+  assert.equal((await s.one("select resolve_agent_key($1) as r", [agent.key])).r, null, "its key resolves to nobody");
+
+  // A token minted a moment before still names it, and reaches nothing.
   await s.as(agent);
   assert.equal((await s.q("select 1 from recipes")).rowCount, 0, "removed, it reads nothing");
   const write = await s.attempt("insert into recipes (id, book_id, data) values ($1, $2, '{}')", [randomUUID(), ann.book]);
-  assert.equal(write.error && write.error.code, "42501");
+  assert.ok(write.error);
 
-  // Out of every book, it goes. A person never does, whoever asks.
+  // A person in no book is never discarded, whoever asks.
+  await s.as(bob);
+  await s.q("delete from book_members where user_id = $1", [bob.id]);
   await s.as(ann);
   await s.q("select discard_orphan_agent($1)", [bob.id]);
-  await s.q("select discard_orphan_agent($1)", [agent.id]);
-  assert.equal(await accounts(), 0);
+  await s.asAdmin();
   assert.equal((await s.one("select count(*)::int as n from auth.users where id = $1", [bob.id])).n, 1);
+});
+
+db("J16.7 · deleting the book takes its agents and their keys with it", async (s) => {
+  const ann = await s.person("Ann");
+  await s.as(ann);
+  const baking = (await s.one("insert into books (name, owner) values ('Baking', $1) returning id", [ann.id])).id;
+  await s.q("insert into book_members (book_id, user_id, role) values ($1, $2, 'owner')", [baking, ann.id]);
+  const agent = await s.agentIn(baking);
+  const other = await s.agentIn(ann.book);
+
+  await s.as(ann);
+  assert.equal((await s.q("delete from books where id = $1", [baking])).rowCount, 1);
+
+  await s.asAdmin();
+  assert.equal((await s.one("select count(*)::int as n from auth.users where id = $1", [agent.id])).n, 0);
+  assert.equal((await s.one("select count(*)::int as n from agent_keys where agent_id = $1", [agent.id])).n, 0);
+  assert.equal((await s.one("select count(*)::int as n from agent_keys where agent_id = $1", [other.id])).n, 1,
+    "an agent of another book is untouched");
 });
 
 db("J16.8 · an agent's role cannot be changed, to it or from it", async (s) => {
@@ -270,11 +326,7 @@ db("J16.8 · an agent's role cannot be changed, to it or from it", async (s) => 
 // the token that follows says is_anonymous: false.
 
 async function placedAgent(s, owner, name) {
-  const agent = await s.anonymous(name);
-  await s.as(owner);
-  const placed = await addAgent(s, owner.book, agent);
-  assert.equal(placed.error, null);
-  return agent;
+  return s.agentIn(owner.book, name);
 }
 
 async function convert(s, agent) {
@@ -321,44 +373,11 @@ db("J7.5 · an invite is still something only a person can accept, an agent that
 
 db("J16.7 · removing an agent is immediate and entire, even once its account stops being anonymous", async (s) => {
   const ann = await s.person("Ann");
-  const bob = await s.person("Bob");
   const agent = await convert(s, await placedAgent(s, ann));
-  const exists = async (user) => {
-    await s.asAdmin();
-    return (await s.one("select count(*)::int as n from auth.users where id = $1", [user.id])).n;
-  };
 
   await s.as(ann);
   await s.q("delete from book_members where book_id = $1 and user_id = $2", [ann.book, agent.id]);
-  await s.q("select discard_orphan_agent($1)", [agent.id]);
-  assert.equal(await exists(agent), 0, "the converted agent's account outlived its removal");
-
-  // A person in no book is still never discarded, whoever asks.
-  await s.as(ann);
-  await s.q("delete from book_members where user_id = $1", [ann.id]);
-  await s.as(bob);
-  await s.q("select discard_orphan_agent($1)", [ann.id]);
-  assert.equal(await exists(ann), 1);
-});
-
-db("J16.1 · an agent belongs to one book for life, removed or converted", async (s) => {
-  const ann = await s.person("Ann");
-  const bob = await s.person("Bob");
-  const agent = await placedAgent(s, ann);
-
-  // Ann takes it out of her book but its account is left behind — a
-  // discard that failed. Bob read its id off the roster while it was there.
-  await s.as(ann);
-  await s.q("delete from book_members where book_id = $1 and user_id = $2", [ann.book, agent.id]);
-  await s.as(bob);
-  assert.match(String((await addAgent(s, bob.book, agent)).error), /already belongs to a book/);
-  // Converted, it is refused as not anonymous — never accepted as a person.
-  const converted = await convert(s, agent);
-  await s.as(bob);
-  assert.ok((await addAgent(s, bob.book, converted)).error);
-
-  // A fresh agent of Bob's own goes in.
-  const own = await s.anonymous();
-  await s.as(bob);
-  assert.equal((await addAgent(s, bob.book, own)).error, null);
+  await s.asAdmin();
+  assert.equal((await s.one("select count(*)::int as n from auth.users where id = $1", [agent.id])).n, 0,
+    "the converted agent's account outlived its removal");
 });

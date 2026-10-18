@@ -133,60 +133,6 @@
       this.renderDialog();
     }
 
-    /**
-     * Draw the challenge in front of adding an agent, if there is one to
-     * draw (J16.2).
-     *
-     * Every part of this is allowed to be absent, and the absence is the
-     * same answer each time: no widget, no token, and `createAgent` sends
-     * nothing. That covers the state before a site key is configured, a
-     * Cloudflare that did not load, and the tests. The auth server
-     * (GoTrue) is what decides whether a token is required — so its
-     * captcha setting goes on only once the served config carries a site
-     * key, which is written down in js/config.js beside the key itself.
-     *
-     * Drawn once and kept. A challenge is answered per token, not per
-     * widget, so the widget is reset after a token is spent rather than
-     * being torn down and rebuilt.
-     */
-    drawChallenge() {
-      const cfg = global.RECIPE_FRIEND_CONFIG;
-      const key = cfg && cfg.turnstileSiteKey;
-      const box = $("#agent-turnstile");
-      const api = global.turnstile;
-      if (!key || !box || !api || this.challengeId !== undefined) return;
-      try {
-        this.challengeId = api.render(box, { sitekey: key });
-        box.hidden = false;
-      } catch (err) {
-        // A challenge that will not draw must not take the dialog with
-        // it. Adding an agent then fails at the server, which says why.
-        console.warn("Recipe Friend: could not draw the challenge.", err);
-      }
-    }
-
-    /** The answer to the challenge, or "" where there is no challenge. */
-    challengeToken() {
-      const api = global.turnstile;
-      if (!api || this.challengeId === undefined) return "";
-      try {
-        return api.getResponse(this.challengeId) || "";
-      } catch {
-        return "";
-      }
-    }
-
-    /** Spend it: a token answers once, so the next agent needs a new one. */
-    resetChallenge() {
-      const api = global.turnstile;
-      if (!api || this.challengeId === undefined) return;
-      try {
-        api.reset(this.challengeId);
-      } catch {
-        /* the next attempt will say so */
-      }
-    }
-
     /** Tell sync and the UI what this book allows, from one answer. */
     applyRole() {
       const editable = this.canEdit(this.currentBook());
@@ -322,12 +268,6 @@
       // that is not yours to press reads better absent than greyed.
       const agents = $("#agents-section");
       if (agents) agents.hidden = !iOwn;
-      // The challenge is drawn when the dialog opens, not here. This runs
-      // on every refresh — including the one at sign-in and the one a
-      // failing sync triggers — and a widget rendered into a dialog that
-      // is closed is rendered into `display: none`, once, for the life of
-      // the page.
-      if (iOwn && this.dialog && this.dialog.open) this.drawChallenge();
       // A credential belongs to the moment it was made (J16.6), and this
       // is every moment after it. Keyed on the book it was minted for, it
       // survived closing and reopening the dialog on the same book —
@@ -429,10 +369,6 @@
       $("#books-btn").addEventListener("click", async () => {
         this.dialog.showModal();
         await this.refresh();
-        // After the dialog is open and the section has been shown or
-        // hidden, so the widget is drawn into something with a size.
-        const current = this.currentBook();
-        if (current && current.isOwner) this.drawChallenge();
       });
       $("#books-close-btn").addEventListener("click", () => this.dialog.close());
       this.dialog.addEventListener("click", (event) => {
@@ -608,7 +544,7 @@
         const isAgent = Boolean(who && who.role === "agent");
         const ok = await RecipeAsk.ask(
           isAgent
-            ? `Remove ${who.name} from the book? Its credential stops working straight away.`
+            ? `Remove ${who.name} from the book? Its key stops working straight away.`
             : "Remove this person from the book?",
           { confirmLabel: "Remove", danger: true }
         );
@@ -662,30 +598,13 @@
             if (agentName) agentName.focus();
             return;
           }
-          const cloud = window.RecipeCloud;
-          if (!cloud || !cloud.makeScratchClient) return;
-          // Where there is a challenge on screen it has to be answered
-          // first. Asked for and refused, the server's complaint is the
-          // unhelpful kind, so the box under the thumb is what says so.
-          const token = this.challengeToken();
-          if (this.challengeId !== undefined && !token) {
-            this.app.toast("Tick the box to say you're a person first.");
-            return;
-          }
           try {
-            const agent = await this.api.createAgent(
-              this.sync.bookId,
-              name,
-              cloud.makeScratchClient,
-              cloud.coords,
-              token
-            );
+            const agent = await this.api.createAgent(this.sync.bookId, name);
             // Shown first, copied on purpose. This is a password in all
             // but name and it is shown exactly once (J16.6), so it does
             // not go onto the clipboard by itself — but making somebody
-            // select 250 characters of base64 by hand, in a dialog, on a
-            // phone, is how a credential gets half-copied and pasted
-            // broken. The button is the answer; the warning above it is
+            // select 47 characters by hand, in a dialog, on a phone, is
+            // how a key gets half-copied and pasted broken. The button is the answer; the warning above it is
             // still the point.
             if (agentName) agentName.value = "";
             // Before the refresh below, which is what redraws the dialog
@@ -697,7 +616,7 @@
               // textContent, not innerHTML: the surrounding markup is in
               // the page already, so the one thing that varies is the one
               // thing that never becomes markup.
-              secret.textContent = agent.credential;
+              secret.textContent = agent.key;
               out.hidden = false;
               const said = $("#agent-copied");
               if (said) said.textContent = "";
@@ -715,21 +634,14 @@
             this.app.toast(`${agent.name} can now read this book.`);
           } catch (err) {
             console.warn("Recipe Friend: could not add an agent.", err);
-            // The two likely failures are "anonymous sign-ins are
-            // disabled" and a refused challenge, and both are exactly
-            // what somebody setting this up has got wrong. Saying
-            // "couldn't add that agent" to either is telling them
-            // nothing they did not already know.
+            // The server's sentence ("only the owner…", "a book can have
+            // at most 20 agents") is the useful part. "Couldn't add that
+            // agent" alone tells somebody nothing they did not know.
             this.app.toast(
               err && err.message
                 ? `Couldn't add that agent — ${err.message}`
                 : "Couldn't add that agent."
             );
-          } finally {
-            // Spent either way: a token answers once, and a refused
-            // attempt has still used it up. Left alone, the second try
-            // fails on a stale answer and reads as the same failure.
-            this.resetChallenge();
           }
         });
       }

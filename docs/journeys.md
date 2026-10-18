@@ -339,10 +339,10 @@ Covers a share link someone sent, and a recipe an assistant wrote out.
    the argument only holds while they are all true.
 
    **And an invite is still something only a person can accept.** Agents
-   need anonymous accounts to exist at all (J16), which would otherwise
-   have made every invite link redeemable by anybody who held one, with
-   no Google account and no trail. Redeeming is closed to anonymous
-   callers for that reason. It is the one place where letting a program
+   were once anonymous accounts (J16), which would otherwise have made
+   every invite link redeemable by anybody who held one, with no Google
+   account and no trail. Redeeming is closed to anonymous callers and to
+   agents for that reason. It is the one place where letting a program
    in reached back and touched a rule about people, and the rule won.
 6. A member can leave a book; its recipes stay with the book.
 7. An owner cannot leave a book. Their exits are to keep it or to delete it.
@@ -975,12 +975,11 @@ not somebody.
    of their own, where its owner could neither see it nor revoke it.
 2. **Only an owner may add one**, from the Sharing list, and it is named
    when it is added. That name is what the member list shows — an agent
-   nobody named is an agent nobody can recognise later. Adding one makes
-   an account, so it is the one control in the app behind a challenge:
-   ticked by the person adding it, and never by anything else. Where no
-   challenge is configured none is drawn and none is required, which is
-   what the app does before its keys exist and if the challenge cannot be
-   reached.
+   nobody named is an agent nobody can recognise later. Adding one is a
+   single call to the database, checked there against the caller owning
+   the book and not being an agent; nothing signs in through the auth
+   server, so there is no challenge to pass and no public way to make an
+   agent at all.
 3. **An agent may read the book, add recipes, and work on the plan.** It
    may not edit or delete a recipe — which is also what stops it
    favouriting one, a favourite being a property of the recipe (J3.6) —
@@ -1014,43 +1013,35 @@ not somebody.
    (J14.4) — the meals can go back and no history is written. It is the
    reversible half of finishing, and it comes with the same write that
    lets an agent settle a line at all.
-6. **The credential is shown once**, when the agent is added, and never
-   again. Losing it means removing that agent and adding another; the
-   app says so where the credential is shown, rather than leaving it to
-   be found out. Nothing is lost by starting again — no recipe, plan or
-   settled line records which member wrote it.
+6. **The key is shown once**, when the agent is added, and never again.
+   It is `rfk_` and 256 random bits; the database keeps only its SHA-256
+   and the first few characters, so the owner can tell keys apart in the
+   list along with when each was made and last used. Losing it means
+   removing that agent and adding another; the app says so where the key
+   is shown, rather than leaving it to be found out. Nothing is lost by
+   starting again — no recipe, plan or settled line records which member
+   wrote it.
 7. **An agent appears in the member list by name** (J7.18), marked as an
    agent, with the same × that removes a person. Removing it is
-   immediate and entire.
+   immediate and entire: its key and its account go in the same statement
+   as its membership row, whatever deleted the row — the ×, or the book
+   itself being deleted. The hosted server may go on believing a key it
+   has already resolved for at most a minute (J17.3), and no longer.
 8. **An agent's role cannot be changed, to it or from it.** An agent is
    not a rung on the ladder that runs from viewer to editor: the roster
    offers no control that turns a person into a program or a program
    into a person. One that should be something else is removed and
    replaced, because a role change would silently widen a credential
    that was handed over for something narrower.
-9. **A credential is not given a lifetime.** An invite is short-lived
-   because it is in transit and might go astray on the way (J7.4); this
-   one is pasted into a configuration file and lives there, so nothing
-   here counts down against it and the way it ends is being revoked
-   (J16.7).
+9. **A key is not given a lifetime.** An invite is short-lived because
+   it is in transit and might go astray on the way (J7.4); a key is
+   pasted into a configuration file and lives there, so nothing here
+   counts down against it and the way it ends is being revoked (J16.7).
 
-   **Nor does it quietly expire.** What the credential carries is a
-   refresh token, and the server hands back a new one on every exchange.
-   A spent token is accepted again only as the *parent* of the one now
-   current, and the answer is then the current one rather than a new
-   one; anything further back is refused, whatever the reuse-detection
-   setting says. So the program on the other end (J17) only ever
-   presents the pasted token, and never the one it is handed back. The
-   chain stays one link long, and a restart, a second copy or a start a
-   week later all find the pasted string still the parent.
-
-   This was once promised by a setting — reuse detection switched off —
-   and that was a misreading: the setting only decides whether a refused
-   token takes the whole session with it, not whether it is refused. An
-   earlier server let the library refresh in memory after an hour, the
-   pasted string fell two links behind, and every restart after that was
-   told the credential had been revoked. The Boundaries section has the
-   rest.
+   **Nor does it quietly expire.** A key is not a session and carries no
+   refresh token, so no rotation, reuse or session setting of the auth
+   server can end it early. Earlier agents held a GoTrue refresh token
+   and depended on exactly those rules; that is why they were replaced.
 10. **An agent gets no stored photos.** It cannot read a photo out of
     private storage and cannot put one there, so it can neither see the
     pictures in the book nor add one. A picture *linked* by public URL is
@@ -1061,16 +1052,22 @@ not somebody.
     (J2.1) and validated exactly as a pasted one is (J5.7). Being a
     program earns no latitude: a recipe with no name, no ingredient or no
     step is refused from an agent as it is from anybody.
+12. **A key is checked by the database and read by nobody.** The hash
+    lives in a table that no caller — anonymous, member, owner or agent —
+    can read, and the one function that turns a key into an agent and its
+    book answers only the hosted server's own role, never a signed-in
+    caller and never the public. The old way of making an agent, an
+    anonymous sign-in placed with `add_agent`, is refused for everybody.
 
 ---
 
 ## J17 · The program on the other end
 
 J16 let an owner place something that is not somebody in a book, and hand
-it a credential. This is what that credential is handed *to*: a small
-program in `mcp/`, which an assistant runs and talks to over a pipe, and
-which turns a household's book into a handful of questions worth asking
-about it.
+it a key. This is what that key is handed *to*: a service in `mcp/`,
+hosted beside the app at `/mcp`, which an assistant reaches with a URL and
+the key, and which turns a household's book into a handful of questions
+worth asking about it.
 
 It is in this repository rather than one of its own because it is an API
 onto this app. It runs the app's own modules and it is bounded by the
@@ -1078,35 +1075,38 @@ same policies, so a change to either can break it — and one repository
 finds that out in the same test run, where two would find out after a
 release.
 
-1. **It is a program the assistant runs, not a service anybody hosts.**
-   Launched as a subprocess, spoken to in JSON-RPC over stdin and stdout,
-   and given its credential in the environment — no listener, no port, no
-   account and nothing to sign in to.
+1. **It is a service the household's server hosts, not a program every
+   assistant runs.** MCP's Streamable HTTP transport at `/mcp`, stateless:
+   each POST carries `Authorization: Bearer rfk_…` and is answered on its
+   own. No key, or one that is not live, is a 401 with a
+   `WWW-Authenticate` header rather than a tool answer, because no tool
+   ran; GET and DELETE are 405, there being no stream to hold open and no
+   session to end.
 
-   **Its stdout is the wire.** Nothing but protocol messages goes there,
-   whatever the modules it loads would rather do: a stray line of logging
-   does not appear in the conversation, it breaks it. Everything it has
-   to say, including that it started, it says on stderr.
-2. **One credential, one book, one process.** The credential names the
-   book (J16.6) and nothing in the program chooses one, so a household
-   with two books runs two of these under two names. It is not a thing
-   you point at a book; it is a thing you make for a book.
-3. **It keeps nothing between runs.** No state file, no lock, nothing on
-   disk at all: the credential is read from the environment at every
-   start, the session lives in memory, and the local cache lives there
-   too, so a cold start is a full pull — the path a new device takes on
-   its first sign-in (J9.1).
+   **It can act as an agent and as nothing else.** It holds the JWT
+   secret and uses it for two things only: a minute-long token for the
+   one role that may resolve a key (J16.12), and a five-minute token for
+   the agent the database named, with the role every signed-in caller
+   has. From there every policy decides what the agent may do, exactly
+   as it would for a person, so the security model does not fork.
+2. **One key, one book.** The database says which book a key belongs to
+   (J16.1) and nothing in the server chooses one, so a household with two
+   books makes two agents. It is not a thing you point at a book; it is a
+   thing you make for a book.
+3. **It keeps nothing between requests.** No state file, no session, no
+   cache of the book: every request builds its server, reads the book it
+   needs and forgets it, so every question is a full pull — the path a
+   new device takes on its first sign-in (J9.1).
 
-   Said as a rule rather than left as an implementation detail, because
-   the alternative is a credential that works only while a file survives,
-   and J16.9 is now written the way it is precisely so that one does not
-   have to.
-4. **The book opens on the first question, not when the program starts.**
-   A host may launch this and never ask it anything, and a token exchange
-   and a full pull per launch is a cost somebody eventually removes by
-   removing the server. A failure at startup also happens where nobody is
-   looking, where a failure answering a question is something a person
-   can be told.
+   The one thing it remembers is which keys resolved, for at most a
+   minute (thirty seconds by default), and only keys that worked. That is
+   the bound on how long a removed agent's key can still be used (J16.7),
+   and it is a bound the code enforces rather than a setting.
+4. **The book opens on the first question, not on hello.** Every
+   conversation starts by initializing and listing the tools, and a full
+   pull for each is a cost somebody eventually removes by removing the
+   server. A failure there also happens where nobody is looking, where a
+   failure answering a question is something a person can be told.
 
    **A book that would not open is tried again, not remembered as dead.**
    A network that was down and an agent that was removed look alike from
@@ -1116,11 +1116,11 @@ release.
    tool's answer rather than as a protocol error, because a protocol
    error is for something the caller got wrong and these are things the
    world got wrong — and because an answer is something a model can read
-   out to the person who can act on it. A revoked credential says to add
-   a new agent and paste the new one; an unreachable project says to try
-   again in a moment. Telling those two apart is the point of writing
+   out to the person who can act on it. An agent removed between the
+   key being checked and the book being read says to add a new agent and
+   use its key; an unreachable project says to try again in a moment. Telling those two apart is the point of writing
    them separately.
-6. **There is no tool for anything the credential cannot do.** No
+6. **There is no tool for anything the key cannot do.** No
    editing or deleting a recipe, no favourite, no Done (J16.3, J16.4).
    Editing a line on the list is another thing, and an agent may
    (J17.14). A tool that exists
@@ -1417,7 +1417,7 @@ accident:
   a day or a date (J12.1). An assistant that thinks in dates keeps them
   on its own side; the app is asked for meals and portions, and the
   calendar stays where the calendar is.
-- **One credential, one book, and no book of its own** (J16.1). An agent
+- **One key, one book, and no book of its own** (J16.1). An agent
   cannot be added to a second book, cannot create one, and is not given
   the one a new account gets. All three are enforced rather than
   intended, and the reason is the same each time: everything an agent can
@@ -1432,62 +1432,23 @@ accident:
 - **Read-only is not confidential, and neither is an agent's read**
   (J7.17). Anything an agent can read it can copy out. Removing it stops
   it reading more; it does not retrieve what it already has.
-- **Enabling agents costs the whole project something, and the cost is
-  paid in two places.** The identity behind an agent is an anonymous
-  account, and offering those at all is a project-wide setting rather
-  than a per-agent one. So the endpoint that makes them is open to
-  anybody who has the publishable key, and could be used to fill the
-  database with accounts nobody asked for. **The challenge in the app's
-  own dialog (J16.2) does not answer that** — an abuser calls the
-  endpoint directly and never opens the page. Only the server-side
-  setting does, and the challenge is what lets that setting be switched
-  on without breaking the one place the app legitimately creates an
-  account. The second cost is that an invite link would otherwise become
-  a way in for anybody at all, which is why redeeming one is closed to
-  anonymous callers (J7.5). Both are paid whether or not anybody adds an
-  agent, which is why they are written down here rather than under J16.
-- **An agent's credential leans on one rule of Supabase Auth, and it is
-  the third cost of agents.** A credential is a refresh token (J16.9),
-  and a refresh token is good once. What keeps the pasted string working
-  is the documented exception for a client that lost the answer to its
-  last refresh: the parent of the current token is accepted
-  indefinitely, and answered with the current token. `mcp/session.js`
-  presents nothing but the pasted string, so the pasted string is always
-  that parent. A program somebody runs as their assistant cannot promise
-  to be the only copy of itself — it is restarted, and it is often
-  started twice by whatever launches it — and under this rule it does
-  not have to.
+- **The hosted server holds the JWT secret, and that is the cost of
+  agents.** Anything holding it can sign a token for anybody. The server
+  is kept narrow instead of trusted wide: it signs only for an id the
+  database returned for a live key, only as `authenticated`, and only for
+  minutes (J17.1), and its only way in is the reverse proxy. The
+  alternative — checking the key inside Postgres on every request, with
+  no secret outside the database — needs PostgREST's pre-request hook to
+  change role mid-request for every caller of the API, which is a wider
+  change to the thing every request passes through than one service
+  holding a secret it already has a narrow use for.
 
-  **Reuse detection is not what this rests on.** It was switched off on
-  the belief that it was, and it is not: the setting decides whether a
-  refused token ends the whole session, and a refused token is refused
-  either way. The parent is never refused, so the check can be switched
-  back on once every agent runs a server that only presents the pasted
-  string, and the cost of it being off — which fell on every session in
-  the project — goes with it.
-
-  **The reuse interval is not the answer either.** It lets a spent
-  token back in for a few seconds, for two tabs refreshing at once, and
-  an agent restarted a week later presents a token spent a week ago. It
-  is a window, and what a credential in a configuration file needs is a
-  property.
-
-  **Three things would break it.** A time-box, an inactivity timeout or
-  single-session-per-user (GoTrue session settings, all left unset) each
-  end the session an agent's credential belongs to. So does a project
-  partway through Supabase Auth's move from its first refresh-token
-  format to its second — which, self-hosted, could only arrive with an
-  upgrade of the pinned GoTrue image: the
-  first exchange converts the token and revokes the one it came from,
-  and the pasted string is refused a few seconds later. An agent that
-  stops working again after this change, straight after a restart, is
-  most likely that.
-
-  If any of this stops being acceptable, the way back is a credential
-  that is not a refresh token — a long-lived key exchanged for a short
-  JWT by something holding the service key — and not a setting. That
-  would cost the app the thing it has never had and never wanted: a
-  server of its own.
+  **What it bought.** Agents are no longer anonymous accounts, so the
+  project no longer needs anonymous sign-ins at all, and with them gone
+  there is no public endpoint that creates an account — and no challenge
+  needed in front of one. An agent no longer depends on any rule of the
+  auth server's refresh tokens (J16.9). Earlier agents did, and
+  `mcp/session.js` existed to survive those rules; it is gone.
 - **A week finished while an agent is mid-change can be reopened by it.**
   An agent refuses to add to a plan that is already finished (J17.9), but
   it can only refuse what it can see: it reads the plan, and the Done
@@ -1512,15 +1473,6 @@ accident:
   the app: reach for the page in `plan.js` and the site still works, and
   the list goes wrong in a supermarket. So it is held by a test rather
   than by anybody remembering.
-- **The challenge is the app's only third-party script.** It cannot be
-  vendored the way supabase-js is, because a challenge that ships with
-  the page is not a challenge — so the content security policy names
-  Cloudflare, and if the challenge ever goes those entries go with it.
-- **The challenge is for the person, never for the agent.** It is drawn
-  in the owner's browser, once, on the one control that creates an
-  account. An agent signs up for nothing — it is handed a credential and
-  from then on only refreshes it — so nothing it does is ever gated on
-  proving it is human, which it is not.
 - Plans are shared with the book, so a read-only member cannot plan or
   settle a line at all (J12.10).
 - The shopping list is what the planned recipes ask for and what was
@@ -1590,11 +1542,10 @@ It also covers the MCP server (J17), which is the same kind of risk
 wearing different clothes: a wrong shopping list computed somewhere with
 no screen to notice it on. The `mcp-*` files stub the eight calls sync
 makes rather than the whole of PostgREST, so what they hold is which of
-those an agent is allowed to reach for — and one of them runs the real
-program in a real subprocess, because the rule that nothing but protocol
-messages reaches stdout cannot be checked any other way.
+those an agent is allowed to reach for — and `mcp-http.test.js` drives the
+real HTTP handler for what a caller without a good key is told.
 
-**Fifteen of the 182 criteria have no test naming them** — J4.15,
+**Fifteen of the 183 criteria have no test naming them** — J4.15,
 J4.16, J4.19, J4.25, J5.10, J6.3, J10.4, J11.1 to J11.5, J12.12, J15.9
 and J15.11.
 
@@ -1612,9 +1563,8 @@ clear a plan — and nothing else could have held it.
 
 Two of its neighbours were on this list until the MCP server arrived and
 came off it, which is the clearest thing that server earned. J16.9 —
-what a refresh token does once an agent holds it — is now what
-`mcp/session.js` does about it, and there is a test for the refusal it
-has to survive. J16.10 — no stored photos — is a policy at the database
+that a key does not expire — is held by the hosted server's tests, which
+use one key across requests and see it stop only when revoked. J16.10 — no stored photos — is a policy at the database
 and a decision in `mcp/digest.js` about what a tool hands back, and the
 second half is tested. Neither was ever something a stub DOM could be
 asked about; both are something the program on the other end of the
@@ -1861,7 +1811,9 @@ those count rows and read the row back. What they hold:
   and nothing else (J16.3), never finishing or undoing a plan (J16.4),
   clearing one (J16.5), gone when removed (J16.7), and a role that cannot
   be changed to or from (J16.8) — all of it still true of an agent whose
-  account has been turned into a permanent one (below);
+  account has been turned into a permanent one (below); and keys:
+  stored only as a hash, readable by nobody, resolvable only by the
+  hosted server's role (J16.12), revoked with the agent (J16.7);
 - the Storage rules: members read a book's photos and strangers do not
   (J2.8), viewers cannot add or remove one (J7.17), and an agent gets none
   (J16.10).
@@ -1871,7 +1823,10 @@ supabase-js it ships, over HTTP, against the whole stack: a recipe and its
 tombstone round-tripping (J9.4), an invite previewed, redeemed and refused
 the second time (J7.4), a photo uploaded and read back through a signed
 URL (J2.8), and an agent made the way the Sharing list makes one, adding a
-recipe and refused an edit (J16.3). They are there for the gap between
+recipe and refused an edit (J16.3). `db-mcp-http.test.js` does the same for
+the hosted MCP server: no key, a wrong key, a good key listing the twelve
+tools and reading the book, and a revoked key refused within the cache
+bound (J17.1, J17.3, J16.7). They are there for the gap between
 what the SQL allows and what the client sends, not as a second copy of the
 policy tests.
 
@@ -1890,7 +1845,7 @@ What the database tests do not reach:
   triggers no test fills.
 - **The sign-in settings** are GoTrue's configuration, not the schema, and
   are not tested: that email sign-in is off, that Google is the only way
-  in, and that anonymous sign-ins need a challenge.
+  in, and that anonymous sign-ins are off.
 
   The agent rules used to lean on one more: that an anonymous account
   cannot be turned into a permanent one. GoTrue allows it wherever email
