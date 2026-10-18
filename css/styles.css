@@ -2985,7 +2985,8 @@ body.gated .view {
   border-top: 1px solid var(--rule);
 }
 
-#agent-client {
+#agent-client,
+#connect-book {
   font-family: var(--sans);
   font-size: 0.85rem;
   color: var(--ink);
@@ -2998,6 +2999,7 @@ body.gated .view {
 }
 
 #agent-client:focus-visible,
+#connect-book:focus-visible,
 .agent-config:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
@@ -3032,6 +3034,58 @@ body.gated .view {
 /* Hide key sits at the end of the row, away from the Copy it follows. */
 .agent-done {
   margin-left: auto;
+}
+
+/*
+  Apps that sign in (J17.15): the address, under its own rule so it reads
+  as the other way in rather than as part of the key panel above it.
+*/
+.agent-signin {
+  margin-top: 1rem;
+  padding-top: 0.75rem;
+  border-top: 1px solid var(--rule);
+}
+
+.agent-signin-heading {
+  margin: 0 0 0.4rem;
+  font-size: 0.68rem;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--ink-soft);
+}
+
+/* ---------- An app asking to sign in (J16.15) ---------- */
+.connect-intro {
+  margin: 0 0 0.75rem;
+  font-family: var(--serif);
+  font-size: 1.05rem;
+  line-height: 1.4;
+  color: var(--ink);
+}
+
+/* The one part of the request the app cannot choose, so it stands out. */
+.connect-host {
+  font-family: var(--mono, ui-monospace, monospace);
+  font-weight: 600;
+  overflow-wrap: anywhere;
+  color: var(--ink);
+}
+
+.connect-dialog .agent-client-field {
+  flex-wrap: wrap;
+}
+
+#connect-book {
+  flex: 1;
+  min-width: 10rem;
+}
+
+.connect-status {
+  min-height: 1.2em;
+  margin: 0.75rem 0 0;
+  font-size: 0.85rem;
+  color: var(--ink-soft);
 }
 
 /* ---------- Legal pages (privacy, terms) ---------- */

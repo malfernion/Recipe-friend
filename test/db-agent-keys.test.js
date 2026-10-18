@@ -54,7 +54,9 @@ db("J16.6 · the owner sees each key's prefix, when it was made and when it was 
   assert.equal(listed.key_prefix, agent.keyPrefix);
   assert.ok(listed.created_at);
   assert.equal(listed.last_used_at, null);
-  assert.equal(Object.keys(listed).length, 5, "and nothing else — certainly not the hash");
+  assert.equal(listed.kind, "key");
+  assert.equal(listed.redirect_host, null, "a key sends nobody anywhere");
+  assert.equal(Object.keys(listed).length, 7, "and nothing else — certainly not the hash");
 
   // Used, and the list says so. A second use inside the minute writes nothing.
   await s.asMcp();

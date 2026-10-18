@@ -465,17 +465,38 @@
       };
     }
 
-    /** The owner's view of a book's agents: name, key prefix, made, last used. */
+    /**
+     * The owner's view of a book's agents: name, made, last used, and what
+     * tells it apart — a key's prefix, or for a connected app (J17.15) the
+     * host it sends people back to.
+     */
     async listAgents(bookId) {
       const { data, error } = await this.client.rpc("list_agents", { book: bookId });
       if (error) throw error;
       return (data || []).map((row) => ({
         userId: row.agent_id,
         name: row.name,
+        kind: row.kind === "app" ? "app" : "key",
         keyPrefix: row.key_prefix,
+        redirectHost: row.redirect_host || "",
         createdAt: row.created_at,
         lastUsedAt: row.last_used_at,
       }));
+    }
+
+    /**
+     * Connect an app that is signing in (J17.15) to a book this person
+     * owns: the database makes it an agent there, reading which app it is
+     * from GoTrue's own record of the request. Done before the request is
+     * approved, so the token GoTrue then issues has an agent to name.
+     */
+    async connectApp(authorizationId, bookId) {
+      const { data, error } = await this.client.rpc("connect_app", {
+        authorization_id: String(authorizationId || ""),
+        book: bookId,
+      });
+      if (error) throw error;
+      return { userId: data.agent_id, name: data.name, bookId: data.book_id };
     }
 
     /**

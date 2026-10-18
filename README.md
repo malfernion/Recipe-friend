@@ -337,7 +337,29 @@ agent is allowed to do.
 
 ### Connecting an assistant
 
-Open **Books → Agents** on a book you own, name the agent, and press
+There are two ways in, and both end in the same place: an **agent** in one
+book you own, listed under **Books → Agents**, doing only what an agent may
+(J16.3).
+
+**Sign in from the app** — Claude.ai, the Claude apps, ChatGPT, Claude Code
+and anything else that speaks MCP's OAuth:
+
+- **Claude.ai / ChatGPT**: add a custom connector with the address
+  `https://recipes.dave-ernsting.com/mcp`.
+- **Claude Code**: `claude mcp add --transport http recipe-friend
+  https://recipes.dave-ernsting.com/mcp`, then `/mcp` in Claude Code to
+  sign in.
+
+The app opens Recipe Friend in a browser. Sign in with Google, check the
+app's name **and the address it will send you back to**, pick one of your
+own books and press **Allow**. It appears under Agents as a *connected app*;
+the × there signs it out at once and for good. Only an owner can connect a
+book; nobody's own powers are handed over — the app's token names its agent,
+not you, and the REST API refuses it outright (J16.15, J17.15–J17.17).
+
+**Or give it a key** — for something that runs unattended, like a household
+agent on a server, which should not depend on a refresh token. Open
+**Books → Agents** on a book you own, name the agent, and press
 **Add an agent**. The key (`rfk_…`) is shown once, with ready-to-paste
 settings for Claude Code, `mcpServers` JSON (Cursor, a project's
 `.mcp.json`), OpenClaw, and a plain URL + header with a `curl` check —
@@ -356,16 +378,24 @@ key; the server may go on accepting a key it has just checked for at most
 a minute (30 seconds by default), and no longer.
 
 **How it signs in.** The server is stateless: every POST to `/mcp` carries
-the key, which the server resolves through a database function only its
-own role may call (`resolve_agent_key`), then reads the book through
+a key or an app's access token. A key is resolved through a database
+function only the server's own role may call (`resolve_agent_key`). An
+app's token comes from GoTrue's OAuth 2.1 server (dynamic client
+registration, PKCE), whose database hook (migration 011) has already made
+it name the app's agent with a role PostgREST will not accept; the server
+checks its signature, expiry, issuer, audience and role, then resolves it
+with `resolve_agent_app`. Either way it then reads the book through
 PostgREST with a five-minute token for that agent — so the same row-level
-security that governs a person governs the agent. A missing or wrong key
-is a `401` with a `WWW-Authenticate` header; `GET` and `DELETE` are `405`.
+security that governs a person governs the agent. A missing or wrong
+credential is a `401` whose `WWW-Authenticate` header points at
+`/.well-known/oauth-protected-resource/mcp`, which is how an app finds
+where to sign in; `GET` and `DELETE` are `405`.
 
 Run it yourself with the rest of the stack (`server/`), or on its own:
 
 ```bash
 SUPABASE_URL=http://localhost:8080 JWT_SECRET=... node mcp/http.js   # PORT=3100
+# add PUBLIC_URL=https://your.site to turn on sign-in for apps
 ```
 
 What it will not do is what an agent may not do (J16.3, J16.4): no

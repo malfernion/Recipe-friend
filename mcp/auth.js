@@ -20,6 +20,14 @@
  * from `resolve` and nothing else, always says `authenticated`, and never
  * lasts long.
  *
+ * A connected app (migration 011) arrives instead with an access token
+ * GoTrue issued it through OAuth. GoTrue's custom access token hook has
+ * already made that token name the app's agent rather than the person who
+ * connected it, with a role nothing else accepts; `appClaims` checks it
+ * properly — signature, expiry, issuer, audience, role, client — and
+ * `resolveApp` asks the database whether that agent is still bound to that
+ * app and still in its book. From there it is minted for like a key.
+ *
  * Nothing here logs or returns a key. The cache is keyed on its SHA-256.
  */
 "use strict";
@@ -32,6 +40,12 @@ const AGENT_TOKEN_SECONDS = 5 * 60;
 const SERVICE_TOKEN_SECONDS = 60;
 /** The longest a resolved key may be believed without asking again. */
 const MAX_CACHE_SECONDS = 60;
+
+/** What GoTrue's hook (migration 011) puts in a connected app's token. */
+const APP_AUDIENCE = "recipe-friend-mcp";
+const APP_ROLE = "recipe_friend_app";
+/** Clock skew allowed on a token's iat; its exp is never stretched. */
+const SKEW_SECONDS = 60;
 
 const KEY = /^rfk_[A-Za-z0-9_-]{43}$/;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -58,6 +72,49 @@ function readJwt(token) {
 function bearer(header) {
   const m = /^Bearer\s+(\S+)\s*$/i.exec(String(header || ""));
   return m ? m[1] : null;
+}
+
+/**
+ * The claims of an HS256 JWT signed with `secret`, or null. Nothing else
+ * is accepted: not another algorithm, not `none`, not a token whose
+ * signature does not match to the byte.
+ */
+function verifyJwt(token, secret) {
+  const parts = String(token || "").split(".");
+  if (parts.length !== 3 || !secret) return null;
+  let head, claims;
+  try {
+    head = JSON.parse(Buffer.from(parts[0], "base64url").toString("utf8"));
+    claims = JSON.parse(Buffer.from(parts[1], "base64url").toString("utf8"));
+  } catch {
+    return null;
+  }
+  if (!head || head.alg !== "HS256" || !claims || typeof claims !== "object") return null;
+  const want = crypto.createHmac("sha256", secret).update(`${parts[0]}.${parts[1]}`).digest();
+  const got = Buffer.from(parts[2], "base64url");
+  if (got.length !== want.length || !crypto.timingSafeEqual(got, want)) return null;
+  return claims;
+}
+
+/**
+ * `{agentId, clientId}` from a connected app's access token, or null.
+ * Everything that makes it one is checked, and a person's own session —
+ * role `authenticated`, audience `authenticated`, no client — fails
+ * several of them, so it can never be taken for an app (J17.15).
+ */
+function appClaims(token, { jwtSecret, issuer, now = Date.now() } = {}) {
+  if (!issuer) return null;
+  const c = verifyJwt(token, jwtSecret);
+  if (!c) return null;
+  const t = Math.floor(now / 1000);
+  const aud = Array.isArray(c.aud) ? c.aud : [c.aud];
+  if (typeof c.exp !== "number" || c.exp <= t) return null;
+  if (typeof c.iat === "number" && c.iat > t + SKEW_SECONDS) return null;
+  if (c.iss !== issuer) return null;
+  if (!aud.includes(APP_AUDIENCE)) return null;
+  if (c.role !== APP_ROLE) return null;
+  if (!UUID.test(String(c.sub)) || !UUID.test(String(c.client_id))) return null;
+  return { agentId: c.sub, clientId: c.client_id };
 }
 
 /** Is this shaped like a key at all? Saves a database trip for junk. */
@@ -103,6 +160,25 @@ class KeyResolver {
   async resolve(key) {
     if (!looksLikeKey(key)) return null;
     const id = crypto.createHash("sha256").update(key).digest("hex");
+    return this.lookup(id, "resolve_agent_key", { key });
+  }
+
+  /**
+   * The same for a connected app: `{agentId, bookId}` while the agent named
+   * by a checked token (see appClaims) is still bound to that app and in
+   * its book, null once it has been removed. Cached the same way and for
+   * the same time, which is the bound on how long a removed app's last
+   * access token still works.
+   */
+  async resolveApp(app) {
+    if (!app || !UUID.test(String(app.agentId)) || !UUID.test(String(app.clientId))) return null;
+    return this.lookup(`app:${app.agentId}:${app.clientId}`, "resolve_agent_app", {
+      agent: app.agentId,
+      client: app.clientId,
+    });
+  }
+
+  async lookup(id, fn, args) {
     const now = this.now();
     const hit = this.cache.get(id);
     if (hit && hit.until > now) return hit.value;
@@ -110,14 +186,14 @@ class KeyResolver {
 
     let res;
     try {
-      res = await this.fetch(`${this.restUrl}/rpc/resolve_agent_key`, {
+      res = await this.fetch(`${this.restUrl}/rpc/${fn}`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
           Authorization: `Bearer ${this.serviceToken()}`,
           ...(this.apikey ? { apikey: this.apikey } : {}),
         },
-        body: JSON.stringify({ key }),
+        body: JSON.stringify(args),
       });
     } catch (err) {
       throw new ResolveError(`could not reach the database (${err && err.message})`);
@@ -165,6 +241,8 @@ function agentToken(resolved, jwtSecret, now = Date.now()) {
 module.exports = {
   signJwt,
   readJwt,
+  verifyJwt,
+  appClaims,
   bearer,
   looksLikeKey,
   agentToken,
@@ -172,4 +250,6 @@ module.exports = {
   ResolveError,
   AGENT_TOKEN_SECONDS,
   MAX_CACHE_SECONDS,
+  APP_AUDIENCE,
+  APP_ROLE,
 };

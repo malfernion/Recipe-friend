@@ -108,6 +108,18 @@
   }
 
   /**
+   * For an app that signs in instead (J17.15): the address, and the one
+   * command that needs more than the address. No key, so nothing in it is
+   * a secret, and it can be on screen whenever the section is.
+   */
+  function signInSettings(url) {
+    return [
+      `Address      ${url}`,
+      `Claude Code  claude mcp add --transport http recipe-friend ${url}`,
+    ].join("\n");
+  }
+
+  /**
    * Put text on the clipboard and say so where the eye already is. A
    * refused clipboard is not a lost key: the text is still on screen and
    * selectable, so that is what is said, rather than a failure somebody
@@ -398,13 +410,16 @@
 
     /**
      * The book's agents, for its owner (J16.13): what each is called, the
-     * start of its key so two can be told apart, when it was added and
-     * when it was last used. A key nobody has used in months is the one
-     * worth asking about.
+     * start of its key so two can be told apart — or, for an app that
+     * signed in (J16.15), that it is one and the host it sends people back
+     * to — when it was added and when it was last used. A key nobody has
+     * used in months is the one worth asking about.
      */
     renderAgents(iOwn) {
       const list = $("#agent-list");
       const empty = $("#agent-empty");
+      const signIn = $("#agent-signin-config");
+      if (signIn) signIn.textContent = iOwn ? signInSettings(`${location.origin}/mcp`) : "";
       if (!list) return;
       if (!iOwn) {
         list.innerHTML = "";
@@ -423,15 +438,20 @@
         .map((a) => {
           const used = a.lastUsedAt ? `used ${sinceWhen(a.lastUsedAt)}` : "never used";
           const added = shortDate(a.createdAt);
+          const app = a.kind === "app";
+          const what = app
+            ? `connected app${a.redirectHost ? ` · ${esc(a.redirectHost)}` : ""}`
+            : `<code class="invite-code">${esc(a.keyPrefix || "")}…</code>`;
+          const noun = app ? "app" : "agent";
           return `
         <li class="member-item agent-item">
           <span class="agent-who">
             <span class="member-name">${esc(a.name)}</span>
-            <span class="agent-meta"><code class="invite-code">${esc(a.keyPrefix || "")}…</code>
+            <span class="agent-meta">${what}
               ${added ? `· added ${esc(added)} ` : ""}· ${esc(used)}</span>
           </span>
           <button type="button" class="member-remove" data-agent-remove="${esc(a.userId)}"
-                  aria-label="Remove agent ${esc(a.name)}" title="Remove agent">×</button>
+                  aria-label="Remove ${noun} ${esc(a.name)}" title="Remove ${noun}">×</button>
         </li>`;
         })
         .join("");
@@ -502,9 +522,15 @@
       const who = this.agents.find((a) => a.userId === userId) ||
         this.members.find((m) => m.userId === userId);
       const name = who ? who.name : "this agent";
+      // An app that signed in has no key to lose: it is signed out, and
+      // connecting it again is signing in again from the app (J17.17).
+      const app = this.agents.some((a) => a.userId === userId && a.kind === "app");
       const ok = await RecipeAsk.ask(
-        `Remove ${name} from the book? Its key stops working straight away and for good — ` +
-          "to connect it again, add a new agent and use the new key.",
+        app
+          ? `Remove ${name} from the book? It is signed out straight away and for good — ` +
+              "to use it again, connect it again from the app and choose a book."
+          : `Remove ${name} from the book? Its key stops working straight away and for good — ` +
+              "to connect it again, add a new agent and use the new key.",
         { confirmLabel: "Remove", danger: true }
       );
       if (!ok) return;
@@ -810,6 +836,12 @@
         copyBtn.addEventListener("click", () =>
           copyAndSay(this.revealed && this.revealed.key, $("#agent-copied")));
       }
+      const signInCopy = $("#agent-signin-copy-btn");
+      if (signInCopy) {
+        signInCopy.addEventListener("click", () =>
+          copyAndSay(`${location.origin}/mcp`, $("#agent-signin-copied")));
+      }
+
       const configCopy = $("#agent-config-copy-btn");
       if (configCopy) {
         configCopy.addEventListener("click", () => {
@@ -1127,6 +1159,7 @@
     BooksUI,
     rememberSelection,
     rememberedSelection,
+    signInSettings,
     connectionConfigs,
     sinceWhen,
   };

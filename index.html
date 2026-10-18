@@ -454,6 +454,25 @@
           <button type="button" class="btn btn-ghost agent-done" id="agent-done-btn">Hide key</button>
         </div>
       </div>
+      <!--
+        The other way in (J17.15): an app that signs in rather than taking
+        a key — Claude.ai and ChatGPT connectors, Claude Code. Nothing to
+        copy but the address; the app sends the owner to the consent
+        screen (js/connect.js), and what it becomes is an agent in this
+        list like any other, marked as a connected app.
+      -->
+      <div class="agent-signin">
+        <h4 class="agent-signin-heading">Or let an app sign in</h4>
+        <p class="books-hint">Claude.ai, ChatGPT and other apps with custom connectors: add a
+           connector with this address. Claude Code: run the command. You'll be asked to
+           sign in here and choose a book — there is no key to copy.</p>
+        <pre id="agent-signin-config" class="agent-config" tabindex="0"
+             aria-label="Address for apps that sign in"></pre>
+        <div class="agent-out-actions">
+          <button type="button" class="btn btn-ghost" id="agent-signin-copy-btn">Copy address</button>
+          <span id="agent-signin-copied" class="agent-copied" role="status" aria-live="polite"></span>
+        </div>
+      </div>
       <p class="books-hint">An agent is a program you let read this book — an assistant that
          suggests what to cook, or files a recipe you liked. It can read the book, add
          recipes and work on the plan. It cannot edit or delete a recipe, favourite one,
@@ -558,6 +577,39 @@ https://recipes.dave-ernsting.com/#paste</pre>
     </div>
   </dialog>
 
+  <!--
+    An app asking to sign in (J16.15). GoTrue sends the browser to
+    /?authorization_id=…, and js/connect.js asks here. The app's name is
+    whatever it chose to call itself, so the host it will send the person
+    back to is shown beside it: that part it cannot choose.
+  -->
+  <dialog id="connect-dialog" class="recipe-dialog connect-dialog" aria-labelledby="connect-title">
+    <h2 id="connect-title">Connect an app</h2>
+    <p id="connect-intro" class="connect-intro"></p>
+    <p id="connect-host-line" class="books-hint" hidden>Once you choose, it sends you back to
+       <strong id="connect-host" class="connect-host"></strong>. If you don't recognise that
+       address, choose Deny.</p>
+    <div id="connect-choose" hidden>
+      <label class="agent-client-field">
+        <span class="invite-role-label">The book it may use</span>
+        <select id="connect-book"></select>
+      </label>
+      <p class="books-hint">It joins that book as an agent. It can read the book, add recipes
+         and work on the plan; it cannot edit or delete a recipe, see the photos, or finish a
+         plan, and it never acts as you. Only books you own are listed. Remove it any time
+         under Books → Agents.</p>
+    </div>
+    <p id="connect-owners" class="books-hint" hidden>Only a book's owner can connect an app to
+       it, and you don't own a book. If you share one, ask its owner to connect the app.</p>
+    <p id="connect-status" class="connect-status" role="status" aria-live="polite"></p>
+    <div class="action-bar">
+      <button type="button" class="btn btn-ghost" id="connect-deny-btn">Deny</button>
+      <span class="action-bar-spacer"></span>
+      <button type="button" class="btn btn-primary" id="connect-signin-btn" hidden>Sign in with Google</button>
+      <button type="button" class="btn btn-primary" id="connect-allow-btn" hidden>Allow</button>
+    </div>
+  </dialog>
+
   <!-- Asked before anything that cannot be undone. See js/ask.js. -->
   <dialog id="confirm-dialog" class="recipe-dialog confirm-dialog">
     <form method="dialog">
@@ -606,5 +658,7 @@ https://recipes.dave-ernsting.com/#paste</pre>
   <script src="js/sync.js"></script>
   <script src="js/books.js"></script>
   <script src="js/account.js"></script>
+  <!-- After account.js: it answers an app's sign-in with that client. -->
+  <script src="js/connect.js"></script>
 </body>
 </html>
