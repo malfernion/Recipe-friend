@@ -4,8 +4,8 @@
 #
 # Five containers rather than Supabase's dozen: Postgres, GoTrue (auth),
 # PostgREST (the REST API), Storage (photos, on the local disk) and Caddy in
-# place of Supabase's gateway. Caddy is the only thing reachable from the
-# host, and only on 127.0.0.1.
+# place of Supabase's gateway. Caddy, and Postgres for the database tests,
+# are the only things reachable from the host, and only on 127.0.0.1.
 #
 # Image tags are taken from Supabase's self-hosting compose
 # (github.com/supabase/supabase, docker/docker-compose.yml) as of
@@ -37,6 +37,10 @@ services:
       - db-data:/var/lib/postgresql/data
       - db-config:/etc/postgresql-custom
     command: ["postgres", "-c", "config_file=/etc/postgresql/postgresql.conf"]
+    ports:
+      # For the database tests (test/db-*.test.js), which connect as
+      # DATABASE_URL. Loopback only, like Caddy's.
+      - "127.0.0.1:${DB_PORT:-54322}:5432"
     healthcheck:
       test: ["CMD", "pg_isready", "-U", "postgres", "-h", "localhost"]
       interval: 5s
@@ -72,6 +76,9 @@ services:
       GOTRUE_EXTERNAL_EMAIL_ENABLED: ${ENABLE_EMAIL_SIGNUP:-true}
       GOTRUE_MAILER_AUTOCONFIRM: "true"
       GOTRUE_EXTERNAL_PHONE_ENABLED: "false"
+      # The default is 30 anonymous sign-ins an hour per address, and the
+      # tests make an agent each time they run.
+      GOTRUE_RATE_LIMIT_ANONYMOUS_USERS: ${RATE_LIMIT_ANONYMOUS_USERS:-1000}
     healthcheck:
       test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:9999/health"]
       interval: 5s

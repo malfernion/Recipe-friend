@@ -36,3 +36,44 @@ jobs:
       # deploy workflow copies the repo as-is and would publish it.
       - name: Check every script parses
         run: for f in js/*.js mcp/*.js; do node --check "$f" || exit 1; done
+
+  # The database: the schema, the policies and the functions that are the
+  # app's security model, run on the same images production runs
+  # (server/compose.yaml) and asked directly. A job of its own, so a stack
+  # that will not start is told apart from an app that is broken.
+  db:
+    runs-on: ubuntu-latest
+    env:
+      DATABASE_URL: postgres://postgres:local-dev-only-postgres-password@127.0.0.1:54322/postgres
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      # The development values, which are fakes and committed as such.
+      - name: Start the stack
+        run: |
+          cp server/.env.example server/.env
+          docker compose -f server/compose.yaml up -d --wait --wait-timeout 300
+
+      - name: Apply the schema and migrations
+        run: server/migrate.sh
+
+      # Twice, because running it on an up-to-date database has to be a no-op.
+      - name: Check the migrations are idempotent
+        run: server/migrate.sh
+
+      - name: Run database tests
+        run: node --test test/db-*.test.js
+
+      - name: Show the stack's logs
+        if: failure()
+        run: docker compose -f server/compose.yaml logs --no-color --tail 200

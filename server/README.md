@@ -41,8 +41,20 @@ whole setup; none of them may be used anywhere anybody else can reach.
 The two API keys in it are tokens signed with the JWT secret beside them,
 for the `anon` and `service_role` roles.
 
-Only Caddy publishes a port, and only on `127.0.0.1`. Everything else is
-reached through it, or with `docker compose exec`.
+Two ports are published, both on `127.0.0.1` only: Caddy's (8080) and
+Postgres's (54322), the second for the database tests. Everything else is
+reached through Caddy, or with `docker compose exec`.
+
+## Testing against it
+
+```bash
+DATABASE_URL=postgres://postgres:local-dev-only-postgres-password@127.0.0.1:54322/postgres \
+  node --test test/db-*.test.js
+```
+
+The policy tests connect straight to Postgres; the end-to-end ones in
+`db-e2e.test.js` go through Caddy on the port in `server/.env` (or
+`STACK_URL`). CI's `db` job does exactly this.
 
 `down` keeps the data; `down -v` throws it away and the next `up` starts
 from an empty database.
@@ -77,7 +89,12 @@ numbered file.
 ## What differs from the hosted project
 
 - **Email sign-up is on** and confirms itself, so tests can make a person
-  without Google. Production turns it off and turns Google on.
+  without Google. Production turns it off and turns Google on. It matters
+  that it is off there: with it on, an agent could add an email address
+  to its anonymous account and stop being anonymous, which is what the
+  agent rules ask.
+- **Anonymous sign-ins are limited to 1000 an hour**, not 30, because
+  every test run makes agents.
 - **No gateway key check.** Supabase's gateway refuses a request without
   an `apikey` header; Caddy does not ask. Nothing depends on that check —
   the key is public, PostgREST treats a request with no token as `anon`,
