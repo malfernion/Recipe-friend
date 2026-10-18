@@ -4,8 +4,9 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <!--
-    Content Security Policy. GitHub Pages serves static files and cannot set
-    response headers, so this has to live in the document.
+    Content Security Policy. It lives in the document rather than in a
+    response header so that the page carries it however it is served —
+    the home server's Caddy, the dev stack, or a plain static server.
 
     The app keeps a session in localStorage, which means any HTML injection
     would be an account takeover rather than a defacement. Every value the
@@ -13,9 +14,14 @@
     commit that forgets. img-src stays broad because linking a photo by URL
     is a feature — see the referrerpolicy on those <img> tags.
 
+    connect-src is 'self' because the API is on the page's own origin:
+    Caddy serves the site and routes /auth/v1, /rest/v1 and /storage/v1
+    beside it, so there is no other backend host to name. Photos come back
+    as signed URLs on that same origin, and img-src already allows them.
+
     Two notes on what is missing. frame-ancestors is ignored in a meta tag,
-    so clickjacking cover would need a response header, which GitHub Pages
-    cannot send. And form-action is 'self' rather than 'none' because the
+    so clickjacking cover would need a response header; Caddy could send
+    one, and nothing does yet. And form-action is 'self' rather than 'none' because the
     confirm dialog is a method="dialog" form, which some browsers have
     treated as a navigation to be blocked. The editor is a plain form on a
     plain page now, but the confirm dialog is still one of those.
@@ -46,7 +52,7 @@
     style-src 'self' 'unsafe-inline' https://fonts.googleapis.com;
     font-src https://fonts.gstatic.com;
     img-src 'self' data: blob: https:;
-    connect-src 'self' https://dveyxesgwohokenoomsf.supabase.co wss://dveyxesgwohokenoomsf.supabase.co https://challenges.cloudflare.com;
+    connect-src 'self' https://challenges.cloudflare.com;
     form-action 'self';
     base-uri 'none';
     object-src 'none'">
@@ -533,7 +539,7 @@ If I ask for only part of a recipe, include only that part.
 
 After the JSON, give me this link on its own line so I can click straight through to the box I paste it into:
 
-https://malfernion.github.io/Recipe-friend/#paste</pre>
+https://recipes.dave-ernsting.com/#paste</pre>
     <div class="action-bar">
       <button type="button" class="btn btn-ghost" id="ai-help-close-btn">Close</button>
       <span class="action-bar-spacer"></span>

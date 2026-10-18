@@ -140,10 +140,10 @@
      * Every part of this is allowed to be absent, and the absence is the
      * same answer each time: no widget, no token, and `createAgent` sends
      * nothing. That covers the state before a site key is configured, a
-     * Cloudflare that did not load, and the tests. Supabase is what
-     * decides whether a token is required — so its CAPTCHA setting goes
-     * on only once the key here is set, which is written down in
-     * js/config.js beside the key itself.
+     * Cloudflare that did not load, and the tests. The auth server
+     * (GoTrue) is what decides whether a token is required — so its
+     * captcha setting goes on only once the served config carries a site
+     * key, which is written down in js/config.js beside the key itself.
      *
      * Drawn once and kept. A challenge is answered per token, not per
      * widget, so the widget is reset after a token is spent rather than

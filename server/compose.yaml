@@ -153,6 +153,11 @@ services:
         condition: service_healthy
       storage:
         condition: service_healthy
+    environment:
+      # Filled into /js/config.js from server/config.js.tmpl. No Turnstile
+      # in dev: an empty site key draws no challenge and sends none.
+      RECIPE_FRIEND_ANON_KEY: ${ANON_KEY}
+      RECIPE_FRIEND_TURNSTILE_SITE_KEY: ""
     ports:
       # Loopback only, always. Reach it from another machine with an SSH
       # tunnel, never by widening this.

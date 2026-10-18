@@ -26,6 +26,22 @@
 		}
 	}
 
+	# js/config.js is answered from a template filled with this stack's
+	# own anon key and Turnstile site key (RECIPE_FRIEND_ANON_KEY,
+	# RECIPE_FRIEND_TURNSTILE_SITE_KEY), never from the committed file,
+	# which is only the dev default. Production's Caddyfile does the same.
+	# no-cache so a changed key is not held by Cloudflare or a browser.
+	handle /js/config.js {
+		root * /srv/server
+		rewrite * /config.js.tmpl
+		header Content-Type "text/javascript; charset=utf-8"
+		header Cache-Control "no-cache"
+		templates {
+			mime text/javascript
+		}
+		file_server
+	}
+
 	# The site is a handful of files at the root of the repository, and
 	# the repository is what is mounted. Serving the whole of it would hand
 	# out .git, the tests and this directory, so the site's own files are

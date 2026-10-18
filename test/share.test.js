@@ -81,7 +81,7 @@ test("a link stays small enough to send", async () => {
     ingredients: Array.from({ length: 15 }, (_, i) => ({ amount: i + 1, unit: "g", item: `thing ${i}` })),
     steps: Array.from({ length: 10 }, (_, i) => `Step ${i}: do the thing carefully and well.`),
   }));
-  const url = `https://malfernion.github.io/Recipe-friend/#add=${await encodeRecipeShare(recipe)}`;
+  const url = `https://recipes.dave-ernsting.com/#add=${await encodeRecipeShare(recipe)}`;
   assert.ok(url.length < 2000, `link was ${url.length} characters`);
 });
 
