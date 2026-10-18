@@ -103,3 +103,11 @@ numbered file.
   `sb_publishable_…` keys are translated into a JWT by Supabase's gateway,
   and Caddy does no such translation, so a client of this stack uses the
   `ANON_KEY` from `.env`.
+
+## Moving off hosted Supabase
+
+`server/migrate-from-supabase/` holds the one-off scripts that copy the
+hosted project's users, rows and photos into a stack like this one, and
+check the result; its README is the runbook. They are tested between two
+copies of this stack (`test/migrate-from-supabase.test.js`, CI's `migrate`
+job).
