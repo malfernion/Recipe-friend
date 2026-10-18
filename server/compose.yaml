@@ -1,0 +1,167 @@
+# Recipe Friend's own Supabase: the dev and test stack, and the source of
+# truth for which versions of each component the app runs on. The homelab's
+# production stack pins the same tags; see server/README.md.
+#
+# Five containers rather than Supabase's dozen: Postgres, GoTrue (auth),
+# PostgREST (the REST API), Storage (photos, on the local disk) and Caddy in
+# place of Supabase's gateway. Caddy is the only thing reachable from the
+# host, and only on 127.0.0.1.
+#
+# Image tags are taken from Supabase's self-hosting compose
+# (github.com/supabase/supabase, docker/docker-compose.yml) as of
+# 2026-10-18. Change them here first, prove the schema still applies, then
+# copy them to the homelab stack.
+
+name: recipe-friend-dev
+
+services:
+  db:
+    # Postgres 17, as Supabase's self-host compose ships it. The hosted
+    # project's major version has to match for its dump to restore cleanly.
+    image: supabase/postgres:17.6.1.136
+    restart: unless-stopped
+    environment:
+      POSTGRES_HOST: /var/run/postgresql
+      POSTGRES_PORT: 5432
+      PGPORT: 5432
+      POSTGRES_DB: postgres
+      PGDATABASE: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set it in server/.env}
+      PGPASSWORD: ${POSTGRES_PASSWORD}
+      JWT_EXP: ${JWT_EXPIRY:-3600}
+    volumes:
+      # Gives the service roles (authenticator, supabase_auth_admin,
+      # supabase_storage_admin) the password the other containers log in
+      # with. Runs once, when the data directory is first created.
+      - ./db/roles.sql:/docker-entrypoint-initdb.d/init-scripts/99-roles.sql:ro
+      - db-data:/var/lib/postgresql/data
+      - db-config:/etc/postgresql-custom
+    command: ["postgres", "-c", "config_file=/etc/postgresql/postgresql.conf"]
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "postgres", "-h", "localhost"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  auth:
+    image: supabase/gotrue:v2.197.0
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      GOTRUE_API_HOST: 0.0.0.0
+      GOTRUE_API_PORT: 9999
+      API_EXTERNAL_URL: ${PUBLIC_URL}/auth/v1
+      GOTRUE_DB_DRIVER: postgres
+      GOTRUE_DB_DATABASE_URL: postgres://supabase_auth_admin:${POSTGRES_PASSWORD}@db:5432/postgres
+      GOTRUE_SITE_URL: ${PUBLIC_URL}
+      GOTRUE_URI_ALLOW_LIST: ${ADDITIONAL_REDIRECT_URLS:-}
+      GOTRUE_DISABLE_SIGNUP: "false"
+      GOTRUE_JWT_ADMIN_ROLES: service_role
+      GOTRUE_JWT_AUD: authenticated
+      GOTRUE_JWT_DEFAULT_GROUP_NAME: authenticated
+      GOTRUE_JWT_EXP: ${JWT_EXPIRY:-3600}
+      GOTRUE_JWT_SECRET: ${JWT_SECRET:?set it in server/.env}
+      GOTRUE_JWT_ISSUER: ${PUBLIC_URL}/auth/v1
+      # Agents are anonymous users (migration 008), so this is on.
+      GOTRUE_EXTERNAL_ANONYMOUS_USERS_ENABLED: "true"
+      # Email sign-up exists here only so tests can make a person without
+      # Google. It confirms itself and sends nothing. Production turns it
+      # off and turns Google on instead.
+      GOTRUE_EXTERNAL_EMAIL_ENABLED: ${ENABLE_EMAIL_SIGNUP:-true}
+      GOTRUE_MAILER_AUTOCONFIRM: "true"
+      GOTRUE_EXTERNAL_PHONE_ENABLED: "false"
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:9999/health"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  rest:
+    image: postgrest/postgrest:v14.18
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      PGRST_DB_URI: postgres://authenticator:${POSTGRES_PASSWORD}@db:5432/postgres
+      PGRST_DB_SCHEMAS: public
+      PGRST_DB_MAX_ROWS: 1000
+      PGRST_DB_EXTRA_SEARCH_PATH: public
+      PGRST_DB_ANON_ROLE: anon
+      PGRST_JWT_SECRET: ${JWT_SECRET}
+      PGRST_DB_USE_LEGACY_GUCS: "false"
+      PGRST_APP_SETTINGS_JWT_EXP: ${JWT_EXPIRY:-3600}
+      # Only for the healthcheck below; not routed anywhere.
+      PGRST_ADMIN_SERVER_PORT: 3001
+      PGRST_ADMIN_SERVER_HOST: localhost
+    healthcheck:
+      test: ["CMD", "postgrest", "--ready"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  storage:
+    image: supabase/storage-api:v1.81.0
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+      rest:
+        condition: service_started
+    environment:
+      ANON_KEY: ${ANON_KEY:?set it in server/.env}
+      SERVICE_KEY: ${SERVICE_ROLE_KEY:?set it in server/.env}
+      POSTGREST_URL: http://rest:3000
+      AUTH_JWT_SECRET: ${JWT_SECRET}
+      DATABASE_URL: postgres://supabase_storage_admin:${POSTGRES_PASSWORD}@db:5432/postgres
+      STORAGE_PUBLIC_URL: ${PUBLIC_URL}
+      REQUEST_ALLOW_X_FORWARDED_PATH: "true"
+      FILE_SIZE_LIMIT: 52428800
+      STORAGE_BACKEND: file
+      FILE_STORAGE_BACKEND_PATH: /var/lib/storage
+      # With the file backend this is the directory name under the path
+      # above; the three are required and otherwise meaningless here.
+      GLOBAL_S3_BUCKET: stub
+      TENANT_ID: stub
+      REGION: stub
+      # The app never asks for a resized image, so no imgproxy.
+      ENABLE_IMAGE_TRANSFORMATION: "false"
+    volumes:
+      - storage-data:/var/lib/storage
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://127.0.0.1:5000/status"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  caddy:
+    image: caddy:2.11.7
+    restart: unless-stopped
+    depends_on:
+      auth:
+        condition: service_healthy
+      rest:
+        condition: service_healthy
+      storage:
+        condition: service_healthy
+    ports:
+      # Loopback only, always. Reach it from another machine with an SSH
+      # tunnel, never by widening this.
+      - "127.0.0.1:${HTTP_PORT:-8080}:80"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      # The repository, read-only; the Caddyfile serves only the site's own
+      # files out of it.
+      - ..:/srv:ro
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://127.0.0.1:80/auth/v1/health"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+volumes:
+  db-data:
+  db-config:
+  storage-data:
