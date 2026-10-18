@@ -2,8 +2,9 @@
 # truth for which versions of each component the app runs on. The homelab's
 # production stack pins the same tags; see server/README.md.
 #
-# Five containers rather than Supabase's dozen: Postgres, GoTrue (auth),
-# PostgREST (the REST API), Storage (photos, on the local disk) and Caddy in
+# Six containers rather than Supabase's dozen: Postgres, GoTrue (auth),
+# PostgREST (the REST API), Storage (photos, on the local disk), the MCP
+# server (mcp/http.js) and Caddy in
 # place of Supabase's gateway. Caddy, and Postgres for the database tests,
 # are the only things reachable from the host, and only on 127.0.0.1.
 #
@@ -68,17 +69,16 @@ services:
       GOTRUE_JWT_EXP: ${JWT_EXPIRY:-3600}
       GOTRUE_JWT_SECRET: ${JWT_SECRET:?set it in server/.env}
       GOTRUE_JWT_ISSUER: ${PUBLIC_URL}/auth/v1
-      # Agents are anonymous users (migration 008), so this is on.
-      GOTRUE_EXTERNAL_ANONYMOUS_USERS_ENABLED: "true"
+      # Off. Agents used to be anonymous sign-ins; since migration 010 an
+      # owner makes one with create_agent and nothing signs in as it, so
+      # nothing needs this public way to create an account.
+      GOTRUE_EXTERNAL_ANONYMOUS_USERS_ENABLED: "false"
       # Email sign-up exists here only so tests can make a person without
       # Google. It confirms itself and sends nothing. Production turns it
       # off and turns Google on instead.
       GOTRUE_EXTERNAL_EMAIL_ENABLED: ${ENABLE_EMAIL_SIGNUP:-true}
       GOTRUE_MAILER_AUTOCONFIRM: "true"
       GOTRUE_EXTERNAL_PHONE_ENABLED: "false"
-      # The default is 30 anonymous sign-ins an hour per address, and the
-      # tests make an agent each time they run.
-      GOTRUE_RATE_LIMIT_ANONYMOUS_USERS: ${RATE_LIMIT_ANONYMOUS_USERS:-1000}
     healthcheck:
       test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:9999/health"]
       interval: 5s
@@ -143,6 +143,31 @@ services:
       timeout: 5s
       retries: 20
 
+  # The hosted MCP server (mcp/http.js, J17), built from this checkout.
+  # It reaches PostgREST through Caddy (SUPABASE_URL) the way any
+  # supabase-js client does, holds the JWT secret to resolve agent keys
+  # and sign an agent's five-minute token, and is reached only through
+  # Caddy's /mcp route. Nothing waits on it: Caddy answers /mcp with a 502
+  # while it is down and the site goes on working.
+  mcp:
+    build:
+      context: ..
+      dockerfile: mcp/Dockerfile
+    restart: unless-stopped
+    environment:
+      SUPABASE_URL: http://caddy
+      JWT_SECRET: ${JWT_SECRET}
+      ANON_KEY: ${ANON_KEY}
+      PORT: 3100
+      # How long a resolved key is believed: the bound on how long a
+      # removed agent's key still works. At most 60; the code clamps it.
+      KEY_CACHE_SECONDS: ${MCP_KEY_CACHE_SECONDS:-30}
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:3100/health"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
   caddy:
     image: caddy:2.11.7
     restart: unless-stopped
@@ -154,10 +179,8 @@ services:
       storage:
         condition: service_healthy
     environment:
-      # Filled into /js/config.js from server/config.js.tmpl. No Turnstile
-      # in dev: an empty site key draws no challenge and sends none.
+      # Filled into /js/config.js from server/config.js.tmpl.
       RECIPE_FRIEND_ANON_KEY: ${ANON_KEY}
-      RECIPE_FRIEND_TURNSTILE_SITE_KEY: ""
     ports:
       # Loopback only, always. Reach it from another machine with an SSH
       # tunnel, never by widening this.

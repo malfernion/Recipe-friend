@@ -15,8 +15,9 @@
  * the one file outside `test/` that reaches for it, deliberately, rather
  * than a second loader drifting alongside the first.
  *
- * The cache is memory and goes with the process. A cold start is a full
- * pull, which is the path a new device takes on its first sign-in.
+ * The cache is memory and goes with the request: the hosted server is
+ * stateless, so every request is a cold start and a full pull — the path
+ * a new device takes on its first sign-in.
  */
 "use strict";
 
@@ -35,8 +36,8 @@ const MODULES = [
  * sync that used to work stops.
  */
 const REMOVED =
-  "That agent is not in that book any more. Somebody removed it, which takes its " +
-  "account with it — add a new agent in the Books dialog and paste the new credential.";
+  "That agent is not in that book any more. Somebody removed it, which revokes its " +
+  "key — an owner can add a new agent in the Books dialog and use the new key.";
 
 class BookError extends Error {
   constructor(message) {
@@ -46,9 +47,9 @@ class BookError extends Error {
 }
 
 /**
- * Open the book the credential names.
+ * Open the book the agent key resolved to.
  *
- * Opening is the credential and the membership row, not the contents:
+ * Opening is the session and the membership row, not the contents:
  * the first pull happens on the first tool call, along with every pull
  * after it. That way there is one rule about how fresh the answers are
  * rather than one for the first question and another for the rest.
@@ -63,7 +64,7 @@ async function openBook(session, { api: injected } = {}) {
   const api = injected || new win.RecipeApi(client);
   api.userId = userId;
 
-  const bookId = session.credential.book;
+  const bookId = session.bookId;
   // The one read between the exchange and the first sync. Both of those
   // say "try again in a moment" when the network is down (J17.5); left
   // bare, this one handed the driver's own words to the model instead.
@@ -80,11 +81,11 @@ async function openBook(session, { api: injected } = {}) {
   // because the alternative is a server that reads an empty book and
   // reports a household with no recipes.
   if (!book) throw new BookError(REMOVED);
-  // A credential is minted for an agent and an agent's role cannot be
-  // changed (J16.8), so anything else here means a credential this
-  // server was not written for.
+  // A key is made for an agent and an agent's role cannot be changed
+  // (J16.8), so anything else here means a session this server was not
+  // written for.
   if (book.role !== "agent") {
-    throw new BookError(`That credential is a ${book.role}'s, not an agent's.`);
+    throw new BookError(`That key is a ${book.role}'s, not an agent's.`);
   }
 
   const store = new win.RecipeStore();
@@ -156,9 +157,8 @@ class Book {
   /**
    * Bring this process level with the book, for a question.
    *
-   * Called before every tool call, read or write, because a stdio server
-   * is long-lived and the household is editing the same book from a
-   * phone while it runs. An answer from a snapshot taken an hour ago is
+   * Called before every tool call, read or write, because the household
+   * is editing the same book from a phone while a conversation runs. An answer from a snapshot taken an hour ago is
    * the same wrong shopping list as one computed by the wrong code.
    *
    * **Questions asked together are one question.** A model turn commonly
@@ -182,10 +182,7 @@ class Book {
   }
 
   async syncOnce() {
-    // The access token first, renewed here if it is running down, so that
-    // a credential that has stopped working is reported as that (J16.9)
-    // rather than surfacing from inside a fetch as a book that cannot be
-    // reached.
+    // The access token first, re-signed here if it is running down.
     if (this.session) await this.session.open();
     // `syncNow` reports a failure by returning null and setting its
     // status rather than by throwing — right for a status line that will

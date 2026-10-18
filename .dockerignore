@@ -1,0 +1,7 @@
+# The MCP image needs package*.json, js/, mcp/ and test/helpers/load.js.
+.git
+node_modules
+server/.env
+server/db
+assets
+docs

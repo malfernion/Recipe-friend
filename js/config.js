@@ -3,7 +3,7 @@
  *
  * **This file is the development default.** Every real deployment answers
  * `/js/config.js` itself, from `server/config.js.tmpl` filled in with that
- * stack's own anon key and Turnstile site key (see `server/Caddyfile`), so
+ * stack's own anon key (see `server/Caddyfile`), so
  * no deployment's key is ever pasted into a commit and the same checkout
  * serves the dev stack and production. What is below is only what a
  * browser gets from something that serves the repository without that
@@ -25,15 +25,4 @@ window.RECIPE_FRIEND_CONFIG = {
     : "",
   supabaseKey:
     "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYW5vbiIsImlzcyI6InN1cGFiYXNlIiwiaWF0IjoxNzkyMjgxNjAwLCJleHAiOjQxMDI0NDQ4MDB9.eFkUpKSXGHT_K3a7_0Snj3iYPNI0PMVX114f7YmtjT8",
-  // Cloudflare Turnstile, in front of the one thing that creates an
-  // account: adding an agent (J16.2). Public by design, like the key
-  // above — the half that verifies is a secret and lives in GoTrue's
-  // environment on the server.
-  //
-  // Empty means no challenge is drawn and none is sent, which is the
-  // right behaviour for the dev stack, before a key exists, and if
-  // Cloudflare is unreachable. GoTrue is the one that decides whether a
-  // token is required; turn its captcha setting on only once the served
-  // config carries a site key, or adding an agent starts failing.
-  turnstileSiteKey: "",
 };

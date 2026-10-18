@@ -2857,10 +2857,11 @@ body.gated .view {
 }
 
 /* ---------- Agents (J16) ----------
-   There is no list here: an agent is a member and is drawn in the member
-   list with everyone else (J16.7). What this section holds is the way to
-   add one and the one place its credential is shown. The badge wears the
-   accent so a program never reads as one of the household at a glance.
+   The owner's list of agents (J16.13), the way to add one, and the one
+   place its key is shown with what to paste where (J16.14). An agent is
+   also drawn in the member list with everyone else (J16.7); the badge
+   there wears the accent so a program never reads as one of the
+   household at a glance.
 */
 .agent-badge {
   font-size: 0.64rem;
@@ -2893,21 +2894,33 @@ body.gated .view {
   outline-offset: 1px;
 }
 
-/* Cloudflare draws its own box, so this only gives it room. */
-.agent-turnstile {
-  margin-top: 0.85rem;
+/*
+  A name over a line of small print, so the prefix and the dates wrap
+  under the name on a phone instead of pushing the × off the edge.
+*/
+.agent-who {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
 }
 
-/*
-  The credential is a password in all but name and is shown once
-  (J16.6), so it says so where it is read rather than in the hint
-  underneath — which is where the eye goes second.
-*/
+.agent-meta {
+  font-size: 0.72rem;
+  color: var(--ink-faint);
+}
+
+.agent-meta .invite-code {
+  font-size: 0.7rem;
+}
+
 /*
   The credential, shown once (J16.6): a warning, the secret, and a way to
   take it. Laid out as a block rather than a line because 250 characters
   of base64 wrap to several rows on a phone and the button has to stay
-  findable underneath them.
+  findable underneath them. The warning is in the panel rather than in
+  the hint underneath, which is where the eye goes second.
 */
 .agent-out {
   margin: 0.75rem 0 0;
@@ -2952,6 +2965,73 @@ body.gated .view {
   letter-spacing: 0.14em;
   text-transform: uppercase;
   color: var(--ink-faint);
+}
+
+.agent-out-note {
+  margin: 0 0 0.5rem;
+  font-family: var(--serif);
+  font-style: italic;
+  font-size: 0.85rem;
+  color: var(--ink-soft);
+}
+
+/* Which client to show settings for: a select, so it fits a phone. */
+.agent-client-field {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-top: 1rem;
+  padding-top: 0.75rem;
+  border-top: 1px solid var(--rule);
+}
+
+#agent-client {
+  font-family: var(--sans);
+  font-size: 0.85rem;
+  color: var(--ink);
+  background: var(--paper);
+  border: 1px solid var(--rule-strong);
+  border-radius: 0;
+  padding: 0.45rem 0.5rem;
+  min-height: 44px;
+  touch-action: manipulation;
+}
+
+#agent-client:focus-visible,
+.agent-config:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.agent-client-hint {
+  margin: 0.5rem 0 0;
+  font-size: 0.8rem;
+  line-height: 1.4;
+  color: var(--ink-soft);
+}
+
+/*
+  Wrapped rather than scrolled sideways: a command with a key in it is
+  one long line, and a phone should show all of it without a second
+  scrollbar inside the dialog's own.
+*/
+.agent-config {
+  margin: 0.5rem 0 0;
+  padding: 0.55rem 0.65rem;
+  font-family: var(--mono, ui-monospace, monospace);
+  font-size: 0.7rem;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  color: var(--ink);
+  background: var(--paper-raised);
+  border: 1px solid var(--rule);
+  user-select: all;
+}
+
+/* Hide key sits at the end of the row, away from the Copy it follows. */
+.agent-done {
+  margin-left: auto;
 }
 
 /* ---------- Legal pages (privacy, terms) ---------- */

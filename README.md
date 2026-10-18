@@ -49,14 +49,14 @@ for accounts and sync.
   single-use, expire in 48 hours, can be revoked, say which kind they are
   before anyone accepts, and never join anyone to anything without their
   say-so.
-- **Agents** — let a program read a book. An owner adds one from the
-  Sharing list, names it, and gets a credential to paste into whatever
-  assistant they run. It can read the book, add recipes and work on the
+- **Agents** — let a program read a book. An owner adds one from
+  Books → Agents, names it, and gets a key (`rfk_…`) for whatever assistant
+  they run, which reaches the book through the hosted MCP server. It can read the book, add recipes and work on the
   plan; it cannot edit or delete a recipe, favourite one, see the photos,
   finish a plan, or invite anybody — and it has no book of its own and
   cannot make one. It sits in the member list like anybody else, cannot
-  be promoted, and is removed with the same ×, which takes its account
-  with it. The credential is shown once.
+  be promoted, and is removed with the same ×, which revokes its key and
+  takes its account with it. The key is shown once; only its hash is kept.
 - **Copy and move** — copy a recipe into any book you can write to, which
   is how a book you only read is still worth being in. Moving one out of a
   book is the owner's, asks first, and leaves a tombstone so it does not
@@ -168,48 +168,13 @@ One-time setup:
    for development, on its list of allowed redirect URLs.
 3. Sign in from the app's header. First sign-in auto-creates your profile
    and a personal "My recipes" book.
-4. **Agents** (optional — only needed to let a program read a book).
-   Do these in this order; the middle step is what makes the first one
-   safe.
-
-   1. Create a **Cloudflare Turnstile** widget for
-      `recipes.dave-ernsting.com` (and `localhost`, for development). It is
-      a CAPTCHA — a "prove you are a person" checkbox — and GoTrue accepts
-      Cloudflare's. Put its **site key** in `js/config.js` as
-      `turnstileSiteKey` (public, like the `anon` key beside it) and keep
-      the secret key for the next step.
-   2. Switch on GoTrue's **CAPTCHA protection**, provider Turnstile, with
-      the **secret key**, and restart it. Check that signing in with
-      Google still works before going further.
-   3. Switch on GoTrue's **anonymous sign-ins**. This is what lets an
-      agent have an identity with no email address, and it is also a
-      public endpoint that creates accounts — which is why the CAPTCHA
-      goes on first.
-   4. Leave GoTrue's **refresh-token rotation** on — the setting the
-      hosted dashboard called "Detect and revoke potentially compromised
-      refresh tokens". It was once switched off on the belief that agents
-      needed it off; that was never what kept a credential working. A
-      credential is a refresh token, and the server in `mcp/` only ever
-      presents the pasted one — which GoTrue keeps accepting as the parent
-      of the token it last issued, however often the program is restarted
-      or launched twice. Leave GoTrue's session time-box, inactivity
-      timeout and single-session-per-user unset: each of those would end
-      the session an agent's credential belongs to. The journeys'
-      Boundaries section has the detail.
-
-   **Why that order.** The app only sends a challenge answer once a site
-   key is set, and GoTrue only demands one once its setting is on, so
-   filling in the key first is what avoids a window where adding an agent
-   fails. Turning on anonymous sign-ins first would open the
-   account-creating endpoint while nothing is in front of it.
-
-   The challenge is for the person adding the agent, once, in their
-   browser. The agent itself signs up for nothing and is never asked.
-   Note the checkbox in the dialog is not what protects the endpoint —
-   an abuser would call it directly and never open the page. The
-   server-side setting in step 2 is what does that; the checkbox is what
-   lets you switch it on without breaking the one place the app
-   legitimately creates an account.
+4. **Agents** need nothing switched on in GoTrue. An owner makes one with
+   the `create_agent` function (migration 010), which never signs in
+   through GoTrue, so leave GoTrue's **anonymous sign-ins off** and its
+   captcha unset; the app has no captcha. The hosted MCP server
+   (`mcp/http.js`, the `mcp` service in `server/compose.yaml`) needs the
+   stack's JWT secret and a `/mcp` route; see
+   [The MCP server](#the-mcp-server).
 
 ### Recipe books and sync
 
@@ -277,7 +242,7 @@ js/ask.js                      The confirm dialog, asked before anything undoabl
 js/account.js                  Google sign-in, session, sync bootstrap
 js/sync.js                     Reconciling the local box with the book
 js/books.js                    Recipe books, members, and invite links
-js/config.js                   Project URL, anon key and Turnstile site key
+js/config.js                   Project URL and anon key
 server/                        Local stack and migration runner for development and CI
 supabase/schema.sql            Tables, RLS policies, triggers, functions
 supabase/migrations/           Additive schema changes, run in order
@@ -293,10 +258,11 @@ supabase/migrations/           Additive schema changes, run in order
                                 agent by having been placed, not by its
                                 account being anonymous)
 docs/journeys.md               What the app is meant to do, as criteria
-mcp/                           The MCP server: an agent's credential,
-                               the book it opens with it, and the tools
-                               it offers (J16)
-package.json                   The server's dependencies and its `bin`.
+mcp/                           The hosted MCP server: the HTTP door
+                               and agent keys (http.js, auth.js), the
+                               book it opens, and the tools it offers
+                               (J16, J17); its Dockerfile
+package.json                   The MCP server's dependencies.
                                The site itself still has none and still
                                has no build step
 test/                          Tests, named for the criteria they check
@@ -307,9 +273,10 @@ test/                          Tests, named for the criteria they check
 ## The MCP server
 
 `mcp/` is a [Model Context Protocol](https://modelcontextprotocol.io)
-server: a small program an assistant runs as a subprocess and talks to
-over stdin and stdout. It holds one agent's credential, opens the one
-book that credential names, and offers twelve tools.
+server, hosted beside the app at **`https://recipes.dave-ernsting.com/mcp`**
+over MCP's Streamable HTTP transport. An assistant connects with that URL
+and an agent key; the server finds the one book the key belongs to and
+offers twelve tools.
 
 ### What it can do
 
@@ -365,41 +332,41 @@ policies (migration 008) that the app is. A change to either can break
 it, and one repository finds that out in the same test run.
 
 **What it should do is written down like everything else** — J17 in
-[`docs/journeys.md`](docs/journeys.md), with J16 beside it for what the
-credential it holds is allowed to do.
+[`docs/journeys.md`](docs/journeys.md), with J16 beside it for what an
+agent is allowed to do.
 
-**Add an agent first** — Books → Sharing → Agents — and keep the
-credential it shows you. Then point your assistant at this, however it
-takes MCP server configuration:
+### Connecting an assistant
 
-```json
-{
-  "recipe-friend": {
-    "command": "npx",
-    "args": ["-y", "github:malfernion/Recipe-friend"],
-    "env": { "RECIPE_FRIEND_CREDENTIAL": "rfa1..." }
-  }
-}
+Open **Books → Agents** on a book you own, name the agent, and press
+**Add an agent**. The key (`rfk_…`) is shown once, with ready-to-paste
+settings for Claude Code, `mcpServers` JSON (Cursor, a project's
+`.mcp.json`), OpenClaw, and a plain URL + header with a `curl` check —
+pick the client, press Copy. Closing the panel discards the key; if it is
+lost, remove the agent there and add another. The same list shows each
+agent's key prefix, when it was added and when it was last used, and
+removes one with ×, which revokes its key at once.
+
+For reference, the Claude Code form is `claude mcp add --transport http
+recipe-friend https://recipes.dave-ernsting.com/mcp --header
+"Authorization: Bearer rfk_..."`.
+
+**One key, one book.** The key belongs to the book it was made for, so a
+household with two books makes two agents. Removing the agent revokes the
+key; the server may go on accepting a key it has just checked for at most
+a minute (30 seconds by default), and no longer.
+
+**How it signs in.** The server is stateless: every POST to `/mcp` carries
+the key, which the server resolves through a database function only its
+own role may call (`resolve_agent_key`), then reads the book through
+PostgREST with a five-minute token for that agent — so the same row-level
+security that governs a person governs the agent. A missing or wrong key
+is a `401` with a `WWW-Authenticate` header; `GET` and `DELETE` are `405`.
+
+Run it yourself with the rest of the stack (`server/`), or on its own:
+
+```bash
+SUPABASE_URL=http://localhost:8080 JWT_SECRET=... node mcp/http.js   # PORT=3100
 ```
-
-That spec resolves to whatever is on the default branch, so it works
-once this has been merged there. To run it from a branch first, put the
-ref on the end: `github:malfernion/Recipe-friend#some-branch`.
-
-The `-y` is not optional: without it `npx` asks before installing and
-there is no terminal to answer, so the server hangs with no error. On
-Windows the command generally needs wrapping as `cmd /c npx`.
-
-Measured against this repository on a machine with an empty npm cache:
-**11 seconds** from launch to answering the protocol, and **2.5 seconds**
-once the cache is warm. The warm two and a half seconds is not nothing —
-`npx` re-resolves the git ref on every start, which is a network round
-trip — and it is the price of always running the latest push rather than
-a pinned tag. Pin one in the host's config if you would rather not pay
-it.
-
-**One server, one credential, one book.** The credential names the book,
-so a household with two books runs two of these under two names.
 
 What it will not do is what an agent may not do (J16.3, J16.4): no
 editing, no deleting, no favouriting, no finishing a week, and no
@@ -409,14 +376,14 @@ call that cannot be undone from the assistant's side — an agent cannot
 delete even the recipe it just added — so it is marked destructive for
 the host and says so in words for the model.
 
-Run it by hand to check a credential:
+Check a key by hand:
 
 ```bash
-RECIPE_FRIEND_CREDENTIAL='rfa1...' node mcp/index.js
+curl -s https://recipes.dave-ernsting.com/mcp \
+  -H 'Authorization: Bearer rfk_...' -H 'Content-Type: application/json' \
+  -H 'Accept: application/json, text/event-stream' \
+  -d '{"jsonrpc":"2.0","id":1,"method":"tools/list"}'
 ```
-
-It will say it is ready on stderr and then wait for JSON-RPC on stdin.
-Nothing but protocol messages ever goes to stdout — that is the wire.
 
 ## Getting a recipe in with AI's help
 

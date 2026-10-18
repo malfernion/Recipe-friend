@@ -1,5 +1,5 @@
 /**
- * books.js — recipe books, members, and invite links (M3).
+ * books.js — recipe books, members, invite links (M3), and agents (J16).
  *
  * A book is a shared recipe collection. Everyone signed in has at least
  * their own; a household is simply a book several people belong to.
@@ -30,6 +30,100 @@
     }
   }
 
+  // --- agents' keys and how to use them (J16.13, J16.14) -----------------
+
+  const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun",
+    "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+
+  /** "18 Oct 2026": a date nobody has to know the locale to read. */
+  function shortDate(iso) {
+    const d = new Date(iso);
+    if (Number.isNaN(d.getTime())) return "";
+    return `${d.getDate()} ${MONTHS[d.getMonth()]} ${d.getFullYear()}`;
+  }
+
+  /**
+   * How long ago, in the words somebody would use. The database writes
+   * last_used_at at most once a minute, so nothing finer is true.
+   */
+  function sinceWhen(iso, now = Date.now()) {
+    const then = new Date(iso).getTime();
+    if (!iso || Number.isNaN(then)) return "";
+    const mins = Math.floor((now - then) / 60000);
+    if (mins < 1) return "just now";
+    if (mins < 60) return `${mins} minute${mins === 1 ? "" : "s"} ago`;
+    const hours = Math.floor(mins / 60);
+    if (hours < 24) return `${hours} hour${hours === 1 ? "" : "s"} ago`;
+    const days = Math.floor(hours / 24);
+    if (days < 30) return `${days} day${days === 1 ? "" : "s"} ago`;
+    return `on ${shortDate(iso)}`;
+  }
+
+  /**
+   * What to paste into a client to reach this book (J16.14), one entry
+   * per choice in #agent-client. Built from the page's own origin, since
+   * the hosted server is always beside the site (Caddy routes /mcp), and
+   * from the key that was just made — so it exists only while the key
+   * does, and is never stored.
+   *
+   * Claude Desktop is not named: its own config file starts local
+   * programs and has no place for a remote server's header, so claiming
+   * it here would be a config that does nothing.
+   */
+  function connectionConfigs(url, key) {
+    const auth = `Bearer ${key}`;
+    const json = (value) => JSON.stringify(value, null, 2);
+    return {
+      "claude-code": {
+        hint: "Run this in a terminal. Add --scope user to have it in every project.",
+        text: `claude mcp add --transport http recipe-friend ${url} --header "Authorization: ${auth}"`,
+      },
+      json: {
+        hint: "For clients that read an mcpServers file — Cursor\u2019s mcp.json, a " +
+          "project\u2019s .mcp.json. Merge it with any servers already there.",
+        text: json({
+          mcpServers: {
+            "recipe-friend": { type: "http", url, headers: { Authorization: auth } },
+          },
+        }),
+      },
+      openclaw: {
+        hint: "Put this under mcp.servers.recipe-friend in OpenClaw\u2019s config.",
+        text: json({ url, transport: "streamable-http", headers: { Authorization: auth } }),
+      },
+      plain: {
+        hint: "For any client that speaks MCP over HTTP. The last line checks it from " +
+          "a terminal: it should list the tools.",
+        text: [
+          `URL     ${url}`,
+          `Header  Authorization: ${auth}`,
+          "",
+          `curl -s ${url} -H "Authorization: ${auth}" ` +
+            `-H "Content-Type: application/json" ` +
+            `-H "Accept: application/json, text/event-stream" ` +
+            `-d '{"jsonrpc":"2.0","id":1,"method":"tools/list"}'`,
+        ].join("\n"),
+      },
+    };
+  }
+
+  /**
+   * Put text on the clipboard and say so where the eye already is. A
+   * refused clipboard is not a lost key: the text is still on screen and
+   * selectable, so that is what is said, rather than a failure somebody
+   * can do nothing about.
+   */
+  async function copyAndSay(text, said) {
+    if (!text) return;
+    try {
+      await navigator.clipboard.writeText(text);
+      if (said) said.textContent = "Copied.";
+    } catch (err) {
+      console.warn("Recipe Friend: could not reach the clipboard.", err);
+      if (said) said.textContent = "Couldn't copy — select it and copy by hand.";
+    }
+  }
+
   class BooksUI {
     constructor(sync, api, app) {
       this.sync = sync;
@@ -41,6 +135,11 @@
       this.books = [];
       this.members = [];
       this.invites = [];
+      this.agents = [];
+      // The key just made and nothing else: held only while the panel
+      // that shows it is open, so the connection settings can be redrawn
+      // for another client without reading a secret back out of the page.
+      this.revealed = null;
       this.dialog = $("#books-dialog");
       this.wired = false;
     }
@@ -125,66 +224,28 @@
       } else {
         this.invites = [];
       }
+      // The agents list is the owner's too (list_agents refuses anyone
+      // else), but unlike invites a failure here is never the normal
+      // case, so it says so rather than drawing an empty list (J16.13).
+      if (current && current.isOwner) {
+        try {
+          this.agents = await this.api.listAgents(current.id);
+          this.agentsFailed = false;
+        } catch (err) {
+          console.warn("Recipe Friend: could not load agents.", err);
+          this.agents = [];
+          this.agentsFailed = true;
+        }
+      } else {
+        this.agents = [];
+        this.agentsFailed = false;
+      }
       // What we may do in the book we are already in can change under us:
       // a role taken down to viewer arrives as an ordinary refresh, with
       // no other announcement (J7.17).
       this.applyRole();
       this.renderHeader();
       this.renderDialog();
-    }
-
-    /**
-     * Draw the challenge in front of adding an agent, if there is one to
-     * draw (J16.2).
-     *
-     * Every part of this is allowed to be absent, and the absence is the
-     * same answer each time: no widget, no token, and `createAgent` sends
-     * nothing. That covers the state before a site key is configured, a
-     * Cloudflare that did not load, and the tests. The auth server
-     * (GoTrue) is what decides whether a token is required — so its
-     * captcha setting goes on only once the served config carries a site
-     * key, which is written down in js/config.js beside the key itself.
-     *
-     * Drawn once and kept. A challenge is answered per token, not per
-     * widget, so the widget is reset after a token is spent rather than
-     * being torn down and rebuilt.
-     */
-    drawChallenge() {
-      const cfg = global.RECIPE_FRIEND_CONFIG;
-      const key = cfg && cfg.turnstileSiteKey;
-      const box = $("#agent-turnstile");
-      const api = global.turnstile;
-      if (!key || !box || !api || this.challengeId !== undefined) return;
-      try {
-        this.challengeId = api.render(box, { sitekey: key });
-        box.hidden = false;
-      } catch (err) {
-        // A challenge that will not draw must not take the dialog with
-        // it. Adding an agent then fails at the server, which says why.
-        console.warn("Recipe Friend: could not draw the challenge.", err);
-      }
-    }
-
-    /** The answer to the challenge, or "" where there is no challenge. */
-    challengeToken() {
-      const api = global.turnstile;
-      if (!api || this.challengeId === undefined) return "";
-      try {
-        return api.getResponse(this.challengeId) || "";
-      } catch {
-        return "";
-      }
-    }
-
-    /** Spend it: a token answers once, so the next agent needs a new one. */
-    resetChallenge() {
-      const api = global.turnstile;
-      if (!api || this.challengeId === undefined) return;
-      try {
-        api.reset(this.challengeId);
-      } catch {
-        /* the next attempt will say so */
-      }
     }
 
     /** Tell sync and the UI what this book allows, from one answer. */
@@ -322,31 +383,141 @@
       // that is not yours to press reads better absent than greyed.
       const agents = $("#agents-section");
       if (agents) agents.hidden = !iOwn;
-      // The challenge is drawn when the dialog opens, not here. This runs
-      // on every refresh — including the one at sign-in and the one a
-      // failing sync triggers — and a widget rendered into a dialog that
-      // is closed is rendered into `display: none`, once, for the life of
-      // the page.
-      if (iOwn && this.dialog && this.dialog.open) this.drawChallenge();
-      // A credential belongs to the moment it was made (J16.6), and this
-      // is every moment after it. Keyed on the book it was minted for, it
+      // A key belongs to the moment it was made (J16.6), and this is
+      // every moment after it. Keyed on the book it was minted for, it
       // survived closing and reopening the dialog on the same book —
       // which is the thing somebody actually does, and which made "it is
       // not shown again" false where it was easiest to disprove. It is
-      // cleared unless this very render is the one that drew it.
-      const agentOut = $("#agent-out");
-      if (agentOut && !this.credentialJustShown) {
-        agentOut.hidden = true;
-        // The secret, not the block: the warning and the Copy button are
-        // markup that lives in the page and is wanted again next time.
-        const secret = $("#agent-secret");
-        if (secret) secret.textContent = "";
-        const said = $("#agent-copied");
-        if (said) said.textContent = "";
-      }
+      // forgotten unless this very render is the one that drew it.
+      if (!this.credentialJustShown) this.forgetKey();
       this.credentialJustShown = false;
 
       this.renderInvites(iOwn);
+      this.renderAgents(iOwn);
+    }
+
+    /**
+     * The book's agents, for its owner (J16.13): what each is called, the
+     * start of its key so two can be told apart, when it was added and
+     * when it was last used. A key nobody has used in months is the one
+     * worth asking about.
+     */
+    renderAgents(iOwn) {
+      const list = $("#agent-list");
+      const empty = $("#agent-empty");
+      if (!list) return;
+      if (!iOwn) {
+        list.innerHTML = "";
+        if (empty) empty.hidden = true;
+        return;
+      }
+      if (this.agentsFailed) {
+        list.innerHTML =
+          '<li class="member-item member-trouble">Couldn\u2019t load this book\u2019s agents. ' +
+          "Check your connection and open Books again.</li>";
+        if (empty) empty.hidden = true;
+        return;
+      }
+      if (empty) empty.hidden = this.agents.length > 0;
+      list.innerHTML = this.agents
+        .map((a) => {
+          const used = a.lastUsedAt ? `used ${sinceWhen(a.lastUsedAt)}` : "never used";
+          const added = shortDate(a.createdAt);
+          return `
+        <li class="member-item agent-item">
+          <span class="agent-who">
+            <span class="member-name">${esc(a.name)}</span>
+            <span class="agent-meta"><code class="invite-code">${esc(a.keyPrefix || "")}…</code>
+              ${added ? `· added ${esc(added)} ` : ""}· ${esc(used)}</span>
+          </span>
+          <button type="button" class="member-remove" data-agent-remove="${esc(a.userId)}"
+                  aria-label="Remove agent ${esc(a.name)}" title="Remove agent">×</button>
+        </li>`;
+        })
+        .join("");
+    }
+
+    /**
+     * Draw the one-time panel for a key just made: the key, and the
+     * settings for whichever client is picked (J16.14). Text only, never
+     * markup — the key and the URL are the two things that vary.
+     */
+    showKey(key) {
+      this.revealed = { key };
+      const out = $("#agent-out");
+      const secret = $("#agent-secret");
+      if (!out || !secret) return;
+      secret.textContent = key;
+      const said = $("#agent-copied");
+      if (said) said.textContent = "";
+      this.renderClientConfig();
+      out.hidden = false;
+      // Where a screen reader lands is the first thing it says, and the
+      // warning and the key are what it should say.
+      const copy = $("#agent-copy-btn");
+      if (copy) copy.focus();
+    }
+
+    /** The settings for the client picked in #agent-client. */
+    renderClientConfig() {
+      const pre = $("#agent-config");
+      const hint = $("#agent-client-hint");
+      const said = $("#agent-config-copied");
+      if (said) said.textContent = "";
+      if (!this.revealed) {
+        if (pre) pre.textContent = "";
+        if (hint) hint.textContent = "";
+        return;
+      }
+      const pick = $("#agent-client");
+      const configs = connectionConfigs(`${location.origin}/mcp`, this.revealed.key);
+      const chosen = configs[pick && pick.value] || configs["claude-code"];
+      if (pre) pre.textContent = chosen.text;
+      if (hint) hint.textContent = chosen.hint;
+    }
+
+    /**
+     * Put the key down: out of memory and out of the page. Closing the
+     * dialog, pressing Hide key, and every later render all come here, so
+     * the key is on screen for exactly as long as the panel is open.
+     */
+    forgetKey() {
+      this.revealed = null;
+      const out = $("#agent-out");
+      if (out) out.hidden = true;
+      for (const id of ["#agent-secret", "#agent-config", "#agent-client-hint",
+        "#agent-copied", "#agent-config-copied"]) {
+        const el = $(id);
+        if (el) el.textContent = "";
+      }
+    }
+
+    /**
+     * Remove an agent, having asked (J16.7). The same question whichever
+     * list the × was pressed in, and it says the two things that are true
+     * of no other removal: it is immediate, and the key does not come
+     * back.
+     */
+    async removeAgentAsked(userId) {
+      const who = this.agents.find((a) => a.userId === userId) ||
+        this.members.find((m) => m.userId === userId);
+      const name = who ? who.name : "this agent";
+      const ok = await RecipeAsk.ask(
+        `Remove ${name} from the book? Its key stops working straight away and for good — ` +
+          "to connect it again, add a new agent and use the new key.",
+        { confirmLabel: "Remove", danger: true }
+      );
+      if (!ok) return;
+      try {
+        // The membership row is the whole of it: the database takes the
+        // key and the account with it (J16.7).
+        await this.api.removeAgent(this.sync.bookId, userId);
+        await this.refresh();
+        this.app.toast(`${name} can no longer see this book.`);
+      } catch (err) {
+        console.warn("Recipe Friend: could not remove agent.", err);
+        this.app.toast("Couldn't remove that agent.");
+      }
     }
 
     /**
@@ -429,12 +600,11 @@
       $("#books-btn").addEventListener("click", async () => {
         this.dialog.showModal();
         await this.refresh();
-        // After the dialog is open and the section has been shown or
-        // hidden, so the widget is drawn into something with a size.
-        const current = this.currentBook();
-        if (current && current.isOwner) this.drawChallenge();
       });
       $("#books-close-btn").addEventListener("click", () => this.dialog.close());
+      // However the dialog closes — the button, Escape, a tap outside —
+      // an agent's key goes with it (J16.6).
+      this.dialog.addEventListener("close", () => this.forgetKey());
       this.dialog.addEventListener("click", (event) => {
         if (event.target === this.dialog) this.dialog.close();
       });
@@ -605,50 +775,56 @@
         // know which it is asking about: "this person" over a program is
         // the kind of wrong wording that makes somebody answer no.
         const who = this.members.find((m) => m.userId === btn.dataset.remove);
-        const isAgent = Boolean(who && who.role === "agent");
-        const ok = await RecipeAsk.ask(
-          isAgent
-            ? `Remove ${who.name} from the book? Its credential stops working straight away.`
-            : "Remove this person from the book?",
-          { confirmLabel: "Remove", danger: true }
-        );
+        if (who && who.role === "agent") {
+          await this.removeAgentAsked(who.userId);
+          return;
+        }
+        const ok = await RecipeAsk.ask("Remove this person from the book?", {
+          confirmLabel: "Remove",
+          danger: true,
+        });
         if (!ok) return;
         try {
-          // An agent's removal takes its account with it, which is what
-          // makes the promise above true (J16.7). A person's does not:
-          // they keep the account they signed in with.
-          if (isAgent) {
-            await this.api.removeAgent(this.sync.bookId, btn.dataset.remove);
-          } else {
-            await this.api.removeMember(this.sync.bookId, btn.dataset.remove);
-          }
+          // A person keeps the account they signed in with; only an
+          // agent's goes with its membership.
+          await this.api.removeMember(this.sync.bookId, btn.dataset.remove);
           await this.refresh();
-          if (isAgent) this.app.toast(`${who.name} can no longer see this book.`);
         } catch (err) {
           console.warn("Recipe Friend: could not remove member.", err);
-          this.app.toast(isAgent ? "Couldn't remove that agent." : "Couldn't remove that person.");
+          this.app.toast("Couldn't remove that person.");
         }
       });
 
       // --- agents (J16) ---------------------------------------------------
 
+      const agentList = $("#agent-list");
+      if (agentList) {
+        agentList.addEventListener("click", async (event) => {
+          const btn = event.target.closest("[data-agent-remove]");
+          if (btn) await this.removeAgentAsked(btn.dataset.agentRemove);
+        });
+      }
+
       const copyBtn = $("#agent-copy-btn");
       if (copyBtn) {
-        copyBtn.addEventListener("click", async () => {
-          const secret = $("#agent-secret");
-          const said = $("#agent-copied");
-          const text = (secret && secret.textContent) || "";
-          if (!text) return;
-          try {
-            await navigator.clipboard.writeText(text);
-            if (said) said.textContent = "Copied.";
-          } catch (err) {
-            // A refused clipboard is not a lost credential: it is still
-            // on screen and still selectable, so say that rather than
-            // reporting a failure somebody can do nothing about.
-            console.warn("Recipe Friend: could not reach the clipboard.", err);
-            if (said) said.textContent = "Couldn't copy — select it and copy by hand.";
-          }
+        copyBtn.addEventListener("click", () =>
+          copyAndSay(this.revealed && this.revealed.key, $("#agent-copied")));
+      }
+      const configCopy = $("#agent-config-copy-btn");
+      if (configCopy) {
+        configCopy.addEventListener("click", () => {
+          const pre = $("#agent-config");
+          return copyAndSay(this.revealed && pre && pre.textContent, $("#agent-config-copied"));
+        });
+      }
+      const clientPick = $("#agent-client");
+      if (clientPick) clientPick.addEventListener("change", () => this.renderClientConfig());
+      const done = $("#agent-done-btn");
+      if (done) {
+        done.addEventListener("click", () => {
+          this.forgetKey();
+          const name = $("#new-agent-name");
+          if (name) name.focus();
         });
       }
 
@@ -662,51 +838,24 @@
             if (agentName) agentName.focus();
             return;
           }
-          const cloud = window.RecipeCloud;
-          if (!cloud || !cloud.makeScratchClient) return;
-          // Where there is a challenge on screen it has to be answered
-          // first. Asked for and refused, the server's complaint is the
-          // unhelpful kind, so the box under the thumb is what says so.
-          const token = this.challengeToken();
-          if (this.challengeId !== undefined && !token) {
-            this.app.toast("Tick the box to say you're a person first.");
-            return;
-          }
           try {
-            const agent = await this.api.createAgent(
-              this.sync.bookId,
-              name,
-              cloud.makeScratchClient,
-              cloud.coords,
-              token
-            );
+            const agent = await this.api.createAgent(this.sync.bookId, name);
             // Shown first, copied on purpose. This is a password in all
             // but name and it is shown exactly once (J16.6), so it does
             // not go onto the clipboard by itself — but making somebody
-            // select 250 characters of base64 by hand, in a dialog, on a
-            // phone, is how a credential gets half-copied and pasted
-            // broken. The button is the answer; the warning above it is
-            // still the point.
+            // select 47 characters by hand, in a dialog, on a phone, is
+            // how a key gets half-copied and pasted broken. The buttons
+            // are the answer; the warning above them is still the point.
             if (agentName) agentName.value = "";
             // Before the refresh below, which is what redraws the dialog
-            // and would otherwise wipe the credential it is about to show.
+            // and would otherwise forget the key it is about to show.
             this.credentialJustShown = true;
-            const out = $("#agent-out");
-            const secret = $("#agent-secret");
-            if (out && secret) {
-              // textContent, not innerHTML: the surrounding markup is in
-              // the page already, so the one thing that varies is the one
-              // thing that never becomes markup.
-              secret.textContent = agent.credential;
-              out.hidden = false;
-              const said = $("#agent-copied");
-              if (said) said.textContent = "";
-            }
-            // The agent exists and its credential is on screen, so a
-            // refresh that fails now must not report a failure to create
-            // it — the roster being stale is a smaller thing than telling
-            // somebody their credential is worthless while it is in front
-            // of them.
+            this.showKey(agent.key);
+            // The agent exists and its key is on screen, so a refresh
+            // that fails now must not report a failure to create it —
+            // the list being stale is a smaller thing than telling
+            // somebody their key is worthless while it is in front of
+            // them.
             try {
               await this.refresh();
             } catch (err) {
@@ -715,21 +864,14 @@
             this.app.toast(`${agent.name} can now read this book.`);
           } catch (err) {
             console.warn("Recipe Friend: could not add an agent.", err);
-            // The two likely failures are "anonymous sign-ins are
-            // disabled" and a refused challenge, and both are exactly
-            // what somebody setting this up has got wrong. Saying
-            // "couldn't add that agent" to either is telling them
-            // nothing they did not already know.
+            // The server's sentence ("only the owner…", "a book can have
+            // at most 20 agents") is the useful part. "Couldn't add that
+            // agent" alone tells somebody nothing they did not know.
             this.app.toast(
               err && err.message
                 ? `Couldn't add that agent — ${err.message}`
                 : "Couldn't add that agent."
             );
-          } finally {
-            // Spent either way: a token answers once, and a refused
-            // attempt has still used it up. Left alone, the second try
-            // fails on a stale answer and reads as the same failure.
-            this.resetChallenge();
           }
         });
       }
@@ -981,5 +1123,11 @@
     }
   }
 
-  global.RecipeBooks = { BooksUI, rememberSelection, rememberedSelection };
+  global.RecipeBooks = {
+    BooksUI,
+    rememberSelection,
+    rememberedSelection,
+    connectionConfigs,
+    sinceWhen,
+  };
 })(window);
