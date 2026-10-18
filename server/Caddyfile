@@ -1,0 +1,42 @@
+# Stands in for Supabase's API gateway, and serves the site from the same
+# origin so there is no CORS to configure. The three APIs are mounted where
+# supabase-js expects them, with the prefix stripped before it reaches the
+# service, exactly as Supabase's own gateway does.
+{
+	auto_https off
+	admin off
+}
+
+:80 {
+	handle_path /auth/v1/* {
+		reverse_proxy auth:9999 {
+			header_up X-Forwarded-Prefix /auth/v1
+		}
+	}
+
+	handle_path /rest/v1/* {
+		reverse_proxy rest:3000 {
+			header_up X-Forwarded-Prefix /rest/v1
+		}
+	}
+
+	handle_path /storage/v1/* {
+		reverse_proxy storage:5000 {
+			header_up X-Forwarded-Prefix /storage/v1
+		}
+	}
+
+	# The site is a handful of files at the root of the repository, and
+	# the repository is what is mounted. Serving the whole of it would hand
+	# out .git, the tests and this directory, so the site's own files are
+	# named and everything else is a 404.
+	@site path / /index.html /privacy.html /terms.html /assets/* /css/* /js/*
+	handle @site {
+		root * /srv
+		file_server
+	}
+
+	handle {
+		respond 404
+	}
+}

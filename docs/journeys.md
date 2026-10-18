@@ -1589,9 +1589,9 @@ those an agent is allowed to reach for — and one of them runs the real
 program in a real subprocess, because the rule that nothing but protocol
 messages reaches stdout cannot be checked any other way.
 
-**Sixteen of the 182 criteria have no test naming them** — J4.15,
-J4.16, J4.19, J4.25, J5.10, J6.3, J10.4, J11.1 to J11.5, J12.12, J15.9,
-J15.11 and J16.5.
+**Fifteen of the 182 criteria have no test naming them** — J4.15,
+J4.16, J4.19, J4.25, J5.10, J6.3, J10.4, J11.1 to J11.5, J12.12, J15.9
+and J15.11.
 
 Five of those are a correction rather than a change. J4.19, J6.3, J10.4,
 J11.5 and J15.9 had been counted as covered for a long time and are not:
@@ -1601,8 +1601,9 @@ criteria and new tests to the old figures — rather than by counting.
 Counting is the only reason the number moved. **The convention is that a
 test title quotes its criterion**, and that is what is measured here.
 
-J16.5 is the last one left of that journey, and it is a policy — an
-agent may clear a plan — which belongs with the database below.
+J16.5 was the last one left of that journey, and came off when the
+database got tests of its own (below): it is a policy — an agent may
+clear a plan — and nothing else could have held it.
 
 Two of its neighbours were on this list until the MCP server arrived and
 came off it, which is the clearest thing that server earned. J16.9 —
@@ -1614,16 +1615,9 @@ second half is tested. Neither was ever something a stub DOM could be
 asked about; both are something the program on the other end of the
 credential can be.
 
-Six more things the tests do not reach, recorded so the
+Four more things the tests do not reach, recorded so the
 gap is visible:
 
-- **The 48-hour lifetime and single use of an invite** are the database's,
-  not the app's (J7.4). The client asks only for links that have not
-  expired, mints them for one person, and says so on screen; nothing
-  client-side stops an expired one.
-- **The profile and first book a new account gets** are made by a database
-  trigger (J1.3). Only the client's fallback — naming a book after someone
-  when their account arrives with none — is held by a test.
 - **The resampling and JPEG encoding behind a device photo** are the
   browser's canvas, not ours (J2.7). The tests check the size and quality
   the app asks for; that the result is a smaller, readable JPEG is taken on
@@ -1820,17 +1814,87 @@ gap is visible:
   over them. Tab to Filter, Enter, Tab, Enter, Tab, Enter now leaves two
   tags ticked, the menu open, and the keyboard on the second tag.
 
-**The database is deliberately outside the net.** The row-level security
-policies — including the ones on `live_plans` and `plans`, which are what
-stop a read-only member planning (J12.10), and the ones that hold an
-agent to reading, adding and planning (J16.3, J16.4) — `redeem_invite`,
-`preview_invite`, `move_recipe`, `add_agent` and the check that keeps it
-from conscripting a person (J16.1), the three triggers that make a
-recipe's book, a membership row's subject and a plan's book immutable,
-and the Storage rules, agents excepted from reading (J16.10), are the
-security model, and none of them
-are tested: doing so needs a live Postgres
-that CI has not got. They are verified by hand in the Supabase dashboard
-when a migration is applied. This is the largest untested surface in the
-project and is written down here so it stays visible rather than being
-mistaken for coverage.
+**The database is inside the net now.** The row-level security policies,
+the definer functions and the triggers are the security model, and for
+as long as the app had them they were verified by hand in the Supabase
+dashboard, because CI had no Postgres to run them on. `server/` is that
+Postgres: the same images production runs (Postgres, GoTrue, PostgREST
+and Storage behind Caddy), brought up by CI's `db` job, migrated by
+`server/migrate.sh`, and asked directly by the `test/db-*` files. Those
+skip when `DATABASE_URL` is not set, so `node --test test/*.test.js`
+still needs no Docker.
+
+Most of them act as a user the way PostgREST does — `authenticated`, with
+that user's claims — inside a transaction that is rolled back, and each
+checks the case that is allowed **and** the case that is refused, since a
+policy that refuses everything passes half of every test. A refused
+update or delete is not an error, only a row that did not change, so
+those count rows and read the row back. What they hold:
+
+- the new-user trigger: a profile and one book named after the person
+  (J1.3), and a profile and **no** book for an agent (J16.1);
+- signed out, nothing at all (J1.1);
+- who may write to a book — editors yes, viewers and strangers no, a
+  favourite being a write (J7.3, J7.17) — and that a viewer can still copy
+  a recipe out (J7.16);
+- membership as consent: nobody can be put into a book, only join one they
+  own or redeem an invite (J7.5), leaving and removal (J7.6, J7.12), and
+  deleting a book (J7.8);
+- invites: one person, 48 hours, revocable by the owner and only the owner,
+  a preview that joins nobody, the role a link grants, never ownership, and
+  closed to anonymous callers (J7.4, J7.5, J7.17);
+- `move_recipe`: the owner's, into a book they can write to, as a copy and a
+  tombstone (J7.10);
+- the three immutability triggers — a recipe's book, a membership row's
+  person and book, a plan's book (J7.10, J7.17, J12.2) — and the owner
+  changing a role along the ladder but never to owner (J7.17);
+- the plan: a viewer cannot plan (J12.10), one live plan per book that only
+  its editors write, a week recorded once per book (J14.10), and Undo
+  (J14.2);
+- agents: no book of their own, one book only, never a person placed as one
+  (J16.1), placed only by the owner (J16.2), reading, adding and planning
+  and nothing else (J16.3), never finishing or undoing a plan (J16.4),
+  clearing one (J16.5), gone when removed (J16.7), and a role that cannot
+  be changed to or from (J16.8) — all of it still true of an agent whose
+  account has been turned into a permanent one (below);
+- the Storage rules: members read a book's photos and strangers do not
+  (J2.8), viewers cannot add or remove one (J7.17), and an agent gets none
+  (J16.10).
+
+Four more, in `db-e2e.test.js`, run the app's own `RecipeApi` through the
+supabase-js it ships, over HTTP, against the whole stack: a recipe and its
+tombstone round-tripping (J9.4), an invite previewed, redeemed and refused
+the second time (J7.4), a photo uploaded and read back through a signed
+URL (J2.8), and an agent made the way the Sharing list makes one, adding a
+recipe and refused an edit (J16.3). They are there for the gap between
+what the SQL allows and what the client sends, not as a second copy of the
+policy tests.
+
+The tests were themselves checked by breaking what they hold: dropping
+two of the immutability triggers, taking the agent clause out of the
+third, loosening the photo rule, the live-plan insert policy, the
+plans insert policy and the guard on creating a book, and taking the
+checks out of `redeem_invite`; and for migration 009, answering "no"
+from `is_agent_user` and putting `add_agent` and `discard_orphan_agent`
+back to 008's rules. Each turned the tests that name it red.
+That was done once, by hand, and is not repeated in CI.
+
+What the database tests do not reach:
+
+- **The two quotas** — 2000 recipes and 2000 recorded plans a book — are
+  triggers no test fills.
+- **The sign-in settings** are GoTrue's configuration, not the schema, and
+  are not tested: that email sign-in is off, that Google is the only way
+  in, and that anonymous sign-ins need a challenge.
+
+  The agent rules used to lean on one more: that an anonymous account
+  cannot be turned into a permanent one. GoTrue allows it wherever email
+  sign-in or manual identity linking is on, and on the development stack,
+  which has email on, an agent's own credential was enough. 008 asked
+  "is this account anonymous" to decide who was an agent, so a converted
+  agent could make itself a book, redeem an invite link, and outlive its
+  own removal. The tests found it; migration 009 closed it by asking
+  instead whether the account was ever placed as an agent, which
+  `add_agent` records and conversion cannot change. The tests for it act
+  on a converted account directly. Production keeps those settings off
+  regardless.

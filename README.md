@@ -103,14 +103,26 @@ through a stub DOM: type in the search box, pick a photo, click Export,
 open an invite link. The `mcp-*` files test the MCP server, which has two
 dependencies, so `npm install` comes first if you want to run everything.
 
+The `db-*` files test the database — the row-level security policies,
+functions and triggers that are the app's security model — against a
+real Postgres, and skip unless `DATABASE_URL` is set. With Docker:
+
+```bash
+cp server/.env.example server/.env
+docker compose -f server/compose.yaml up -d --wait
+server/migrate.sh
+DATABASE_URL=postgres://postgres:local-dev-only-postgres-password@127.0.0.1:54322/postgres \
+  node --test test/db-*.test.js
+```
+
+`server/README.md` says what that stack is. CI runs the same steps as a
+job of its own.
+
 Every test name quotes a criterion from [`docs/journeys.md`](docs/journeys.md),
 so a failure points at behaviour that was agreed rather than at an
-implementation detail. **166 of the 182 criteria have a test naming
-them**; the sixteen that do not are listed at the end of the journeys,
-along with the database, which is deliberately outside the net.
-
-The database is deliberately not covered — see the note at the end of the
-journeys. Row-level security is verified by hand when a migration is run.
+implementation detail. **167 of the 182 criteria have a test naming
+them**; the fifteen that do not are listed at the end of the journeys,
+along with what the database tests do and do not reach.
 
 ## Backend (Supabase) setup
 
