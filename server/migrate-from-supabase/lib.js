@@ -347,15 +347,14 @@ function selections() {
 const BUCKET = "recipe-photos";
 
 /**
- * Headers for a service-role call. A legacy key is a JWT and goes in both
- * headers, which is what the self-hosted stack (no gateway) needs. A new
- * `sb_secret_…` key is not a JWT: hosted Supabase's gateway takes it as
- * `apikey` and mints the token itself, so it is not sent as a bearer.
+ * Headers for a service-role call: the key in both headers, as supabase-js
+ * sends it. A legacy key is a JWT, which the self-hosted stack (no gateway)
+ * checks directly. A new `sb_secret_…` key is not a JWT; hosted Supabase's
+ * gateway swaps it for one, but Storage still refuses a request with no
+ * `authorization` header at all (HTTP 400, found on the first rehearsal).
  */
 function storageHeaders(key) {
-  const h = { apikey: key };
-  if (key.startsWith("eyJ")) h.authorization = `Bearer ${key}`;
-  return h;
+  return { apikey: key, authorization: `Bearer ${key}` };
 }
 
 function encodePath(path) {
