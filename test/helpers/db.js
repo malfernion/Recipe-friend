@@ -236,6 +236,10 @@ function stackConfig() {
   }
   return {
     url: process.env.STACK_URL || `http://127.0.0.1:${env.HTTP_PORT || 8080}`,
+    // The address the stack believes it has (PUBLIC_URL): GoTrue's issuer
+    // and the MCP server's resource are built from it, and an OAuth client
+    // checks they match the URL it was given.
+    publicUrl: process.env.STACK_PUBLIC_URL || env.PUBLIC_URL || "http://localhost:8080",
     anonKey: env.ANON_KEY,
     serviceKey: env.SERVICE_ROLE_KEY,
     // Only for the tests that act as the hosted MCP server would.

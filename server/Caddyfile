@@ -9,6 +9,40 @@
 
 :80 {
 	handle_path /auth/v1/* {
+		# An assistant signing in asks for a scope, and GoTrue's OAuth
+		# server knows only OIDC's. `openid` would have it make an ID
+		# token, which it cannot sign with this stack's HS256 secret, and
+		# the token request fails. The scope decides nothing here (the
+		# agent role does), so every request asks for the one the MCP
+		# server advertises, whatever the client chose.
+		@authorize path /oauth/authorize
+		uri @authorize query scope email
+		reverse_proxy auth:9999 {
+			header_up X-Forwarded-Prefix /auth/v1
+		}
+	}
+
+	# How an MCP client finds where to sign in (J17.15). The 401 from /mcp
+	# points at the protected-resource metadata (RFC 9728), which the mcp
+	# service serves; that names GoTrue's issuer, …/auth/v1, whose own
+	# metadata a client looks for with the issuer's path appended to the
+	# well-known one (RFC 8414 and OIDC), or at the root as older clients
+	# do. GoTrue serves it at /auth/v1/.well-known/… already; these are the
+	# other places it is looked for.
+	@resource_metadata path /.well-known/oauth-protected-resource /.well-known/oauth-protected-resource/*
+	handle @resource_metadata {
+		reverse_proxy mcp:3100
+	}
+	@as_metadata path /.well-known/oauth-authorization-server /.well-known/oauth-authorization-server/auth/v1
+	handle @as_metadata {
+		rewrite * /.well-known/oauth-authorization-server
+		reverse_proxy auth:9999 {
+			header_up X-Forwarded-Prefix /auth/v1
+		}
+	}
+	@oidc_metadata path /.well-known/openid-configuration /.well-known/openid-configuration/auth/v1
+	handle @oidc_metadata {
+		rewrite * /.well-known/openid-configuration
 		reverse_proxy auth:9999 {
 			header_up X-Forwarded-Prefix /auth/v1
 		}

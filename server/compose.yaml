@@ -79,6 +79,23 @@ services:
       GOTRUE_EXTERNAL_EMAIL_ENABLED: ${ENABLE_EMAIL_SIGNUP:-true}
       GOTRUE_MAILER_AUTOCONFIRM: "true"
       GOTRUE_EXTERNAL_PHONE_ENABLED: "false"
+      # GoTrue is also the OAuth 2.1 server assistants sign in through
+      # (Claude.ai and ChatGPT connectors, Claude Code; J17.15). Apps
+      # register themselves (dynamic client registration, which an app
+      # gets nothing from until an owner allows it), and the consent
+      # screen is the site's own: GoTrue sends the browser to
+      # SITE_URL + this path + ?authorization_id=…, which js/connect.js
+      # picks up.
+      GOTRUE_OAUTH_SERVER_ENABLED: "true"
+      GOTRUE_OAUTH_SERVER_ALLOW_DYNAMIC_REGISTRATION: "true"
+      GOTRUE_OAUTH_SERVER_AUTHORIZATION_PATH: /
+      # Rewrites the token GoTrue issues an app so it names the app's agent
+      # rather than the person, with a role PostgREST and Storage refuse
+      # (migration 011). Every other token passes through it untouched.
+      # The function is the app's, so GoTrue needs the migrations applied
+      # before it issues a token: until then, every sign-in fails.
+      GOTRUE_HOOK_CUSTOM_ACCESS_TOKEN_ENABLED: "true"
+      GOTRUE_HOOK_CUSTOM_ACCESS_TOKEN_URI: pg-functions://postgres/public/custom_access_token_hook
     healthcheck:
       test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:9999/health"]
       interval: 5s
@@ -159,6 +176,10 @@ services:
       JWT_SECRET: ${JWT_SECRET}
       ANON_KEY: ${ANON_KEY}
       PORT: 3100
+      # The site's address as a browser sees it: turns on sign-in for
+      # assistants, and is where the protected-resource metadata says
+      # the server and its authorization server (GoTrue) are.
+      PUBLIC_URL: ${PUBLIC_URL}
       # How long a resolved key is believed: the bound on how long a
       # removed agent's key still works. At most 60; the code clamps it.
       KEY_CACHE_SECONDS: ${MCP_KEY_CACHE_SECONDS:-30}

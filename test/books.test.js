@@ -108,6 +108,8 @@ function fakeCloud() {
     agents: [],
     // Their keys, as list_agents sees them: never the key, only its start.
     agent_keys: [],
+    // Apps that signed in and were connected to a book (J16.15).
+    agent_apps: [],
   };
   const calls = [];
   const failures = new Map(); // "table.op" or "storage.copy" -> Error
@@ -228,6 +230,7 @@ function fakeCloud() {
         // agent_membership_gone (010): the row takes the key with it.
         const gone = new Set(hit.filter((m) => m.role === "agent").map((m) => m.user_id));
         db.agent_keys = db.agent_keys.filter((k) => !gone.has(k.agent_id));
+        db.agent_apps = db.agent_apps.filter((k) => !gone.has(k.agent_id));
       }
       data = hit;
     }
@@ -372,10 +375,15 @@ function fakeCloud() {
       if (!target || target.owner !== ME) {
         throw new Error("only the owner of a book may list its agents");
       }
-      return db.agent_keys
+      const keys = db.agent_keys
         .filter((k) => k.book_id === book)
         .map(({ agent_id, name, key_prefix, created_at, last_used_at }) =>
-          ({ agent_id, name, key_prefix, created_at, last_used_at }));
+          ({ agent_id, name, kind: "key", key_prefix, redirect_host: null, created_at, last_used_at }));
+      const apps = db.agent_apps
+        .filter((k) => k.book_id === book)
+        .map(({ agent_id, name, redirect_host, created_at, last_used_at }) =>
+          ({ agent_id, name, kind: "app", key_prefix: null, redirect_host, created_at, last_used_at }));
+      return [...keys, ...apps];
     },
   };
 
@@ -397,6 +405,19 @@ function fakeCloud() {
   return {
     db, client, calls, files,
     join,
+    /** An app that signed in, as connect_app leaves it (J16.15). */
+    connectedApp: (over = {}) => {
+      const id = over.agent_id || `app-${db.agent_apps.length + 1}`;
+      const row = {
+        agent_id: id, book_id: over.book_id || MINE, name: over.name || "Claude",
+        redirect_host: over.redirect_host === undefined ? "claude.ai" : over.redirect_host,
+        created_at: "2026-10-18T12:00:00Z", last_used_at: over.last_used_at || null,
+      };
+      db.agent_apps.push(row);
+      db.profiles.push({ user_id: id, display_name: row.name });
+      join(row.book_id, id, "agent");
+      return row;
+    },
     fail: (what, err) => failures.set(what, err || new Error("offline")),
     unfail: (what) => failures.delete(what),
     /** Every call to one table, or every storage call of one kind. */
@@ -2553,4 +2574,76 @@ test("J16.13 · last used is said the way somebody would say it", () => {
   assert.equal(sinceWhen(ago(2 * 24 * HOURS), now), "2 days ago");
   assert.equal(sinceWhen("2026-07-01T12:00:00Z", now), "on 1 Jul 2026");
   assert.equal(sinceWhen(ago(-60000), now), "just now", "a clock a little ahead is not the future");
+});
+
+// ---------------------------------------------------------------------
+// J16.15, J17.15 · apps that sign in, in the owner's list
+// ---------------------------------------------------------------------
+
+test("J16.15 · a connected app is listed with the agents: named, marked as an app, with the host it returns to", async () => {
+  const h = harness();
+  h.cloud.connectedApp({ name: "Claude", redirect_host: "claude.ai",
+    last_used_at: new Date(Date.now() - 2 * HOURS - 60000).toISOString() });
+  await addAgent(h, "Meal planner");
+  await h.books.refresh();
+
+  const rows = agentRows(h);
+  assert.equal(rows.length, 2);
+  const app = rows.find((r) => /Claude/.test(r));
+  assert.match(app, /connected app · claude\.ai/);
+  assert.match(app, /added 18 Oct 2026/);
+  assert.match(app, /used 2 hours ago/);
+  assert.doesNotMatch(app, /invite-code|rfk_/, "an app has no key to show");
+  assert.match(app, /aria-label="Remove app Claude"/);
+  assert.match(rows.find((r) => /Meal planner/.test(r)), /rfk_kkkkkkkk…/, "a key's row is as it was");
+});
+
+test("J16.15 · an app's name and host are text, never markup", async () => {
+  const h = harness();
+  h.cloud.connectedApp({ name: "<img src=x onerror=alert(1)>", redirect_host: "evil\"><b>.test" });
+  await h.books.refresh();
+  const html = h.el("agent-list").innerHTML;
+  assert.doesNotMatch(html, /<img|<b>/);
+  assert.match(html, /&lt;img/);
+});
+
+test("J17.17 · removing a connected app asks first, says it is signed out for good, and takes it out", async () => {
+  const h = harness();
+  const app = h.cloud.connectedApp({ name: "ChatGPT", redirect_host: "chatgpt.com" });
+  await h.books.refresh();
+
+  h.setConfirm(false);
+  await h.el("agent-list").fire("click", { target: control({ agentRemove: app.agent_id }) });
+  await flush();
+  const asked = h.confirms[h.confirms.length - 1];
+  assert.match(asked, /Remove ChatGPT/);
+  assert.match(asked, /signed out straight away and for good/);
+  assert.match(asked, /connect it again from the app/);
+  assert.doesNotMatch(asked, /key/, "an app was never given a key");
+  assert.equal(h.db.agent_apps.length, 1);
+
+  h.setConfirm(true);
+  await h.el("agent-list").fire("click", { target: control({ agentRemove: app.agent_id }) });
+  await flush();
+  assert.equal(h.db.book_members.some((m) => m.user_id === app.agent_id), false);
+  assert.equal(agentRows(h).length, 0);
+  assert.match(h.lastToast(), /ChatGPT can no longer see this book/);
+});
+
+test("J17.15 · the section gives the address for apps that sign in, with no key in it", async () => {
+  const h = harness();
+  await h.books.refresh();
+  const text = h.el("agent-signin-config").textContent;
+  assert.match(text, /Address\s+https:\/\/test\.local\/mcp/);
+  assert.match(text, /claude mcp add --transport http recipe-friend https:\/\/test\.local\/mcp$/m,
+    "Claude Code with no header: it signs in");
+  assert.doesNotMatch(text, /Authorization|rfk_/);
+
+  await h.el("agent-signin-copy-btn").fire("click", {});
+  assert.equal(h.clipboard[h.clipboard.length - 1], "https://test.local/mcp");
+  assert.equal(h.el("agent-signin-copied").textContent, "Copied.");
+
+  await h.books.switchTo(SHARED);
+  await flush();
+  assert.equal(h.el("agent-signin-config").textContent, "", "nothing for a book you only share");
 });

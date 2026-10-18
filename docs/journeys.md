@@ -1077,6 +1077,27 @@ not somebody.
     what this server answers, and the JSON ones are JSON. They exist
     only while the key does: closing the panel or the dialog takes the
     key and every setting made from it off the page.
+15. **An app that signs in is an agent too.** Claude.ai, ChatGPT and
+    Claude Code sign in rather than take a key (J17.15). When one asks,
+    the auth server sends the owner to the site's own consent screen,
+    which needs them signed in (the usual Google sign-in, with the
+    request held across it) and then says which app is asking **and the
+    host it will send them back to** — the name is whatever the app chose
+    to call itself, and the host is the one part it cannot choose. It
+    offers only books the person owns; an editor or reader with no book
+    of their own is told that only a book's owner can connect an app,
+    and can only Deny. Allow makes the app an agent in the chosen book
+    — one call, checked against the caller owning the book and against
+    the request being their own and still pending — and only then tells
+    the auth server yes, so the token it issues has an agent to name.
+    Deny tells it no and makes nothing. Connecting the same app again
+    reuses its agent, or moves it to the book chosen this time.
+
+    It is in the Agents list with the rest (J16.13), marked as a
+    connected app with its host instead of a key prefix, and removed by
+    the same ×, whose question says it is signed out straight away and
+    for good, and that using it again means connecting it again from the
+    app.
 
 ---
 
@@ -1096,8 +1117,9 @@ release.
 
 1. **It is a service the household's server hosts, not a program every
    assistant runs.** MCP's Streamable HTTP transport at `/mcp`, stateless:
-   each POST carries `Authorization: Bearer rfk_…` and is answered on its
-   own. No key, or one that is not live, is a 401 with a
+   each POST carries `Authorization: Bearer` and an agent key (`rfk_…`)
+   or a connected app's access token (J17.15), and is answered on its
+   own. No credential, or one that is not live, is a 401 with a
    `WWW-Authenticate` header rather than a tool answer, because no tool
    ran; GET and DELETE are 405, there being no stream to hold open and no
    session to end.
@@ -1396,6 +1418,43 @@ release.
     finished week is not one to add to (J17.9). What is reported is what
     survived the merge, and because the list merges line by line
     (J12.13), what survives is nearly always what was asked for.
+15. **An assistant can sign in instead of being given a key.** The
+    clients people actually use — Claude.ai and ChatGPT connectors,
+    Claude Code — speak MCP's OAuth, and Claude.ai has nowhere to paste
+    a key. So a request with no credential is told where to sign in: the
+    401 names this server's protected-resource metadata (RFC 9728), at
+    `/.well-known/oauth-protected-resource/mcp`, which names the auth
+    server (GoTrue, issuer `…/auth/v1`) — whose own metadata is found at
+    every place a client derives from that issuer, path-suffixed and
+    not. Apps register themselves (dynamic client registration), use
+    PKCE, and are sent to the consent screen (J16.15). The scope is
+    fixed at the one the auth server can always issue: asking for
+    `openid` would have it make an ID token it cannot sign, so it is not
+    asked for, whatever the client wanted. What an app may do is the
+    agent role's business, not the scope's. Keys are unchanged, and are
+    still what an unattended agent should use: a key does not expire,
+    where a signed-in app holds a refresh token that rotates.
+16. **A connected app's token is its agent's, never the person's.** The
+    auth server would issue the person's own session, good at the REST
+    API, storage and the auth server itself. Instead, a hook in the
+    database rewrites every token it issues to an OAuth client: the
+    subject becomes the agent the app was connected to, the role one
+    that nothing will switch to (so the REST API and storage refuse it
+    outright), the audience this server, and none of the person's
+    details remain. An app with no agent gets no token at all. This
+    server checks the token in full — signature, expiry, issuer,
+    audience, role, client — before asking the database anything, then
+    asks, as the one role that may (J16.12), whether that agent is still
+    bound to that app and in its book, and from there acts exactly as it
+    does for a key: a five-minute token for the agent (J17.1). A
+    person's own session is refused here, and so is the agent token
+    this server mints.
+17. **Removing a connected app ends it.** Whatever deletes its
+    membership row also deletes the person's consent for that app and
+    every session the auth server issued it, so its refresh token is
+    dead in the same statement. Its last access token names an agent
+    that no longer exists; this server stops believing it within the
+    same bound as a key (J17.3).
 
 ---
 

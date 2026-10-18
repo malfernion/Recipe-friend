@@ -116,11 +116,50 @@ healthcheck is `GET /health` on 127.0.0.1:3100 inside the container.
 | `ANON_KEY` | optional, sent as `apikey` |
 | `PORT` | 3100 |
 | `KEY_CACHE_SECONDS` | how long a resolved key is believed (default 30, clamped to 60) — the bound on how long a removed agent's key still works. Set here from `MCP_KEY_CACHE_SECONDS`, which `.env.example` makes 5 so the tests wait less |
+| `PUBLIC_URL` | the site's address as a browser sees it; turns on sign-in for apps (J17.15). The resource is `PUBLIC_URL/mcp` and GoTrue at `PUBLIC_URL/auth/v1` its authorization server. Unset, only keys work |
+| `AUTH_ISSUER` | optional; GoTrue's issuer when it is not `PUBLIC_URL/auth/v1` |
 
 It resolves keys by calling `resolve_agent_key` through PostgREST as the
 `recipe_friend_mcp` role, which migration 010 creates NOLOGIN and grants
 to `authenticator`. `db-mcp-http.test.js` drives it through Caddy.
 
-A production stack needs the same: the service, the same three
-variables, and a `/mcp` route (`handle /mcp { reverse_proxy mcp:3100 }`)
-in its Caddyfile, ahead of the site's catch-all.
+A production stack needs the same: the service, the same variables, and a
+`/mcp` route (`handle /mcp { reverse_proxy mcp:3100 }`) in its Caddyfile,
+ahead of the site's catch-all.
+
+## Apps that sign in (OAuth)
+
+GoTrue is also the OAuth 2.1 server that Claude.ai, ChatGPT and Claude
+Code sign in through (J16.15, J17.15–J17.17). It takes five settings on
+the `auth` service:
+
+| Variable | Value |
+|---|---|
+| `GOTRUE_OAUTH_SERVER_ENABLED` | `"true"` |
+| `GOTRUE_OAUTH_SERVER_ALLOW_DYNAMIC_REGISTRATION` | `"true"` — apps register themselves; one gets nothing until an owner allows it |
+| `GOTRUE_OAUTH_SERVER_AUTHORIZATION_PATH` | `/` — GoTrue sends the browser to `SITE_URL/?authorization_id=…`, where `js/connect.js` is the consent screen |
+| `GOTRUE_HOOK_CUSTOM_ACCESS_TOKEN_ENABLED` | `"true"` |
+| `GOTRUE_HOOK_CUSTOM_ACCESS_TOKEN_URI` | `pg-functions://postgres/public/custom_access_token_hook` |
+
+The hook is migration 011's. It rewrites a token issued to an OAuth client
+so that it names the app's agent, with a role PostgREST and Storage refuse,
+and refuses one for an app nobody connected; every other token passes
+through untouched. GoTrue calls it for **every** token it issues, so the
+migrations must be applied before GoTrue starts with it on — until the
+function exists, every sign-in fails.
+
+Caddy routes the discovery documents (see the Caddyfile): the
+protected-resource metadata, `/.well-known/oauth-protected-resource` and
+`/.well-known/oauth-protected-resource/mcp`, to the `mcp` service; and
+GoTrue's metadata at `/.well-known/oauth-authorization-server[/auth/v1]`
+and `/.well-known/openid-configuration[/auth/v1]`, which is where a client
+looks given the issuer `…/auth/v1`. It also pins the scope of every
+`/auth/v1/oauth/authorize` to `email`: with this stack's HS256 secret
+GoTrue cannot sign the ID token `openid` would ask for, and the token
+request would fail.
+
+The tokens are signed with the stack's HS256 `JWT_SECRET`, as sessions
+are, and last `JWT_EXPIRY`; refresh tokens rotate. Removing the app's agent
+deletes its consent and its GoTrue sessions, so the refresh token dies at
+once. `db-oauth.test.js` drives the whole flow with the MCP SDK's own
+OAuth client.
