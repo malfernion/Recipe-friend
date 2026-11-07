@@ -151,7 +151,7 @@
   }
 
   class RecipeSync {
-    constructor(store, api, onStatus, planStore) {
+    constructor(store, api, onStatus, planStore, listStore) {
       this.store = store;
       this.api = api;
       this.onStatus = onStatus || (() => {});
@@ -159,6 +159,10 @@
       // link, the tests that only care about recipes. Everything to do
       // with plans below is a no-op without it.
       this.planStore = planStore || null;
+      // The book's lists (J18), optional in the same way.
+      this.listStore = listStore || null;
+      this.listsBusy = false;
+      this.listsAgain = false;
       this.bookId = null;
       this.readOnly = false; // a book we may read and not write (J7.17)
       this.addOnly = false; // an agent: adds recipes, never edits them (J16.3)
@@ -376,6 +380,7 @@
       // a plan pointed at the wrong book is a shopping list for somebody
       // else's week.
       if (this.planStore) this.planStore.useBook(bookId);
+      if (this.listStore) this.listStore.useBook(bookId);
     }
 
 
@@ -410,9 +415,10 @@
         if (pushed > 0) await this.api.pushRecipes(mine);
 
         const plans = await this.syncPlans();
+        const lists = await this.syncLists();
 
-        this.status("synced", { pushed, pulled: rows.length, plans });
-        return { pushed, pulled: rows.length, plans };
+        this.status("synced", { pushed, pulled: rows.length, plans, lists });
+        return { pushed, pulled: rows.length, plans, lists };
       } catch (err) {
         console.warn("Recipe Friend: sync failed.", err);
         this.pending = true; // retry on the next local change or sign-in
@@ -819,6 +825,179 @@
       this.bookId = null;
       this.userId = null;
       if (this.planStore) this.planStore.useBook(null);
+      if (this.listStore) this.listStore.useBook(null);
+    }
+
+    // -------------------------------------------------------------------
+    // Lists (J18)
+    // -------------------------------------------------------------------
+
+    /**
+     * Pull one list — or every list, with no id — merge, and push what
+     * the server lacks. This is what the UI calls every few seconds while
+     * a list is on screen and the tab is visible, and on focus (J18.24):
+     * there is no realtime service, so "within seconds" is a poll.
+     *
+     * Quiet: it does not touch the status line, and a failure (no
+     * signal, J18.22) is swallowed and answered with null, because the
+     * next poll is the retry. The list itself never waits on it.
+     */
+    async pullLists(listId = null) {
+      if (!this.listStore || !this.bookId) return null;
+      try {
+        return await this.syncLists(listId);
+      } catch (err) {
+        console.warn("Recipe Friend: could not pull lists.", err);
+        return null;
+      }
+    }
+
+    /**
+     * Reconcile this book's lists with the server.
+     *
+     * Each list is one row (012) and merges with `RecipeLists.mergeLists`,
+     * which never loses a fact either side holds. The merged copy goes
+     * back only over the row it was merged with (compare-and-set on
+     * updated_at); if somebody wrote in between, the row is read again
+     * and merged again. Two phones saving at once therefore both keep
+     * what they did (J18.23).
+     *
+     * A reader pushes nothing (J18.4). An agent pushes items and nothing
+     * else: it may not make, rename or delete a list (J18.25), and the
+     * database says the same.
+     *
+     * The first time an editor's device finds the book with no list rows
+     * at all, the live plan moves into a "Shopping" checklist (build
+     * step 1). It runs after `syncPlans`, so the plan is the book's and
+     * not a stale copy, and its ids are fixed by the plan, so two devices
+     * doing it at once make one list. A deleted list leaves a tombstone
+     * row, so a book whose Shopping list was deleted is not seeded again.
+     *
+     * One run at a time: a call that arrives while one is running asks
+     * for another pass when it ends, and returns null.
+     */
+    async syncLists(onlyId = null) {
+      const ls = this.listStore;
+      if (!ls || !this.bookId) return null;
+      if (this.listsBusy) {
+        this.listsAgain = true;
+        return null;
+      }
+      this.listsBusy = true;
+      try {
+        let result = await this.reconcileLists(onlyId);
+        while (this.listsAgain) {
+          this.listsAgain = false;
+          result = await this.reconcileLists(null);
+        }
+        return result;
+      } finally {
+        this.listsBusy = false;
+        this.listsAgain = false;
+      }
+    }
+
+    async reconcileLists(onlyId) {
+      const Lists = global.RecipeLists;
+      const ls = this.listStore;
+      const bookId = this.bookId;
+      const canWrite = !this.readOnly;
+      const canMake = !this.readOnly && !this.addOnly;
+      const fromRow = (row) =>
+        Lists.sanitizeList({
+          id: row.id,
+          name: row.name,
+          nameAt: row.name_at,
+          kind: row.kind,
+          createdAt: toMillis(row.created_at),
+          items: row.items,
+        });
+
+      const rows = onlyId
+        ? [await this.api.fetchList(bookId, onlyId)].filter(Boolean)
+        : await this.api.fetchLists(bookId);
+      // The book changed under the request: these rows are another book's.
+      if (this.bookId !== bookId) return null;
+      const changed = new Set();
+      let pushed = 0;
+
+      if (!onlyId) {
+        if (rows.length > 0) ls.markSeeded();
+        else if (canMake && !ls.seeded) {
+          const recipes = this.store && this.store.recipes ? this.store.recipes : [];
+          const prefs = this.store && this.store.prefs ? this.store.prefs : {};
+          const seeded = ls.seedFromPlan(bookId, this.planStore ? this.planStore.plan : null, recipes, prefs);
+          if (seeded) changed.add(seeded.id);
+        }
+      }
+
+      const onServer = new Map();
+      for (const row of rows) {
+        if (row.deleted_at) {
+          if (ls.drop(row.id)) changed.add(row.id);
+          continue;
+        }
+        const remote = fromRow(row);
+        if (remote) onServer.set(remote.id, { remote, seenAt: row.updated_at });
+      }
+
+      // Deleted here: the tombstone goes up.
+      if (canMake) {
+        for (const id of ls.owed) {
+          if (onlyId && id !== onlyId) continue;
+          await this.api.deleteList(bookId, id);
+          ls.settleOwed(id);
+          onServer.delete(id);
+          pushed++;
+        }
+      }
+
+      // Here and not there: new here, or gone from the server.
+      for (const local of ls.lists) {
+        if ((onlyId && local.id !== onlyId) || onServer.has(local.id)) continue;
+        if (ls.isKnown(local.id)) {
+          if (ls.drop(local.id)) changed.add(local.id);
+          continue;
+        }
+        if (!canMake) continue;
+        await this.api.insertList(bookId, local);
+        ls.markKnown(local.id);
+        pushed++;
+      }
+
+      // On both: merge, keep, and write back what the server lacks.
+      for (const [id, entry] of onServer) {
+        let server = entry.remote;
+        let seen = entry.seenAt;
+        for (let attempt = 0; attempt < 3; attempt++) {
+          ls.markKnown(id);
+          if (ls.applyRemote(Lists.mergeLists(ls.get(id), server))) changed.add(id);
+          const held = ls.get(id);
+          if (!held || !canWrite) break;
+          const fields = {};
+          if (!Lists.sameItems(held, server)) fields.items = held.items;
+          if (canMake && (held.name !== server.name || held.nameAt !== server.nameAt)) {
+            fields.name = held.name;
+            fields.name_at = held.nameAt;
+          }
+          if (Object.keys(fields).length === 0) break;
+          if (await this.api.updateList(bookId, id, fields, seen)) {
+            pushed++;
+            break;
+          }
+          // Somebody wrote in between: read it again and merge with that.
+          const row = await this.api.fetchList(bookId, id);
+          if (!row || row.deleted_at) {
+            if (ls.drop(id)) changed.add(id);
+            break;
+          }
+          server = fromRow(row);
+          seen = row.updated_at;
+        }
+      }
+
+      ls.announce([...changed]);
+      return { pulled: rows.length, pushed, changed: [...changed] };
     }
   }
 

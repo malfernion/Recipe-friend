@@ -178,3 +178,84 @@ e2e("J16.3 · an agent may add a recipe, and may not edit one or see the photos"
   assert.equal((await ann.api.readRecipeData(soup)).data.name, "Soup");
   await assert.rejects(api.signedPhotoUrl(path, 60));
 });
+
+e2e("J18.17, J18.23, J18.25 · two phones and an agent work on one book's lists through the server", async () => {
+  const ann = await person("Ann");
+  const device = (api, roles = {}) => {
+    const win = loadApp("units.js", "scale.js", "storage.js", "plan.js", "planstore.js", "lists.js", "liststore.js", "sync.js");
+    const lists = new win.RecipeListStore();
+    const sync = new win.RecipeSync(new win.RecipeStore(), api, () => {}, new win.RecipePlanStore(), lists);
+    sync.setBook(ann.book, roles);
+    return { lists, sync, L: win.RecipeLists };
+  };
+  const apiFor = (c) => new (loadApp("api.js").RecipeApi)(c);
+  const a = device(apiFor(ann.client));
+  const b = device(apiFor(ann.client));
+
+  // The first device to open the book moves the plan into Shopping; the
+  // second finds it there.
+  await a.sync.syncLists();
+  await b.sync.syncLists();
+  const shopping = a.L.shoppingListId(ann.book);
+  assert.deepEqual(b.lists.lists.map((l) => [l.id, l.name]), [[shopping, "Shopping"]]);
+
+  // J18.17 over the wire: Bolognese 4, one taken on each phone, is 2.
+  const freezer = a.lists.create("Freezer", "stock");
+  const bol = a.L.newId();
+  a.lists.change(freezer.id, (l) => a.L.addItem(l, { text: "Bolognese", id: bol }));
+  for (let i = 0; i < 3; i++) a.lists.change(freezer.id, (l) => a.L.bump(l, bol, +1, a.lists.deviceId));
+  await a.sync.syncLists();
+  await b.sync.syncLists();
+  a.lists.change(freezer.id, (l) => a.L.bump(l, bol, -1, a.lists.deviceId));
+  b.lists.change(freezer.id, (l) => b.L.bump(l, bol, -1, b.lists.deviceId));
+  await a.sync.syncLists();
+  await b.sync.syncLists();
+  await a.sync.pullLists(freezer.id);
+  for (const d of [a, b]) assert.equal(d.L.count(d.lists.get(freezer.id).items[0]), 2);
+
+  // J18.23: two writes racing for one row both survive. Phone a merges
+  // with a copy of the row that phone b has since written over.
+  const stale = await ann.api.fetchLists(ann.book);
+  const milk = b.L.newId();
+  b.lists.change(shopping, (l) => b.L.addItem(l, { text: "milk", id: milk }));
+  await b.sync.syncLists();
+  a.lists.change(shopping, (l) => a.L.addItem(l, { text: "eggs" }));
+  const fetch = a.sync.api.fetchLists.bind(a.sync.api);
+  a.sync.api.fetchLists = async () => {
+    a.sync.api.fetchLists = fetch;
+    return stale;
+  };
+  await a.sync.syncLists();
+  await b.sync.syncLists();
+  const texts = (d) => d.L.liveItems(d.lists.get(shopping)).map((i) => i.text).sort();
+  assert.deepEqual(texts(a), ["eggs", "milk"]);
+  assert.deepEqual(texts(b), ["eggs", "milk"]);
+
+  // J18.25: the agent adds and ticks; a rename or a new list stays on its
+  // own device, because it pushes items and nothing else.
+  const agent = await ann.api.createAgent(ann.book, "Kitchen helper");
+  const token = agentToken({ agentId: agent.userId, bookId: ann.book }, cfg.jwtSecret);
+  const bot = device(apiFor(supabase.createClient(cfg.url, cfg.anonKey, { accessToken: async () => token })), {
+    addOnly: true,
+  });
+  await bot.sync.syncLists();
+  bot.lists.change(shopping, (l) => bot.L.setTicked(bot.L.addItem(l, { text: "bread" }), milk, true));
+  bot.lists.rename(shopping, "Bot's list");
+  bot.lists.create("Bot's own", "checklist");
+  await bot.sync.syncLists();
+  await a.sync.syncLists();
+  const seen = a.lists.get(shopping);
+  assert.equal(seen.name, "Shopping");
+  assert.deepEqual(texts(a), ["bread", "eggs", "milk"]);
+  assert.equal(seen.items.find((i) => i.id === milk).ticked, true);
+  assert.equal(a.lists.lists.length, 2, "the agent made no list");
+
+  // J18.3: deleting travels, and the book is not seeded again after it.
+  a.lists.remove(shopping);
+  await a.sync.syncLists();
+  await b.sync.syncLists();
+  assert.deepEqual(b.lists.lists.map((l) => l.name), ["Freezer"]);
+  const fresh = device(apiFor(ann.client));
+  await fresh.sync.syncLists();
+  assert.deepEqual(fresh.lists.lists.map((l) => l.name), ["Freezer"]);
+});
