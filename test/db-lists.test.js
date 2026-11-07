@@ -17,7 +17,7 @@ after(closePool);
 
 const INSERT = "insert into lists (id, book_id, name, kind, items) values ($1, $2, $3, $4, $5)";
 // What insertList sends: insert-if-absent.
-const INSERT_IF_ABSENT = `${INSERT} on conflict (id) do nothing`;
+const INSERT_IF_ABSENT = `${INSERT} on conflict (book_id, id) do nothing`;
 const ITEMS = "update lists set items = $2 where id = $1";
 
 async function aList(s, book, over = {}) {
@@ -95,6 +95,8 @@ db("J18.25 · an agent changes items, and cannot make, rename or delete a list",
 
   await s.as(agent);
   assert.equal((await s.q(ITEMS, [id, JSON.stringify([{ id: randomUUID(), text: "milk" }])])).rowCount, 1);
+  // Pruning tombstones is items' business, so the agent's sync may do it.
+  assert.equal((await s.q("update lists set pruned_to = 5 where id = $1", [id])).rowCount, 1);
   const made = await s.attempt(INSERT_IF_ABSENT, [randomUUID(), ann.book, "Agent's", "checklist", "[]"]);
   assert.equal(made.error && made.error.code, "42501");
   for (const sql of [
@@ -144,7 +146,7 @@ db("a list at every client cap is accepted, and anything far larger is not", asy
   const win = loadApp("units.js", "scale.js", "lists.js");
   const L = win.RecipeLists;
   const at = Date.UTC(2199, 0, 1);
-  const items = Array.from({ length: L.limits.MAX_ITEMS }, (_, i) => ({
+  const item = (i, gone) => ({
     id: randomUUID(),
     parentId: randomUUID(),
     order: "z".repeat(L.limits.MAX_KEY_CHARS - 1) + "y",
@@ -153,15 +155,39 @@ db("a list at every client cap is accepted, and anything far larger is not", asy
     posAt: at,
     textAt: at,
     tickAt: at,
-    goneAt: at,
+    goneAt: at + i,
+    gone,
     ticked: true,
-    tally: Array.from({ length: L.limits.MAX_DEVICES }, (_, d) => [`device${String(d).padStart(17, "x")}`, 99999, 99999]),
-  }));
-  const list = L.sanitizeList({ id: randomUUID(), name: "x", kind: "stock", items });
+    tally: Array.from({ length: L.limits.MAX_DEVICES }, (_, d) => [`dev${String(d).padStart(13, "x")}`, 99999, 99999]),
+  });
+  const list = L.sanitizeList({
+    id: randomUUID(),
+    name: "x",
+    kind: "stock",
+    items: [
+      ...Array.from({ length: L.limits.MAX_HELD_LIVE }, (_, i) => item(i, false)),
+      ...Array.from({ length: L.limits.MAX_GONE }, (_, i) => item(i, true)),
+    ],
+  });
+  assert.equal(list.items.length, L.limits.MAX_HELD_LIVE + L.limits.MAX_GONE);
   const ann = await s.person("Ann");
   await s.as(ann);
   assert.equal((await s.attempt(INSERT, [list.id, ann.book, "Full", "stock", JSON.stringify(list.items)])).error, null);
-  const huge = JSON.stringify([{ text: "x".repeat(1100000) }]);
+  const huge = JSON.stringify(Array.from({ length: 50 }, () => ({ text: Math.random().toString(36).repeat(10000) })));
   const refused = await s.attempt(INSERT, [randomUUID(), ann.book, "Huge", "stock", huge]);
   assert.equal(refused.error && refused.error.code, "23514");
+});
+
+db("build step 1 · Shopping's id squatted in another book does not stop this book's", async (s) => {
+  const win = loadApp("units.js", "scale.js", "lists.js");
+  const ann = await s.person("Ann");
+  const olly = await s.person("Olly");
+  const id = win.RecipeLists.shoppingListId(ann.book);
+  await s.as(olly);
+  assert.equal((await s.attempt(INSERT_IF_ABSENT, [id, olly.book, "Squat", "checklist", "[]"])).error, null);
+  await s.as(ann);
+  const made = await s.attempt(`${INSERT_IF_ABSENT} returning id`, [id, ann.book, "Shopping", "checklist", "[]"]);
+  assert.equal(made.error, null);
+  assert.equal(made.rowCount, 1, "Ann's Shopping is made, not taken as already there");
+  assert.equal((await s.one("select name from lists where id = $1", [id])).name, "Shopping");
 });

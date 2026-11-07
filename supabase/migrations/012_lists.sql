@@ -22,7 +22,7 @@
 -- A list's kind never changes (J18.2) and it never changes book.
 
 create table if not exists public.lists (
-  id uuid primary key,
+  id uuid not null,
   book_id uuid not null references public.books (id) on delete cascade,
   name text not null check (char_length(name) between 1 and 80),
   -- The client's stamp for the name, so two renames made offline settle
@@ -30,18 +30,27 @@ create table if not exists public.lists (
   name_at bigint not null default 0,
   kind text not null check (kind in ('checklist', 'stock')),
   -- Bounded so a hostile client cannot use a book as storage. The
-  -- client's caps keep a full list well inside it (js/lists.js).
+  -- client's caps keep a full list inside it (js/lists.js, and a test
+  -- below that writes one); a real list is a few kilobytes.
   items jsonb not null default '[]'::jsonb
-    check (jsonb_typeof(items) = 'array' and pg_column_size(items) <= 1000000),
+    check (jsonb_typeof(items) = 'array' and pg_column_size(items) <= 4000000),
+  -- Deleted items are kept as tombstones for 30 days and then pruned;
+  -- this is the client's stamp for how far. An item created before it
+  -- that a copy no longer holds was deleted (js/lists.js). Items' own
+  -- business, so an agent may move it.
+  pruned_to bigint not null default 0,
   deleted_at timestamptz,
   created_at timestamptz not null default now(),
   -- The server's own note of the last write. The client uses it to write
   -- only over the row it merged with (compare-and-set), so two phones
   -- saving at once cannot lose either's change.
-  updated_at timestamptz not null default now()
+  updated_at timestamptz not null default now(),
+  -- The book and the id, not the id alone. A Shopping list's id is
+  -- worked out from its book's (build step 1), so anybody who knows a
+  -- book's id knows it; keyed on the id alone, a row with that id in a
+  -- book of their own would stop the real one ever being made.
+  primary key (book_id, id)
 );
-
-create index if not exists lists_book_idx on public.lists (book_id);
 
 -- ---------------------------------------------------------------------
 -- What an update may change
