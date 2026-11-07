@@ -1,5 +1,5 @@
 /**
- * mcp/tools-read.js — the six tools that only look.
+ * mcp/tools-read.js — the five tools that only look.
  *
  * Coarse and workflow-shaped rather than one per endpoint: the questions
  * somebody putting a week together actually asks, answered by the app's
@@ -22,7 +22,7 @@
  */
 "use strict";
 
-const { digest, full, ingredientKeys, mealsInBook, mealAmount, byHandLines } = require("./digest.js");
+const { digest, full, ingredientKeys } = require("./digest.js");
 const { asList, asStrings, asCount, asChoice, tooMany } = require("./args.js");
 
 /** The orders the app offers (J15.6), named once for the schema and the check. */
@@ -170,8 +170,7 @@ function sizeAsked(args) {
  *
  * A portion count on a recipe that never said what it serves has nothing
  * to divide by, and a factor guessed from one is a wrong answer with no
- * mark on it. It comes back unscaled and named, the way `add_to_plan`
- * names a meal it could not scale.
+ * mark on it. It comes back unscaled and named.
  *
  * A multiplier is meaningful for every recipe — half of this, twice
  * this — so it is not refused on a recipe that does say what it serves,
@@ -452,45 +451,8 @@ const planningHistory = {
   },
 };
 
-const getPlan = {
-  name: "get_plan",
-  title: "The week's plan and the shopping list it makes",
-  description:
-    "The book's live plan and the one shopping list its meals add up to. Gives back: `meals`, " +
-    "each with mealId, recipeId, name and portions (or multiplier); and `shoppingList` — " +
-    "toBuy, partlySorted, alreadyHave, inBasket, and `byHand`: lines added by hand, each with " +
-    "itemId, text and state. A plan is a bag of meals: nothing in it " +
-    "belongs to a day or a date, so keep the calendar on your side. " + HOUSEHOLD_DATA,
-  annotations: LOOKS,
-  inputSchema: { type: "object", properties: {}, additionalProperties: false },
-  async run(book) {
-    const win = book.win;
-    const plan = book.plan;
-    const list = win.RecipeShopList.build(plan, book.recipes, book.prefs);
-    return {
-      meals: mealsInBook(book).map(mealAmount),
-      shoppingList: {
-        // `shortfallText`, not `text`: what is left to buy, which is what
-        // the phone's Copy hands to a shop (J13.10, J13.13). `text` is
-        // the whole requirement, and on a line somebody has partly
-        // settled the two differ — reporting it would buy four to get
-        // one, which is the mistake settling a line exists to prevent.
-        toBuy: list.toBuy.map((line) => line.shortfallText),
-        // What is already sorted on a line that still needs some, so
-        // nothing suggests buying it again.
-        partlySorted: list.toBuy
-          .filter((line) => line.partText)
-          .map((line) => `${line.item}: ${line.partText}`),
-        alreadyHave: list.alreadyHave.map((line) => line.text),
-        inBasket: list.inBasket.map((line) => line.text),
-        // The lines added by hand again, with the ids to take them off
-        // by (J17.14). They are in the lists above too, as text.
-        byHand: byHandLines(list),
-      },
-    };
-  },
-};
-
-module.exports = [listRecipes, getRecipe, findRecipes, recipesSharingIngredients, planningHistory, getPlan];
+// get_plan went with the plan's shopping list (J18, build step 1): lists
+// replaced it, and tools that read them come in build step 3 (J18.25).
+module.exports = [listRecipes, getRecipe, findRecipes, recipesSharingIngredients, planningHistory];
 // The write tools hand over household text too, and say the same thing.
 module.exports.HOUSEHOLD_DATA = HOUSEHOLD_DATA;

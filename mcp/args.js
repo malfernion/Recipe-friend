@@ -63,9 +63,8 @@ function asChoice(value, allowed, fallback) {
 
 /**
  * Refuse a list longer than the schema said, rather than doing the work.
- * `add_to_plan` holds the write lane while it runs and the plan copies
- * itself per meal, so twenty thousand of them is minutes of a book
- * nobody else can touch.
+ * A write holds the lane while it runs, so twenty thousand of anything
+ * is minutes of a book nobody else can touch.
  */
 function tooMany(list, max, what) {
   if (list.length <= max) return null;
