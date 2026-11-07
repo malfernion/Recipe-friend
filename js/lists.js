@@ -6,7 +6,7 @@
  * them; both hand these functions the data.
  *
  * List shape:
- *   { id, name, nameAt, kind: "checklist"|"stock", createdAt, items: [item] }
+ *   { id, name, nameAt, kind: "checklist"|"stock", createdAt, prunedTo, items: [item] }
  *
  * Item shape — every fact carries its own stamp and merges on it (J18.23):
  *   {
@@ -31,22 +31,32 @@
   const MAX_TEXT_CHARS = 200;
   // How many items a person (or the agent) may have on one list.
   const MAX_LIVE = 300;
-  // How many a list holds, tombstones included. The difference is room
-  // for deletions to be remembered; past it the oldest tombstones go
-  // first, which only matters to a device offline since before them.
-  const MAX_ITEMS = 400;
-  // Devices with a tally on one counter. A household has a handful.
-  const MAX_DEVICES = 8;
+  // How many live items a list holds: room for two phones that each
+  // filled a list offline to meet. Past it the newest stay.
+  const MAX_HELD_LIVE = 400;
+  // Deleted items are kept as tombstones for 30 days, so an older copy
+  // cannot bring them back (J9.4), and then pruned: nothing deleted is
+  // kept for long. The list records how far it has pruned (`prunedTo`),
+  // and an item created before that which a copy no longer holds is
+  // read as deleted. MAX_GONE bounds the tombstones a busy month leaves.
+  const KEEP_GONE_MS = 30 * 24 * 60 * 60 * 1000;
+  const MAX_GONE = 300;
+  // Devices with a tally on one counter. A tally cannot be dropped
+  // without losing taps, so the cap is far past any household's phones.
+  const MAX_DEVICES = 64;
   const MAX_TALLY = 99999;
   const MAX_KEY_CHARS = 128;
+  // A key longer than this has its siblings renumbered (see `placed`), so
+  // no key ever reaches MAX_KEY_CHARS.
+  const RESPACE_AT = 48;
   // The server's own limit (migration 012), restated for the test that
   // checks a list at every cap still fits under it.
-  const SERVER_MAX_BYTES = 1000000;
+  const SERVER_MAX_BYTES = 4000000;
   // A stamp past this is a broken clock; capped so `+ 1` always works.
   const MAX_STAMP = Date.UTC(2200, 0, 1);
 
   const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-  const DEVICE_RE = /^[A-Za-z0-9]{8,24}$/;
+  const DEVICE_RE = /^[A-Za-z0-9]{8,16}$/;
   const isUuid = (v) => typeof v === "string" && UUID_RE.test(v);
 
   // ---------------------------------------------------------------------
@@ -244,31 +254,41 @@
     };
   }
 
-  /**
-   * The items, deduplicated (two copies of an id merge) and sorted by id,
-   * so that two lists holding the same facts are the same JSON. Over
-   * MAX_ITEMS the oldest tombstones go first; then, if live items alone
-   * are over (two phones each filling a list offline), the newest stay.
-   */
-  function sanitizeItems(raw) {
-    if (!Array.isArray(raw)) return [];
+  /** Items deduplicated by id: two copies of one merge. */
+  function byIdOf(raw) {
     const byId = new Map();
-    for (const one of raw) {
+    for (const one of Array.isArray(raw) ? raw : []) {
       const item = sanitizeItem(one);
       if (!item) continue;
       const held = byId.get(item.id);
       byId.set(item.id, held ? mergeItem(held, item) : item);
     }
-    let all = [...byId.values()];
-    if (all.length > MAX_ITEMS) {
-      const live = all.filter((i) => !i.gone).sort((a, b) => b.addedAt - a.addedAt || cmp(a.id, b.id)).slice(0, MAX_ITEMS);
-      const gone = all
-        .filter((i) => i.gone)
-        .sort((a, b) => b.goneAt - a.goneAt || cmp(a.id, b.id))
-        .slice(0, MAX_ITEMS - live.length);
-      all = [...live, ...gone];
-    }
-    return all.sort((a, b) => cmp(a.id, b.id));
+    return byId;
+  }
+
+  /**
+   * Items and the prune mark, settled: tombstones at or before the mark
+   * are gone; over MAX_GONE tombstones the mark rises to the newest of
+   * those over, which is a function of the set and only ever rises as the
+   * set grows, so merging stays associative. Then, if live items alone
+   * are over (two phones each filling a list offline), the newest stay.
+   * Sorted by id, so two lists holding the same facts are the same JSON.
+   */
+  function settle(items, prunedTo) {
+    let mark = prunedTo;
+    const gone = items.filter((i) => i.gone).sort((a, b) => b.goneAt - a.goneAt || cmp(a.id, b.id));
+    if (gone.length > MAX_GONE) mark = Math.max(mark, gone[MAX_GONE].goneAt);
+    const live = items.filter((i) => !i.gone);
+    const keptLive =
+      live.length > MAX_HELD_LIVE
+        ? live.sort((a, b) => b.addedAt - a.addedAt || cmp(a.id, b.id)).slice(0, MAX_HELD_LIVE)
+        : live;
+    const keptGone = gone.filter((i) => i.goneAt > mark);
+    return { prunedTo: mark, items: [...keptLive, ...keptGone].sort((a, b) => cmp(a.id, b.id)) };
+  }
+
+  function sanitizeItems(raw, prunedTo = 0) {
+    return settle([...byIdOf(raw).values()], prunedTo).items;
   }
 
   /** Coerce an untrusted object into a list, or null. */
@@ -276,14 +296,30 @@
     if (!raw || typeof raw !== "object" || !isUuid(raw.id)) return null;
     const kind = KINDS.includes(raw.kind) ? raw.kind : null;
     if (!kind) return null;
+    const settled = settle([...byIdOf(raw.items).values()], stamp(raw.prunedTo) ?? 0);
     return {
       id: raw.id.toLowerCase(),
       name: cleanText(raw.name, MAX_NAME_CHARS) || "List",
       nameAt: stamp(raw.nameAt) ?? 0,
       kind,
       createdAt: stamp(raw.createdAt) ?? 0,
-      items: sanitizeItems(raw.items),
+      prunedTo: settled.prunedTo,
+      items: settled.items,
     };
+  }
+
+  /**
+   * Drop tombstones older than 30 days (J9.4 needs them only until every
+   * phone has heard), raising the list's prune mark to cover them. A
+   * local step, run before a list is saved or sent; merging never asks
+   * the clock.
+   */
+  function prune(list, now = Date.now()) {
+    if (!list) return list;
+    const old = list.items.filter((i) => i.gone && i.goneAt < now - KEEP_GONE_MS);
+    if (old.length === 0) return list;
+    const mark = Math.max(list.prunedTo || 0, ...old.map((i) => i.goneAt));
+    return { ...list, ...settle(list.items, mark) };
   }
 
   // ---------------------------------------------------------------------
@@ -326,7 +362,19 @@
     };
   }
 
-  /** Two copies of one list. Either may be null. */
+  /** Would `list` hold this item, had it not been deleted and pruned? */
+  const pruned = (item, list) => list.prunedTo > 0 && item.addedAt <= list.prunedTo;
+
+  /**
+   * Two copies of one list. Either may be null.
+   *
+   * An item one copy holds and the other does not is kept unless it was
+   * created at or before the other's prune mark: that copy would hold it
+   * had it not been deleted and pruned. An item created after the mark is
+   * one the other copy has simply not heard of yet. So an item survives
+   * when it is newer than the mark of every copy that lacks it — the same
+   * answer in any order of merging — and the mark merges by max.
+   */
   function mergeLists(a, b) {
     if (!a) return b ? sanitizeList(b) : null;
     if (!b) return sanitizeList(a);
@@ -334,6 +382,14 @@
     const y = sanitizeList(b);
     if (!x || !y) return x || y;
     const named = later(x, y, "nameAt", (l) => l.name);
+    const xs = new Map(x.items.map((i) => [i.id, i]));
+    const ys = new Map(y.items.map((i) => [i.id, i]));
+    const items = [];
+    for (const [id, i] of xs) {
+      if (ys.has(id)) items.push(mergeItem(i, ys.get(id)));
+      else if (!pruned(i, y)) items.push(i);
+    }
+    for (const [id, i] of ys) if (!xs.has(id) && !pruned(i, x)) items.push(i);
     return {
       id: x.id,
       name: named.name,
@@ -342,13 +398,15 @@
       // and settle the same way on every device.
       kind: x.kind === y.kind ? x.kind : [x.kind, y.kind].sort()[0],
       createdAt: Math.min(x.createdAt, y.createdAt),
-      items: sanitizeItems([...x.items, ...y.items]),
+      ...settle(items, Math.max(x.prunedTo, y.prunedTo)),
     };
   }
 
-  /** The same list, fact for fact? (What sync asks before pushing.) */
+  /** The same items, fact for fact, and the same prune mark? (What sync asks before pushing.) */
   function sameItems(a, b) {
-    return JSON.stringify(sanitizeItems(a && a.items)) === JSON.stringify(sanitizeItems(b && b.items));
+    const x = sanitizeList(a);
+    const y = sanitizeList(b);
+    return Boolean(x && y) && x.prunedTo === y.prunedTo && JSON.stringify(x.items) === JSON.stringify(y.items);
   }
 
   // ---------------------------------------------------------------------
@@ -394,7 +452,20 @@
       kids.get(p).push(i);
     }
     for (const group of kids.values()) group.sort((a, b) => cmp(a.order, b.order) || cmp(a.id, b.id));
-    return { byId, parent, kids };
+    // Folded (J18.12): ticked, and so is everything under it. A ticked
+    // item with something unticked under it — added on another phone as
+    // this one ticked the recipe — stays where it is, so nothing nobody
+    // ticked is hidden or cleared.
+    const folded = new Map();
+    const fold = (item) => {
+      if (folded.has(item.id)) return folded.get(item.id);
+      folded.set(item.id, false);
+      const all = item.ticked && (kids.get(item.id) || []).every(fold);
+      folded.set(item.id, all);
+      return all;
+    };
+    if (list && list.kind === "checklist") live.forEach(fold);
+    return { byId, parent, kids, folded };
   }
 
   /** The live children of `parentId` (null: the top level), in key order. */
@@ -437,9 +508,10 @@
    *   { type: "ticked", parentId, depth, count, open }   // checklists
    *
    * On a checklist the ticked children of each item — and of the list —
-   * fold into one "Ticked (n)" row after the unticked ones (J18.12).
-   * `open` is a Set of the parentIds whose group is open, "" for the top
-   * level. Inside an open group everything is drawn as it stands.
+   * fold into one "Ticked (n)" row after the others (J18.12). An item
+   * folds only when it and everything under it is ticked. `open` is a Set
+   * of the parentIds whose group is open, "" for the top level. Inside an
+   * open group everything is drawn as it stands.
    */
   function rows(list, open = new Set()) {
     if (!list) return [];
@@ -471,7 +543,7 @@
       }
       const ticked = [];
       for (const k of kids) {
-        if (k.ticked) {
+        if (t.folded.get(k.id)) {
           ticked.push(k);
           continue;
         }
@@ -491,14 +563,14 @@
     return out;
   }
 
-  /** Ticked items and what is nested under them: what Clear ticked takes (J18.13). */
+  /**
+   * What Clear ticked takes (J18.13): every ticked item with nothing
+   * unticked under it. A ticked recipe with an unticked ingredient keeps
+   * both.
+   */
   function tickedIds(list) {
     const t = tree(list);
-    const out = new Set();
-    for (const item of t.byId.values()) {
-      if (item.ticked) for (const id of subtree(list, item.id, t)) out.add(id);
-    }
-    return [...out];
+    return [...t.byId.keys()].filter((id) => t.folded.get(id));
   }
 
   // ---------------------------------------------------------------------
@@ -514,6 +586,7 @@
       nameAt: stamp(now) ?? 0,
       kind,
       createdAt: stamp(now) ?? 0,
+      prunedTo: 0,
       items: [],
     };
   }
@@ -534,12 +607,12 @@
    * The order key for a place among `parentId`'s children. `place` is
    * one of { afterId }, { beforeId }, { atTop: true }, or nothing (the
    * end). On a checklist the neighbours are taken from the moving item's
-   * own side of the fold, so a key is never squeezed between an unticked
-   * item and a ticked one that sort the other way round.
+   * own side of the fold, so a key is never squeezed between a shown item
+   * and a folded one that sort the other way round.
    */
-  function placeKey(list, parentId, place = {}, { exclude = null, ticked = false } = {}, t = tree(list)) {
+  function placeKey(list, parentId, place = {}, { exclude = null, folded = false } = {}, t = tree(list)) {
     let sibs = (t.kids.get(parentId || null) || []).filter((i) => i.id !== exclude);
-    if (list.kind === "checklist") sibs = sibs.filter((i) => i.ticked === ticked);
+    if (list.kind === "checklist") sibs = sibs.filter((i) => Boolean(t.folded.get(i.id)) === folded);
     if (place.afterId) {
       const at = sibs.findIndex((i) => i.id === place.afterId);
       if (at >= 0) return keyBetween(sibs[at].order, sibs[at + 1] ? sibs[at + 1].order : null);
@@ -550,6 +623,37 @@
     }
     if (place.atTop) return keyBetween(null, sibs[0] ? sibs[0].order : null);
     return keyBetween(sibs.length ? sibs[sibs.length - 1].order : null, null);
+  }
+
+  /**
+   * An item in its new place. Keys grow when items keep landing in one
+   * gap; past RESPACE_AT the siblings there are renumbered in the order
+   * they already have, each stamped as moved, rather than letting a key
+   * grow until it is no longer read as one.
+   */
+  function placed(t, moved, now) {
+    if (moved.order.length <= RESPACE_AT) return [moved];
+    const sibs = [...(t.kids.get(moved.parentId || null) || []).filter((i) => i.id !== moved.id), moved];
+    sibs.sort((a, b) => cmp(a.order, b.order) || cmp(a.id, b.id));
+    let key = null;
+    return sibs.map((i) => {
+      key = keyBetween(key, null);
+      return i === moved ? { ...i, order: key } : { ...i, order: key, posAt: after(i.posAt, now) };
+    });
+  }
+
+  /**
+   * The ticked items a new item is going in under, unticked: what goes
+   * on a list is to be bought, and a recipe ticked on another phone
+   * should not hide it (J18.12).
+   */
+  function untickAbove(t, parentId, now) {
+    const out = [];
+    for (let p = parentId; p; p = t.parent.get(p)) {
+      const item = t.byId.get(p);
+      if (item && item.ticked) out.push({ ...item, ticked: false, tickAt: after(item.tickAt, now) });
+    }
+    return out;
   }
 
   function freshItem({ id, text, parentId, order, now }) {
@@ -585,7 +689,8 @@
     if (afterId && t.byId.has(afterId)) parent = t.parent.get(afterId);
     if (parent && !t.byId.has(parent)) parent = null;
     const order = placeKey(list, parent, { afterId, beforeId, atTop }, {}, t);
-    return withItems(list, [freshItem({ id, text, parentId: parent, order, now })]);
+    const fresh = freshItem({ id, text, parentId: parent, order, now });
+    return withItems(list, [...untickAbove(t, parent, now), ...placed(t, fresh, now)]);
   }
 
   /**
@@ -622,7 +727,9 @@
       lastKey[path.length] = order;
       made.push(freshItem({ id, text: n.text, parentId: parent, order, now }));
     }
-    return withItems(list, made);
+    const root = made.shift();
+    const top = root.parentId;
+    return withItems(list, [...untickAbove(t, top, now), ...placed(t, root, now), ...made]);
   }
 
   /** Change what an item says (J18.6). Empty or unchanged text is no change. */
@@ -644,9 +751,9 @@
     // Not under itself, nor under anything nested in it.
     if (parent && subtree(list, id, t).includes(parent)) return list;
     if (afterId === id || beforeId === id) return list;
-    const order = placeKey(list, parent, { afterId, beforeId, atTop }, { exclude: id, ticked: item.ticked }, t);
+    const order = placeKey(list, parent, { afterId, beforeId, atTop }, { exclude: id, folded: Boolean(t.folded.get(id)) }, t);
     if (parent === item.parentId && order === item.order) return list;
-    return withItems(list, [{ ...item, parentId: parent, order, posAt: after(item.posAt, now) }]);
+    return withItems(list, placed(t, { ...item, parentId: parent, order, posAt: after(item.posAt, now) }, now));
   }
 
   /**
@@ -659,13 +766,13 @@
     if (!item) return list;
     let sibs = t.kids.get(t.parent.get(id)) || [];
     // The one above as drawn: on a checklist, from the same side of the fold.
-    if (list.kind === "checklist") sibs = sibs.filter((i) => i.ticked === item.ticked);
+    if (list.kind === "checklist") sibs = sibs.filter((i) => t.folded.get(i.id) === t.folded.get(id));
     const at = sibs.findIndex((i) => i.id === id);
     if (at <= 0) return list;
     const above = sibs[at - 1];
     const last = (t.kids.get(above.id) || []).filter((i) => i.id !== id);
     const order = keyBetween(last.length ? last.map((i) => i.order).sort().pop() : null, null);
-    return withItems(list, [{ ...item, parentId: above.id, order, posAt: after(item.posAt, now) }]);
+    return withItems(list, placed(t, { ...item, parentId: above.id, order, posAt: after(item.posAt, now) }, now));
   }
 
   /**
@@ -682,7 +789,7 @@
     const sibs = t.kids.get(grand) || [];
     const at = sibs.findIndex((i) => i.id === parent);
     const order = keyBetween(sibs[at].order, sibs[at + 1] ? sibs[at + 1].order : null);
-    return withItems(list, [{ ...item, parentId: grand, order, posAt: after(item.posAt, now) }]);
+    return withItems(list, placed(t, { ...item, parentId: grand, order, posAt: after(item.posAt, now) }, now));
   }
 
   /**
@@ -847,7 +954,7 @@
 
   global.RecipeLists = {
     KINDS,
-    limits: { MAX_NAME_CHARS, MAX_TEXT_CHARS, MAX_LIVE, MAX_ITEMS, MAX_DEVICES, MAX_TALLY, MAX_KEY_CHARS, SERVER_MAX_BYTES },
+    limits: { MAX_NAME_CHARS, MAX_TEXT_CHARS, MAX_LIVE, MAX_HELD_LIVE, MAX_GONE, KEEP_GONE_MS, MAX_DEVICES, MAX_TALLY, MAX_KEY_CHARS, RESPACE_AT, SERVER_MAX_BYTES },
     newId,
     derivedId,
     cleanText,
@@ -857,6 +964,7 @@
     mergeItem,
     mergeLists,
     sameItems,
+    prune,
     liveItems,
     children,
     subtree,

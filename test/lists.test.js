@@ -332,44 +332,223 @@ test("hostile input is coerced, not believed", () => {
     id,
     name: "x".repeat(500),
     kind: "checklist",
+    prunedTo: -5,
     items: [
       null,
       { id: "not-a-uuid", text: "drop me" },
-      { id: L.newId(), text: "a\ud800b", parentId: "x", order: "!!", tally: [["__proto__", 5, 5]], posAt: 1e20 },
-      ...Array.from({ length: 600 }, (_, i) => ({ id: L.newId(), text: `t${i}`, gone: i % 2 === 0, goneAt: i })),
+      { id: L.newId(), text: "a\ud800b", parentId: "x", order: "!!", tally: [["__proto__", 5, 5]], posAt: 1e20, addedAt: 5000 },
+      ...Array.from({ length: 1000 }, (_, i) => ({ id: L.newId(), text: `t${i}`, addedAt: i, gone: i % 2 === 0, goneAt: i + 1 })),
     ],
   });
   assert.equal(list.name.length, L.limits.MAX_NAME_CHARS);
-  assert.equal(list.items.length, L.limits.MAX_ITEMS);
   const odd = list.items.find((i) => i.text === "ab");
   assert.equal(odd.parentId, null);
   assert.equal(odd.order, "V");
   assert.deepEqual(odd.tally, []);
   assert.ok(odd.posAt <= Date.UTC(2200, 0, 1));
-  assert.equal(L.liveItems(list).length, 301, "every live item is kept before any tombstone");
+  assert.equal(L.liveItems(list).length, L.limits.MAX_HELD_LIVE, "the newest live items");
+  assert.equal(list.items.filter((i) => i.gone).length, L.limits.MAX_GONE);
+  assert.ok(list.prunedTo > 0, "tombstones over the cap raise the prune mark rather than vanish");
 });
 
-test("a list at every cap fits inside what the server accepts", () => {
-  const emoji = "🍝".repeat(L.limits.MAX_TEXT_CHARS / 2);
-  const cjk = "麵".repeat(L.limits.MAX_TEXT_CHARS);
-  const items = Array.from({ length: L.limits.MAX_ITEMS }, (_, i) => ({
+/** A list at every cap the client has: what the server must accept. */
+function worstList() {
+  const at = Date.UTC(2199, 0, 1);
+  const item = (i, gone) => ({
     id: L.newId(),
     parentId: L.newId(),
     order: "z".repeat(L.limits.MAX_KEY_CHARS - 1) + "y",
-    text: i % 2 ? emoji : cjk,
-    addedAt: Date.UTC(2199, 0, 1),
-    posAt: Date.UTC(2199, 0, 1),
-    textAt: Date.UTC(2199, 0, 1),
-    tickAt: Date.UTC(2199, 0, 1),
-    goneAt: Date.UTC(2199, 0, 1),
+    text: i % 2 ? "🍝".repeat(L.limits.MAX_TEXT_CHARS / 2) : "麵".repeat(L.limits.MAX_TEXT_CHARS),
+    addedAt: at,
+    posAt: at,
+    textAt: at,
+    tickAt: at,
+    goneAt: at + i,
+    gone,
     ticked: true,
-    tally: Array.from({ length: L.limits.MAX_DEVICES }, (_, d) => [`device${String(d).padStart(17, "x")}`, 99999, 99999]),
-  }));
-  const list = L.sanitizeList({ id: L.newId(), name: "x", kind: "stock", items });
+    tally: Array.from({ length: L.limits.MAX_DEVICES }, (_, d) => [`dev${String(d).padStart(13, "x")}`, 99999, 99999]),
+  });
+  return L.sanitizeList({
+    id: L.newId(),
+    name: "x",
+    kind: "stock",
+    items: [
+      ...Array.from({ length: L.limits.MAX_HELD_LIVE }, (_, i) => item(i, false)),
+      ...Array.from({ length: L.limits.MAX_GONE }, (_, i) => item(i, true)),
+    ],
+  });
+}
+
+test("a list at every cap fits inside what the server accepts", () => {
+  const list = worstList();
+  assert.equal(list.items.length, L.limits.MAX_HELD_LIVE + L.limits.MAX_GONE);
   const bytes = Buffer.byteLength(JSON.stringify(list.items));
   // jsonb is larger than JSON text by its per-element headers; a third
   // more is well past that for objects of this shape.
   assert.ok(bytes * 1.34 <= L.limits.SERVER_MAX_BYTES, `${bytes} bytes of JSON`);
+});
+
+// ---------------------------------------------------------------------
+// Tombstones are kept 30 days, then pruned behind a mark (J9.4)
+// ---------------------------------------------------------------------
+
+const DAY = 24 * 60 * 60 * 1000;
+
+test("J9.4 · a phone not opened for six weeks of shopping does not bring deleted items back", () => {
+  const t0 = Date.UTC(2026, 0, 1);
+  let a = L.createList({ name: "Shopping", kind: "checklist", now: t0 });
+  const milk = L.newId();
+  a = L.addItem(a, { text: "old milk", id: milk, now: t0 });
+  const b = JSON.parse(JSON.stringify(a)); // the tablet, then left in a drawer
+  a = L.deleteItems(a, [milk], t0 + 1000);
+  for (let week = 1; week <= 6; week++) {
+    const now = t0 + week * 7 * DAY;
+    for (let i = 0; i < 70; i++) a = L.addItem(a, { text: `w${week} ${i}`, now: now + i });
+    a = L.deleteItems(a, L.liveItems(a).map((i) => i.id), now + 100);
+    a = L.prune(a, now + 200);
+  }
+  assert.ok(a.prunedTo >= t0 + 1000, "the old tombstones are gone, behind the mark");
+  assert.ok(!a.items.some((i) => i.id === milk), "nothing deleted kept for long");
+  for (const merged of [L.mergeLists(a, b), L.mergeLists(b, a)]) {
+    assert.deepEqual(L.liveItems(merged).map((i) => i.text), []);
+  }
+});
+
+test("J9.4 · a phone back after 40 days: what it wrote since the mark arrives; older offline items do not", () => {
+  const t0 = Date.UTC(2026, 0, 1);
+  let server = L.createList({ name: "Shopping", kind: "checklist", now: t0 });
+  server = L.addItem(server, { text: "kept", now: t0 });
+  let phone = JSON.parse(JSON.stringify(server));
+  // Offline: one item on the first day, one on the fortieth.
+  phone = L.addItem(phone, { text: "old offline", now: t0 + 1 * DAY });
+  phone = L.addItem(phone, { text: "new offline", now: t0 + 40 * DAY });
+  // Meanwhile the book shops and deletes, and prunes what is a month old.
+  server = L.addItem(server, { text: "bread", now: t0 + 2 * DAY });
+  server = L.deleteItems(server, [L.liveItems(server).find((i) => i.text === "bread").id], t0 + 3 * DAY);
+  server = L.prune(server, t0 + 40 * DAY);
+  assert.equal(server.prunedTo, t0 + 3 * DAY);
+  for (const merged of [L.mergeLists(server, phone), L.mergeLists(phone, server)]) {
+    assert.deepEqual(L.liveItems(merged).map((i) => i.text).sort(), ["kept", "new offline"]);
+  }
+});
+
+test("J18.10 · a tombstone is kept 30 days, so Undo and older copies still meet it", () => {
+  const { list, ids } = typed("checklist", "milk");
+  const gone = L.deleteItems(list, ids, 10 * DAY);
+  assert.equal(L.prune(gone, 39 * DAY), gone, "29 days on: kept");
+  const pruned = L.prune(gone, 41 * DAY);
+  assert.equal(pruned.items.length, 0);
+  assert.equal(pruned.prunedTo, 10 * DAY);
+  assert.deepEqual(texts(L.mergeLists(list, pruned)), []);
+});
+
+test("J18.22 · merging stays lawful with prune marks and random histories", () => {
+  const M = L.mergeLists;
+  let seed = 7;
+  const rand = (n) => ((seed = (seed * 1103515245 + 12345) % 2147483648), seed % n);
+  for (let round = 0; round < 150; round++) {
+    const base = typed(round % 2 ? "stock" : "checklist", "a", "b", "c").list;
+    const replicas = [0, 1, 2].map((r) => {
+      let l = JSON.parse(JSON.stringify(base));
+      let now = 10 * DAY;
+      for (let step = 0; step < 25; step++) {
+        now += rand(4) * DAY + rand(1000);
+        const live = L.liveItems(l);
+        const pick = live.length ? live[rand(live.length)].id : null;
+        const op = rand(7);
+        if (op === 0 || !pick) l = L.addItem(l, { text: `r${r}s${step}`, afterId: pick, now });
+        else if (op === 1) l = L.deleteItems(l, L.subtree(l, pick), now);
+        else if (op === 2) l = L.prune(l, now);
+        else if (op === 3) l = L.setTicked(l, pick, rand(2) === 0, now);
+        else if (op === 4) l = L.bump(l, pick, rand(2) ? 1 : -1, `device${r}xxxx`);
+        else if (op === 5) l = L.indent(l, pick, now);
+        else l = L.editText(l, pick, `e${r}${step}`, now);
+      }
+      return l;
+    });
+    const [a, b, c] = replicas;
+    assert.equal(json(M(a, b)), json(M(b, a)), `round ${round}: commutative`);
+    assert.equal(json(M(M(a, b), c)), json(M(a, M(b, c))), `round ${round}: associative`);
+    assert.equal(json(M(M(a, c), b)), json(M(a, M(c, b))), `round ${round}: associative`);
+    assert.equal(json(M(a, a)), json(L.sanitizeList(a)), `round ${round}: idempotent`);
+  }
+});
+
+// ---------------------------------------------------------------------
+// Folding, counters with many devices, long keys
+// ---------------------------------------------------------------------
+
+test("J18.12 · an item added under a recipe ticked on another phone is not hidden, nor cleared", () => {
+  let { list, ids } = typed("checklist", "Curry", "onions");
+  list = L.indent(list, ids[1]);
+  const ticked = L.setTicked(list, ids[0], true, 5000);
+  // Phone b adds before it hears of the tick, so nothing is unticked there.
+  const added = L.addItem(list, { text: "coriander", parentId: ids[0], now: 5000 });
+  const merged = L.mergeLists(ticked, added);
+  assert.equal(merged.items.find((i) => i.id === ids[0]).ticked, true);
+  assert.deepEqual(texts(merged), ["Curry", "  coriander", "  [Ticked (1)]"]);
+  const cleared = L.deleteItems(merged, L.tickedIds(merged));
+  assert.deepEqual(texts(cleared, new Set([ids[0]])), ["Curry", "  coriander"], "only onions goes");
+});
+
+test("J18.7 · Enter inside an open Ticked group unticks what the new line is under", () => {
+  let { list, ids } = typed("checklist", "Curry", "onions");
+  list = L.indent(list, ids[1]);
+  list = L.setTicked(list, ids[0], true);
+  list = L.addItem(list, { text: "rice", afterId: ids[1] });
+  assert.deepEqual(texts(list), ["Curry", "  rice", "  [Ticked (1)]"]);
+  assert.equal(list.items.find((i) => i.id === ids[0]).ticked, false);
+});
+
+test("J18.17 · a counter tapped from many devices keeps every tap, in any order of meeting", () => {
+  let seed = 3;
+  const rand = (n) => ((seed = (seed * 1103515245 + 12345) % 2147483648), seed % n);
+  for (const devices of [12, 24, 40]) {
+    const { list, ids } = typed("stock", "Peas");
+    let start = list;
+    for (let i = 0; i < 150; i++) start = L.bump(start, ids[0], 1, "deviceSTART1");
+    const replicas = [0, 1, 2].map((ri) => {
+      let l = start;
+      for (let d = ri; d < devices; d += 3) {
+        const dev = `device${String(d).padStart(6, "0")}`;
+        const taps = 1 + rand(3);
+        for (let k = 0; k < taps; k++) l = L.bump(l, ids[0], rand(3) === 0 ? 1 : -1, dev);
+      }
+      return l;
+    });
+    const [a, b, c] = replicas;
+    const orders = [
+      L.mergeLists(L.mergeLists(a, b), c),
+      L.mergeLists(L.mergeLists(a, c), b),
+      L.mergeLists(L.mergeLists(b, c), a),
+    ];
+    const counts = orders.map((m) => L.count(m.items[0]));
+    assert.equal(new Set(counts).size, 1, `${devices} devices: ${counts}`);
+    // Every replica's taps, added up by hand: the merge lost none.
+    const tapsOf = (r) => r.items[0].tally.filter(([d]) => d !== "deviceSTART1").reduce((t, [, p, m]) => t + p - m, 0);
+    assert.equal(counts[0], 151 + tapsOf(a) + tapsOf(b) + tapsOf(c), `${devices} devices: no tap lost`);
+    assert.equal(orders[0].items[0].tally.length, devices + 1);
+  }
+});
+
+test("order keys stay short: a gap filled thousands of times is renumbered, in order", () => {
+  let { list, ids } = typed("checklist", "first", "last");
+  let first = ids[0];
+  for (let i = 0; i < 3000; i++) {
+    const id = L.newId();
+    list = L.addItem(list, { text: `n${i}`, afterId: first, id, now: 10000 + i });
+    list = L.deleteItems(list, [first], 10000 + i);
+    first = id;
+  }
+  assert.deepEqual(texts(list), ["n2999", "last"]);
+  assert.ok(list.items.every((i) => i.order.length <= L.limits.RESPACE_AT + 1));
+  const many = typed("checklist", "a", "z");
+  for (let i = 0; i < 250; i++) many.list = L.addItem(many.list, { text: `m${i}`, afterId: many.ids[0], now: 20000 + i });
+  const drawn = texts(many.list);
+  assert.equal(drawn[0], "a");
+  assert.equal(drawn[1], "m249", "each lands directly below a");
+  assert.equal(drawn[drawn.length - 1], "z");
+  assert.ok(many.list.items.every((i) => i.order.length <= L.limits.RESPACE_AT + 1));
 });
 
 // ---------------------------------------------------------------------
