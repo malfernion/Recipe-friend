@@ -191,3 +191,30 @@ db("build step 1 · Shopping's id squatted in another book does not stop this bo
   assert.equal(made.rowCount, 1, "Ann's Shopping is made, not taken as already there");
   assert.equal((await s.one("select name from lists where id = $1", [id])).name, "Shopping");
 });
+
+db("J9.4 · the prune mark is never later than 30 days ago, nor below 0, whoever writes it", async (s) => {
+  const ann = await s.person("Ann");
+  const ed = await s.person("Ed");
+  await s.member(ann.book, ed, "editor");
+  const agent = await s.agentIn(ann.book);
+  const id = await aList(s, ann.book);
+  const limit = "(extract(epoch from now() - interval '30 days') * 1000)::bigint";
+  for (const who of [agent, ed, ann]) {
+    await s.as(who);
+    for (const mark of [String(Date.UTC(2199, 0, 1)), "9223372036854775807", String(Date.now())]) {
+      assert.equal((await s.q("update lists set pruned_to = $2 where id = $1", [id, mark])).rowCount, 1);
+      const row = await s.one(`select pruned_to <= ${limit} as clamped from lists where id = $1`, [id]);
+      assert.equal(row.clamped, true, `${who.name}: ${mark}`);
+    }
+    await s.q("update lists set pruned_to = -5 where id = $1", [id]);
+    assert.equal((await s.one("select pruned_to from lists where id = $1", [id])).pruned_to, "0");
+  }
+  await s.as(ann);
+  const made = randomUUID();
+  await s.q("insert into lists (id, book_id, name, kind, pruned_to) values ($1, $2, 'X', 'checklist', $3)", [
+    made,
+    ann.book,
+    String(Date.UTC(2199, 0, 1)),
+  ]);
+  assert.equal((await s.one(`select pruned_to <= ${limit} as clamped from lists where id = $1`, [made])).clamped, true);
+});

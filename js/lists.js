@@ -15,10 +15,15 @@
  *                                 // is a fractional key among its siblings
  *     text, textAt,               // what it says
  *     ticked, tickAt,             // checklists (J18.11)
- *     gone, goneAt,               // deleted: a tombstone, so an older copy
- *                                 // cannot bring it back (J9.4)
+ *     gone: false,
  *     tally: [[device, plus, minus]]  // stock lists: a PN-counter (J18.17)
  *   }
+ *
+ * A deleted item is a tombstone and nothing more: { id, addedAt, gone:
+ * true, goneAt }. Its words are not kept (deleted things are not stored),
+ * deleted is final, and Undo puts back copies (`restoreItems`). Tombstones
+ * stay 30 days, so an older copy cannot bring an item back (J9.4), and
+ * are then pruned behind the list's `prunedTo` mark.
  *
  * `items` holds tombstones too. Everything that reads a list for a person
  * goes through `rows`, `children` or `liveItems`, which leave them out.
@@ -38,9 +43,13 @@
   // cannot bring them back (J9.4), and then pruned: nothing deleted is
   // kept for long. The list records how far it has pruned (`prunedTo`),
   // and an item created before that which a copy no longer holds is
-  // read as deleted. MAX_GONE bounds the tombstones a busy month leaves.
+  // read as deleted. The mark only ever follows that 30-day rule: it is
+  // never later than 30 days ago, here or in the database (012), so no
+  // copy — nor a hostile write — can make it swallow new items.
   const KEEP_GONE_MS = 30 * 24 * 60 * 60 * 1000;
-  const MAX_GONE = 300;
+  // Only so a hostile list cannot exhaust memory: hundreds of deletions a
+  // day for a month. Past it the oldest tombstones are dropped.
+  const MAX_GONE = 10000;
   // Devices with a tally on one counter. A tally cannot be dropped
   // without losing taps, so the cap is far past any household's phones.
   const MAX_DEVICES = 64;
@@ -233,11 +242,17 @@
     return all.sort((x, y) => cmp(x[0], y[0]));
   }
 
+  /** A tombstone: the item's id, when it was made, and when it went. */
+  function tombstone(id, addedAt, goneAt) {
+    return { id, addedAt, gone: true, goneAt };
+  }
+
   function sanitizeItem(raw) {
     if (!raw || typeof raw !== "object" || !isUuid(raw.id)) return null;
     const id = raw.id.toLowerCase();
-    const parent = isUuid(raw.parentId) ? raw.parentId.toLowerCase() : null;
     const addedAt = stamp(raw.addedAt) ?? 0;
+    if (raw.gone === true) return tombstone(id, addedAt, stamp(raw.goneAt) ?? 0);
+    const parent = isUuid(raw.parentId) ? raw.parentId.toLowerCase() : null;
     return {
       id,
       addedAt,
@@ -248,8 +263,7 @@
       textAt: stamp(raw.textAt) ?? addedAt,
       ticked: raw.ticked === true,
       tickAt: stamp(raw.tickAt) ?? 0,
-      gone: raw.gone === true,
-      goneAt: stamp(raw.goneAt) ?? 0,
+      gone: false,
       tally: sanitizeTally(raw.tally),
     };
   }
@@ -268,16 +282,16 @@
 
   /**
    * Items and the prune mark, settled: tombstones at or before the mark
-   * are gone; over MAX_GONE tombstones the mark rises to the newest of
-   * those over, which is a function of the set and only ever rises as the
-   * set grows, so merging stays associative. Then, if live items alone
-   * are over (two phones each filling a list offline), the newest stay.
+   * are gone (past MAX_GONE, the oldest go too). If live items alone are
+   * over (two phones each filling a list offline), the newest stay.
    * Sorted by id, so two lists holding the same facts are the same JSON.
    */
   function settle(items, prunedTo) {
-    let mark = prunedTo;
-    const gone = items.filter((i) => i.gone).sort((a, b) => b.goneAt - a.goneAt || cmp(a.id, b.id));
-    if (gone.length > MAX_GONE) mark = Math.max(mark, gone[MAX_GONE].goneAt);
+    const mark = prunedTo;
+    const gone = items
+      .filter((i) => i.gone)
+      .sort((a, b) => b.goneAt - a.goneAt || cmp(a.id, b.id))
+      .slice(0, MAX_GONE);
     const live = items.filter((i) => !i.gone);
     const keptLive =
       live.length > MAX_HELD_LIVE
@@ -296,7 +310,7 @@
     if (!raw || typeof raw !== "object" || !isUuid(raw.id)) return null;
     const kind = KINDS.includes(raw.kind) ? raw.kind : null;
     if (!kind) return null;
-    const settled = settle([...byIdOf(raw.items).values()], stamp(raw.prunedTo) ?? 0);
+    const settled = settle([...byIdOf(raw.items).values()], markOf(raw.prunedTo));
     return {
       id: raw.id.toLowerCase(),
       name: cleanText(raw.name, MAX_NAME_CHARS) || "List",
@@ -306,6 +320,16 @@
       prunedTo: settled.prunedTo,
       items: settled.items,
     };
+  }
+
+  /**
+   * A prune mark read from anywhere: never before 0, and never later than
+   * 30 days ago by this device's clock. A mark from the future — a broken
+   * clock, or a hostile write — would read every new item as deleted;
+   * clamped here, one already stored cannot spread.
+   */
+  function markOf(value, now = Date.now()) {
+    return Math.max(0, Math.min(stamp(value) ?? 0, now - KEEP_GONE_MS));
   }
 
   /**
@@ -319,7 +343,7 @@
     const old = list.items.filter((i) => i.gone && i.goneAt < now - KEEP_GONE_MS);
     if (old.length === 0) return list;
     const mark = Math.max(list.prunedTo || 0, ...old.map((i) => i.goneAt));
-    return { ...list, ...settle(list.items, mark) };
+    return { ...list, ...settle(list.items, Math.min(mark, now - KEEP_GONE_MS)) };
   }
 
   // ---------------------------------------------------------------------
@@ -342,10 +366,14 @@
   }
 
   function mergeItem(a, b) {
+    // Deleted is final: a tombstone on either side is the answer.
+    if (a.gone || b.gone) {
+      const goneAt = Math.max(a.gone ? a.goneAt : 0, b.gone ? b.goneAt : 0);
+      return tombstone(a.id, Math.min(a.addedAt, b.addedAt), goneAt);
+    }
     const pos = later(a, b, "posAt", (i) => `${i.parentId || ""}/${i.order}`);
     const words = later(a, b, "textAt", (i) => i.text);
     const tick = later(a, b, "tickAt", (i) => (i.ticked ? 1 : 0));
-    const gone = later(a, b, "goneAt", (i) => (i.gone ? 1 : 0));
     return {
       id: a.id,
       addedAt: Math.min(a.addedAt, b.addedAt),
@@ -356,8 +384,7 @@
       textAt: words.textAt,
       ticked: tick.ticked,
       tickAt: tick.tickAt,
-      gone: gone.gone,
-      goneAt: gone.goneAt,
+      gone: false,
       tally: mergeTally(a.tally, b.tally),
     };
   }
@@ -402,11 +429,16 @@
     };
   }
 
-  /** The same items, fact for fact, and the same prune mark? (What sync asks before pushing.) */
+  /**
+   * The same items, fact for fact? (What sync asks before pushing.) The
+   * mark is left out: it travels with the items, and pruning changes
+   * those. Comparing it would push for ever wherever this device's clock
+   * and the server's disagree about what "30 days ago" is.
+   */
   function sameItems(a, b) {
     const x = sanitizeList(a);
     const y = sanitizeList(b);
-    return Boolean(x && y) && x.prunedTo === y.prunedTo && JSON.stringify(x.items) === JSON.stringify(y.items);
+    return Boolean(x && y) && JSON.stringify(x.items) === JSON.stringify(y.items);
   }
 
   // ---------------------------------------------------------------------
@@ -669,7 +701,6 @@
       ticked: false,
       tickAt: 0,
       gone: false,
-      goneAt: 0,
       tally: [],
     };
   }
@@ -813,26 +844,49 @@
     return changed.length ? withItems(list, changed) : list;
   }
 
+  /** The live items with these ids, as they are: what Undo needs kept. */
+  function snapshot(list, ids) {
+    const want = new Set(ids);
+    return list.items.filter((i) => want.has(i.id) && !i.gone).map((i) => ({ ...i, tally: i.tally.map((e) => [...e]) }));
+  }
+
   /**
    * Delete items. Pass what `subtree` or `tickedIds` returns: deleting an
-   * item takes what is nested under it, and keeping the ids is what makes
-   * Undo possible (J18.10, J18.13).
+   * item takes what is nested under it (J18.10, J18.13). Each becomes a
+   * tombstone; for Undo, take a `snapshot` first.
    */
   function deleteItems(list, ids, now = Date.now()) {
     const want = new Set(ids);
     const changed = list.items
       .filter((i) => want.has(i.id) && !i.gone)
-      .map((i) => ({ ...i, gone: true, goneAt: after(i.goneAt, now) }));
+      .map((i) => tombstone(i.id, i.addedAt, Math.max(stamp(now) ?? 0, i.addedAt)));
     return changed.length ? withItems(list, changed) : list;
   }
 
-  /** Undo a delete: the same ids back, with everything they had. */
-  function restoreItems(list, ids, now = Date.now()) {
-    const want = new Set(ids);
-    const changed = list.items
-      .filter((i) => want.has(i.id) && i.gone)
-      .map((i) => ({ ...i, gone: false, goneAt: after(i.goneAt, now) }));
-    return changed.length ? withItems(list, changed) : list;
+  /**
+   * Undo a delete: puts back copies of what `snapshot` took, under new
+   * ids, in the same places and with their ticks and counts. New ids
+   * because deleted is final — a tombstone that could be taken back would
+   * let a stale copy argue with it — and new items are newer than any
+   * prune mark, so they survive every merge.
+   */
+  function restoreItems(list, items, now = Date.now()) {
+    const t = tree(list);
+    const ids = new Map((items || []).map((i) => [i.id, newId()]));
+    const at = stamp(now) ?? 0;
+    if (ids.size === 0 || t.byId.size + ids.size > MAX_LIVE) return list;
+    const copies = items.map((i) => ({
+      ...i,
+      id: ids.get(i.id),
+      parentId: ids.has(i.parentId) ? ids.get(i.parentId) : i.parentId && t.byId.has(i.parentId) ? i.parentId : null,
+      addedAt: at,
+      posAt: at,
+      textAt: at,
+      tickAt: i.ticked ? at : 0,
+      gone: false,
+      tally: (i.tally || []).map((e) => [...e]),
+    }));
+    return withItems(list, copies);
   }
 
   /**
@@ -983,6 +1037,7 @@
     setTicked,
     deleteItems,
     restoreItems,
+    snapshot,
     bump,
     recipeItems,
     shoppingListId,

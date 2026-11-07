@@ -37,7 +37,8 @@ create table if not exists public.lists (
   -- Deleted items are kept as tombstones for 30 days and then pruned;
   -- this is the client's stamp for how far. An item created before it
   -- that a copy no longer holds was deleted (js/lists.js). Items' own
-  -- business, so an agent may move it.
+  -- business, so an agent may move it — within the bound the trigger
+  -- below keeps.
   pruned_to bigint not null default 0,
   deleted_at timestamptz,
   created_at timestamptz not null default now(),
@@ -96,6 +97,14 @@ begin
   if new.deleted_at is not null then
     new.items := '[]'::jsonb;
   end if;
+  -- The prune mark only ever follows the 30-day rule: never later than 30
+  -- days ago, never below 0, whoever writes it. A mark in the future
+  -- would read every new item on every phone as deleted, for good (the
+  -- client merges marks by max), so it is clamped here as well as there.
+  new.pruned_to := greatest(0, least(
+    coalesce(new.pruned_to, 0),
+    (extract(epoch from now() - interval '30 days') * 1000)::bigint
+  ));
   new.updated_at := clock_timestamp();
   return new;
 end;

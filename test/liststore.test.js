@@ -415,3 +415,25 @@ test("J9.4 · a phone back after 40 days brings what it wrote since the mark, an
   assert.deepEqual(names(a), ["new offline"]);
   assert.deepEqual(names(phone), ["new offline"]);
 });
+
+test("J18.25 · a hostile mark from the future on the server does not drop new items, nor spread", async () => {
+  const server = fakeServer();
+  const a = device(server);
+  const b = device(server);
+  const list = a.lists.create("Shopping list", "checklist");
+  a.lists.change(list.id, (l) => a.L.addItem(l, { text: "eggs" }));
+  await a.sync.syncLists(null, SEED);
+  // An agent (or a broken client) writes a mark in 2199.
+  server.row(list.id).pruned_to = Date.UTC(2199, 0, 1);
+  await b.sync.syncLists(null, SEED);
+  b.lists.change(list.id, (l) => b.L.addItem(l, { text: "milk" }));
+  await b.sync.syncLists(null, SEED);
+  b.lists.change(list.id, (l) => b.L.addItem(l, { text: "bread" }));
+  await b.sync.syncLists(null, SEED);
+  await a.sync.syncLists(null, SEED);
+  for (const d of [a, b]) {
+    assert.deepEqual(d.L.liveItems(d.lists.get(list.id)).map((i) => i.text).sort(), ["bread", "eggs", "milk"]);
+    assert.ok(d.lists.get(list.id).prunedTo <= Date.now() - d.L.limits.KEEP_GONE_MS);
+  }
+  assert.ok(server.row(list.id).pruned_to <= Date.now() - a.L.limits.KEEP_GONE_MS, "what goes back up is clamped");
+});

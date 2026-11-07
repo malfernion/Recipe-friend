@@ -132,10 +132,15 @@ test("J18.10 · deleting takes what is nested, and Undo brings back exactly that
   list = L.indent(list, ids[1]);
   const gone = L.subtree(list, ids[0]);
   assert.deepEqual(gone.sort(), [ids[0], ids[1]].sort());
+  const kept = L.snapshot(list, gone);
   const after = L.deleteItems(list, gone, 9000);
   assert.deepEqual(texts(after), ["rice"]);
   assert.equal(after.items.length, 3, "tombstones are kept");
-  assert.deepEqual(texts(L.restoreItems(after, gone, 9001)), ["Curry", "  onions", "rice"]);
+  assert.deepEqual(Object.keys(after.items.find((i) => i.id === ids[0])).sort(), ["addedAt", "gone", "goneAt", "id"], "and hold no words");
+  const undone = L.restoreItems(after, kept, 9001);
+  assert.deepEqual(texts(undone), ["Curry", "  onions", "rice"]);
+  // Copies, so a stale phone's tombstone cannot take the Undo back.
+  assert.deepEqual(texts(L.mergeLists(undone, after)), ["Curry", "  onions", "rice"]);
 });
 
 test("J9.4 · a deleted item stays deleted when an older copy meets it", () => {
@@ -205,9 +210,10 @@ test("J18.13 · Clear ticked deletes every ticked item and what is under it, wit
   list = L.setTicked(list, ids[2], true);
   const cleared = L.tickedIds(list);
   assert.equal(cleared.length, 3);
+  const kept = L.snapshot(list, cleared);
   const after = L.deleteItems(list, cleared);
   assert.deepEqual(texts(after), ["eggs"]);
-  assert.deepEqual(texts(L.restoreItems(after, cleared)), ["eggs", "[Ticked (2)]"], "Undo");
+  assert.deepEqual(texts(L.restoreItems(after, kept), new Set([""])), ["eggs", "[Ticked (2)]", "Curry", "  onions", "milk"], "Undo");
 });
 
 test("J18.23 · an edit on one phone and a tick on the other both survive", () => {
@@ -347,8 +353,9 @@ test("hostile input is coerced, not believed", () => {
   assert.deepEqual(odd.tally, []);
   assert.ok(odd.posAt <= Date.UTC(2200, 0, 1));
   assert.equal(L.liveItems(list).length, L.limits.MAX_HELD_LIVE, "the newest live items");
-  assert.equal(list.items.filter((i) => i.gone).length, L.limits.MAX_GONE);
-  assert.ok(list.prunedTo > 0, "tombstones over the cap raise the prune mark rather than vanish");
+  assert.equal(list.items.filter((i) => i.gone).length, 500);
+  assert.equal(list.prunedTo, 0, "a mark is never read below 0");
+  assert.equal(L.sanitizeList({ ...list, prunedTo: Date.UTC(2199, 0, 1) }).prunedTo <= Date.now() - L.limits.KEEP_GONE_MS, true, "nor later than 30 days ago");
 });
 
 /** A list at every cap the client has: what the server must accept. */
@@ -378,6 +385,29 @@ function worstList() {
     ],
   });
 }
+
+test("J9.4 · a mark from the future is clamped, so it cannot swallow new items", () => {
+  const list = L.addItem(L.createList({ name: "Shopping", kind: "checklist" }), { text: "milk" });
+  const hostile = { ...list, prunedTo: Date.UTC(2199, 0, 1), items: [] };
+  const merged = L.mergeLists(list, hostile);
+  assert.deepEqual(texts(merged), ["milk"]);
+  const later = L.addItem(merged, { text: "bread" });
+  assert.deepEqual(texts(L.mergeLists(later, hostile)).sort(), ["bread", "milk"]);
+});
+
+test("J9.4 · a busy month of deletions does not move the mark: only the 30-day rule does", () => {
+  const t0 = Date.UTC(2026, 0, 1);
+  let a = L.createList({ name: "Shopping", kind: "checklist", now: t0 });
+  for (let i = 0; i < 290; i++) a = L.addItem(a, { text: `x${i}`, now: t0 + i });
+  let b = JSON.parse(JSON.stringify(a));
+  b = L.addItem(b, { text: "eggs", now: t0 + 3600e3 }); // offline, at 01:00
+  a = L.deleteItems(a, L.liveItems(a).map((i) => i.id), t0 + 2 * 3600e3);
+  for (let i = 0; i < 30; i++) a = L.addItem(a, { text: `y${i}`, now: t0 + 3 * 3600e3 + i });
+  a = L.deleteItems(a, L.liveItems(a).map((i) => i.id), t0 + 4 * 3600e3);
+  a = L.prune(a, t0 + 5 * 3600e3);
+  assert.equal(a.prunedTo, 0);
+  assert.deepEqual(texts(L.mergeLists(a, b)), ["eggs"]);
+});
 
 test("a list at every cap fits inside what the server accepts", () => {
   const list = worstList();
@@ -541,7 +571,7 @@ test("order keys stay short: a gap filled thousands of times is renumbered, in o
     first = id;
   }
   assert.deepEqual(texts(list), ["n2999", "last"]);
-  assert.ok(list.items.every((i) => i.order.length <= L.limits.RESPACE_AT + 1));
+  assert.ok(L.liveItems(list).every((i) => i.order.length <= L.limits.RESPACE_AT + 1));
   const many = typed("checklist", "a", "z");
   for (let i = 0; i < 250; i++) many.list = L.addItem(many.list, { text: `m${i}`, afterId: many.ids[0], now: 20000 + i });
   const drawn = texts(many.list);
