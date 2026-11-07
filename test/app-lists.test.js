@@ -128,8 +128,8 @@ test("J18.1 · the Lists screen has an address, and a list is made with a name a
   app.openLists();
   assert.equal(app.el("lists-view").open, true);
   assert.equal(app.win.location.hash, "#lists");
-  assert.match(app.el("lists-content").innerHTML, /No lists in this book yet/);
-  assert.match(app.el("lists-content").innerHTML, /value="stock"/, "both kinds are offered (J18.2)");
+  assert.match(app.el("lists-index").innerHTML, /No lists in this book yet/);
+  assert.match(app.el("lists-make").innerHTML, /value="stock"/, "both kinds are offered (J18.2)");
 
   app.make("Freezer", "stock");
   assert.equal(app.el("list-view").open, true, "making a list opens it");
@@ -151,7 +151,7 @@ test("J18.1 · the Lists screen shows every list, and a tap opens one; Back retu
   app.listStore.create("Shopping", "checklist", 1000);
   const freezer = app.listStore.create("Freezer", "stock", 2000);
   app.openLists();
-  const html = app.el("lists-content").innerHTML;
+  const html = app.el("lists-index").innerHTML;
   assert.ok(html.indexOf("Shopping") < html.indexOf("Freezer"), "oldest first, so Shopping leads");
   assert.match(html, /Stock list · empty/);
 
@@ -225,7 +225,7 @@ test("J18.4 · a viewer reads lists and changes nothing", () => {
   app.listStore.change(list.id, (l) => app.Lists.addItem(l, { text: "milk" }));
   app.app.setCanEdit(false);
   app.openLists();
-  assert.doesNotMatch(app.el("lists-content").innerHTML, /data-lists-new/, "no way to make one");
+  assert.doesNotMatch(app.el("lists-make").innerHTML, /data-lists-new/, "no way to make one");
   app.tapList(list.id);
   const html = app.el("list-content").innerHTML;
   assert.match(html, /milk/);
@@ -508,4 +508,86 @@ test("J18.9 · a drag that is let go moves the item through the model", () => {
   const spot = app.win.RecipeListDrop.place(rows, -1, 0);
   app.listStore.change(list.id, (l) => app.Lists.move(l, app.idOf("bread"), spot));
   assert.deepEqual(app.rows(), ["bread", "eggs", "milk"]);
+});
+
+/**
+ * A hold and a drag, with rows that have somewhere to be: each row 48px
+ * tall, in a <ul> that moves the lifted row as the app asks it to.
+ */
+function dragRig(app) {
+  const ids = app.Lists.rows(app.list()).filter((r) => r.type === "item").map((r) => r.id);
+  const ul = { children: [] };
+  const place = (r) => ul.children.indexOf(r);
+  const rowFor = (id) => {
+    const row = {
+      dataset: { liRow: id, level: String(app.Lists.rows(app.list()).find((r) => r.id === id).depth) },
+      style: {},
+      classList: { _s: new Set(), add(c) { this._s.add(c); }, remove(c) { this._s.delete(c); }, contains(c) { return this._s.has(c); } },
+      parentNode: ul,
+      getBoundingClientRect: () => ({ top: place(row) * 48, height: 48 }),
+      get previousElementSibling() { return ul.children[place(row) - 1] || null; },
+      get nextElementSibling() { return ul.children[place(row) + 1] || null; },
+    };
+    return row;
+  };
+  ul.children = ids.map(rowFor);
+  ul.insertBefore = (a, b) => {
+    ul.children.splice(place(a), 1);
+    ul.children.splice(place(b), 0, a);
+  };
+  ul.appendChild = (a) => {
+    ul.children.splice(place(a), 1);
+    ul.children.push(a);
+  };
+  Object.defineProperty(ul, "lastElementChild", { get: () => ul.children[ul.children.length - 1] });
+  let held = null;
+  app.win.setTimeout = (fn) => { held = fn; return 1; };
+  const content = app.el("list-content");
+  return {
+    drag(id, { toY, dx = 0 }) {
+      const row = ul.children.find((r) => r.dataset.liRow === id);
+      const y0 = place(row) * 48 + 24;
+      const target = { closest: (sel) => (sel === "[data-li-row]" ? row : null) };
+      content.fire("pointerdown", { target, clientX: 100, clientY: y0, pointerId: 7, button: 0 });
+      held(); // the hold lasts
+      content.fire("pointermove", { target, clientX: 100 + dx, clientY: toY, pointerId: 7 });
+      content.fire("pointerup", { target, clientX: 100 + dx, clientY: toY, pointerId: 7 });
+    },
+  };
+}
+
+test("J18.9 · hold and drag moves an item, and carried sideways it changes depth", () => {
+  const app = checklist("eggs", "milk", "bread");
+  dragRig(app).drag(app.idOf("bread"), { toY: 5 });
+  assert.deepEqual(app.rows(), ["bread", "eggs", "milk"]);
+
+  // milk, from the bottom, to just under eggs and a step to the right.
+  dragRig(app).drag(app.idOf("milk"), { toY: 80, dx: 40 });
+  assert.deepEqual(app.rows(), ["bread", "eggs", "  milk"]);
+});
+
+test("J18.9 · a hold let go where it started writes nothing", () => {
+  const app = checklist("eggs", "milk");
+  const before = JSON.stringify(app.list());
+  dragRig(app).drag(app.idOf("milk"), { toY: 72 });
+  assert.equal(JSON.stringify(app.list()), before);
+});
+
+test("J18.8 · a swipe that made no click does not swallow the next tap", () => {
+  const app = checklist("Bolognese", "onions");
+  app.swipe(app.idOf("onions"), 80);
+  // A touch swipe ends with no click; the next pointer starts fresh.
+  app.el("list-content").fire("pointerdown", { target: { closest: () => null }, pointerId: 2 });
+  app.tap({ li: "tick", id: app.idOf("Bolognese") });
+  assert.equal(app.list().items.find((i) => i.text === "Bolognese").ticked, true);
+});
+
+test("J18.24 · a pull redraws the Lists screen without wiping a name being typed", () => {
+  const app = lists();
+  app.openLists();
+  app.el("lists-make").innerHTML = "half-typed";
+  app.listStore.create("Freezer", "stock");
+  app.listStore.onRemote(["x"]);
+  assert.match(app.el("lists-index").innerHTML, /Freezer/);
+  assert.equal(app.el("lists-make").innerHTML, "half-typed");
 });

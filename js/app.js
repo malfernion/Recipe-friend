@@ -1157,7 +1157,9 @@
     }
     syncPlanUI();
     if (listsView.open) renderLists();
-    if (listView.open) renderList(true);
+    // Not forced: this runs on every refresh, and must not take an item
+    // out from under the caret (J18.24).
+    if (listView.open) renderList();
   }
 
   function syncTransferButtons() {
@@ -1630,6 +1632,13 @@
     return `Checklist · ${live.length === 0 ? "empty" : left === 0 ? "all ticked" : `${left} left`}`;
   }
 
+  /**
+   * The index and the New list form are drawn apart: the index is redrawn
+   * by every pull, and a name half-typed into the form must not go with
+   * it. The form is drawn once, and again only if who may write changes.
+   */
+  let makeFormDrawn = null;
+
   function renderLists() {
     if (!listStore) return;
     const lists = listStore.lists;
@@ -1661,7 +1670,11 @@
           <button type="submit" class="btn btn-primary lists-make">Make the list</button>
         </form>`
       : "";
-    listsContent.innerHTML = index + make;
+    $("#lists-index").innerHTML = index;
+    if (makeFormDrawn !== canEditBook) {
+      $("#lists-make").innerHTML = make;
+      makeFormDrawn = canEditBook;
+    }
   }
 
   function openListsView({ restoring = false } = {}) {
@@ -2055,6 +2068,7 @@
       toast("This book has as many lists as it can hold.");
       return;
     }
+    if (nameEl) nameEl.value = "";
     openList(made.id);
   });
 
@@ -2148,6 +2162,9 @@
   }
 
   listContent.addEventListener("pointerdown", (event) => {
+    // A touch swipe or drag ends with no click to swallow; the next
+    // gesture must not lose its tap to one.
+    suppressClick = false;
     if (!canEditBook || gesture || (event.button !== undefined && event.button !== 0)) return;
     const row = event.target && event.target.closest ? event.target.closest("[data-li-row]") : null;
     if (!row || event.target.closest("button")) return;
@@ -2312,7 +2329,15 @@
       return;
     }
     const carried = new Set(RecipeLists.subtree(list, id));
-    const rows = RecipeLists.rows(list, openSet(list.id)).filter((r) => r.type === "item" && !carried.has(r.id));
+    const all = RecipeLists.rows(list, openSet(list.id)).filter((r) => r.type === "item");
+    // Let go where it was picked up: nothing to write.
+    const at = all.findIndex((r) => r.id === id);
+    const before = all.slice(0, at).filter((r) => !carried.has(r.id)).pop();
+    if (at >= 0 && (before ? before.id : null) === prevId && all[at].depth === depth) {
+      renderList(true);
+      return;
+    }
+    const rows = all.filter((r) => !carried.has(r.id));
     const prevIndex = prevId ? rows.findIndex((r) => r.id === prevId) : -1;
     const spot = RecipeListDrop.place(rows, prevIndex, depth);
     listStore.change(list.id, (l) => RecipeLists.move(l, id, spot));
