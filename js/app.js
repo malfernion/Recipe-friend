@@ -47,8 +47,10 @@
   const editorTitle = $("#editor-title");
   const detailView = $("#detail-view");
   const detailContent = $("#detail-content");
-  const planView = $("#plan-view");
-  const planContent = $("#plan-content");
+  const listsView = $("#lists-view");
+  const listsContent = $("#lists-content");
+  const listView = $("#list-view");
+  const listContent = $("#list-content");
   const toastEl = $("#toast");
   const toastActionEl = $("#toast-action");
 
@@ -61,13 +63,22 @@
    */
   const planStore = window.RecipePlanStore ? new window.RecipePlanStore() : null;
 
+  /**
+   * The book's lists (J18), shared with the sync layer the same way: made
+   * here, adopted by account.js. A pull that changed something redraws
+   * whatever list is on screen (J18.24).
+   */
+  const listStore =
+    window.RecipeListStore && window.RecipeLists ? new window.RecipeListStore() : null;
+  if (listStore) listStore.onRemote = (ids) => listsChanged(ids);
+
   // --- Helpers ---
   const escapeHTML = RecipeHTML.escapeHTML;
 
   /**
    * --- Screens you go to, rather than boxes that open over one (J4.22) --
    *
-   * The recipe, the plan and the editor were modal <dialog>s. A dialog is
+   * The recipe, the lists and the editor were modal <dialog>s. A dialog is
    * the wrong shape for a screen you read with your hands full: it is a
    * scrolling box inside a page held still, and pinching, panning and
    * rotating are all things the browser does to a page rather than to a
@@ -88,7 +99,7 @@
    * `closeView` calls the one handler each view registers — so
    * everything written against it goes on reading the same.
    */
-  const VIEWS = [editorView, detailView, planView];
+  const VIEWS = [editorView, detailView, listsView, listView];
 
   const aViewIsOpen = () => VIEWS.some((v) => v.open);
 
@@ -115,6 +126,8 @@
     // view: on a phone a row of chrome is a row of ingredients nobody can
     // see (J4.19), and a view carries its own way back in the breadcrumb.
     document.body.classList.toggle("viewing", open);
+    // A list on screen is polled for what the others did (J18.24).
+    syncListPolling();
   }
 
   function showView(el) {
@@ -180,7 +193,11 @@
   function crumbTrail() {
     const route = currentRoute();
     const root = { label: bookName(), to: "list" };
-    if (route.name === "plan") return [root, { label: "The plan" }];
+    if (route.name === "lists") return [root, { label: "Lists" }];
+    if (route.name === "openlist") {
+      const list = listStore && listStore.get(route.id);
+      return [root, { label: "Lists", to: "lists" }, { label: list ? list.name : "List" }];
+    }
     if (route.name === "new") return [root, { label: "New recipe" }];
     if (route.name === "review") return [root, { label: "Review recipe" }];
     if (route.name === "recipe") {
@@ -211,7 +228,7 @@
         return `<button type="button" class="crumb${parent}" data-crumb="${escapeHTML(crumb.to)}">${escapeHTML(crumb.label)}</button>`;
       })
       .join('<span class="crumb-sep" aria-hidden="true">\u203a</span>');
-    for (const id of ["#detail-crumbs", "#plan-crumbs", "#editor-crumbs"]) {
+    for (const id of ["#detail-crumbs", "#lists-crumbs", "#list-crumbs", "#editor-crumbs"]) {
       const el = $(id);
       if (el) el.innerHTML = html;
     }
@@ -225,12 +242,24 @@
    */
   async function climbTo(target) {
     if (editorView.open && !(await tryCloseEditor())) return;
+    if (target === "lists") {
+      if (listView.open) backToLists();
+      return;
+    }
     if (target !== "list") return;
     if (detailView.open) closeView(detailView);
-    if (planView.open) closeView(planView);
+    if (listsView.open) closeView(listsView);
+    if (listView.open) {
+      // A list sits on the Lists screen's entry, so the way home is two
+      // steps back: the second is taken when the first lands (popstate).
+      climbingHome = pushedDepth > 1;
+      closeView(listView);
+    }
   }
 
-  for (const id of ["#detail-crumbs", "#plan-crumbs", "#editor-crumbs"]) {
+  let climbingHome = false;
+
+  for (const id of ["#detail-crumbs", "#lists-crumbs", "#list-crumbs", "#editor-crumbs"]) {
     const el = $(id);
     if (!el) continue;
     el.addEventListener("click", (event) => {
@@ -345,19 +374,9 @@
     // exactly there, and a card is not the place to discover it. The
     // same guard search.js keeps over the chip (J14.9).
     if (!planStore || !window.RecipePlan) return null;
-    // Read off the live plan itself, not off whether this reader may add
-    // to it: a viewer has no planner (J12.10) but the plan is the book's
-    // and they can see what is in it.
-    // Two different kinds of fact wearing one line. "In the plan" is
-    // live — it is about the thing being built right now, and it is what
-    // stops a recipe going in twice (J14.8) — where a date is history and
-    // belongs with the meta it sits under. So the live one takes the
-    // accent the Plan count already wears, because they are the same
-    // fact said in two places.
-    if (RecipePlan.isPlanned(thePlan(), recipe.id)) return { text: "In the plan", live: true };
     const entry = planningIndex()[recipe.id];
     const label = RecipePlan.plannedLabel(entry && entry.lastPlannedAt);
-    return label ? { text: label, live: false } : null;
+    return label ? { text: label } : null;
   }
 
   /**
@@ -380,9 +399,7 @@
 
   /* The separator stays outside the span: the accent is for the words. */
   function plannedNoteHTML(note) {
-    return `<span class="card-planned${note.live ? " card-planned-live" : ""}">${escapeHTML(
-      note.text
-    )}</span>`;
+    return `<span class="card-planned">${escapeHTML(note.text)}</span>`;
   }
 
   /**
@@ -583,11 +600,6 @@
   }
 
   function render() {
-    // A recipe that has left the book leaves the plan (J12.8), and this is
-    // where the book's recipes are read. `prune` hands the plan straight
-    // back when nothing has gone, so an ordinary redraw writes nothing and
-    // pushes nothing.
-    prunePlan();
     // The archive may have moved since the last redraw — a plan finished
     // here, or one that arrived from another device — so the index is
     // dropped and rebuilt at most once for the cards that ask (J14.6).
@@ -619,9 +631,6 @@
     renderSortMenu();
     renderActiveRow();
     syncPlanUI();
-    // The plan is read from the same store, so a redraw it did not cause
-    // — a sync landing somebody else's meal — still reaches it.
-    if (planView.open) renderPlan();
   }
 
   /**
@@ -1139,16 +1148,16 @@
     }
     document.body.classList.toggle("read-only", !canEditBook);
     syncTransferButtons();
-    // A viewer gets no planner at all (J12.10, J7.17): the plan belongs to
-    // the book, so putting anything in it is a write like any other, and a
-    // viewer's client never pushes. Hiding the controls is a courtesy — the
-    // gate is row-level security, and nothing here is asked to be one.
+    // A viewer reads the lists and changes nothing (J18.4, J7.17): the
+    // controls that write go, and plan mode with them. Hiding them is a
+    // courtesy — the gate is row-level security.
     if (!canPlan()) {
       planMode = false;
       forgetPendingPortions();
-      if (planView.open) closeView(planView);
     }
     syncPlanUI();
+    if (listsView.open) renderLists();
+    if (listView.open) renderList(true);
   }
 
   function syncTransferButtons() {
@@ -1250,9 +1259,11 @@
     { name: "edit", re: /^#edit=(.+)$/ },
     { name: "new", re: /^#new$/ },
     { name: "review", re: /^#review$/ },
-    // The plan is a place too, and full-screen on a phone it reads as a
-    // page: Back closes it exactly as it closes an open recipe (J12.9).
-    { name: "plan", re: /^#plan$/ },
+    // The lists are places too, and full-screen on a phone they read as
+    // pages: Back closes them as it closes a recipe (J12.9). The old
+    // plan's address leads to the lists that replaced it.
+    { name: "lists", re: /^#(?:lists|plan)$/ },
+    { name: "openlist", re: /^#list\/(.+)$/ },
   ];
 
   const isEditorRoute = (name) => name === "edit" || name === "new" || name === "review";
@@ -1334,16 +1345,13 @@
   }
 
   /**
-   * The plan is an address like the others, so what the address names is
-   * the one thing on screen (J12.9). Restoring a recipe or the editor
-   * while the readout was up used to leave both open: the recipe took the
-   * top layer and the plan sat under it, holding the page still, and
-   * closing the recipe put you back in a readout the address no longer
-   * named. Quietly, because history has already moved past the entry that
-   * opened it.
+   * The lists are addresses like the others, so what the address names is
+   * the one thing on screen (J12.9). Quietly, because history has already
+   * moved past the entry that opened them.
    */
-  function leavePlanReadout() {
-    if (planView.open) closeQuietly(planView);
+  function leaveLists() {
+    if (listsView.open) closeQuietly(listsView);
+    if (listView.open) closeQuietly(listView);
   }
 
   /**
@@ -1359,7 +1367,7 @@
       const recipe = store.getById(route.id);
       if (!recipe) return false;
       if (editorView.open) closeQuietly(editorView);
-      leavePlanReadout();
+      leaveLists();
       openRecipeView(recipe, { restoring: true });
       return true;
     }
@@ -1368,25 +1376,30 @@
       const recipe = store.getById(route.id);
       if (!recipe) return false;
       if (detailView.open) closeQuietly(detailView);
-      leavePlanReadout();
+      leaveLists();
       openEditor(recipe, false, { restoring: true });
       return true;
     }
     if (route.name === "new") {
       if (editorView.open) return true;
       if (detailView.open) closeQuietly(detailView);
-      leavePlanReadout();
+      leaveLists();
       openEditor(null, false, { restoring: true });
       return true;
     }
-    if (route.name === "plan") {
-      if (planView.open) return true;
-      // A viewer has no planner to come back to (J12.10).
-      if (!canPlan()) return false;
-      if (detailView.open) closeQuietly(detailView);
+    if (route.name === "lists") {
+      if (!listStore) return false;
+      if (listsView.open) return true;
       if (editorView.open) closeQuietly(editorView);
-      openPlanView({ restoring: true });
-      return true;
+      return openListsView({ restoring: true });
+    }
+    if (route.name === "openlist") {
+      if (listView.open && openListId === route.id) return true;
+      // A list this device has not pulled yet is a miss, like a recipe:
+      // account.js asks again once the book has synced.
+      if (!listStore || !listStore.get(route.id)) return false;
+      if (editorView.open) closeQuietly(editorView);
+      return openList(route.id, { restoring: true });
     }
     // A review holds a recipe that is not in the box yet, so there is
     // nothing to rebuild it from once it has gone.
@@ -1426,214 +1439,128 @@
   }
 
   /**
-   * --- Planning a week, and shopping for it (J12, J13, J14) -----------
+   * --- Plan mode, until "Add to list" replaces it (J12.4, J18 step 2) --
    *
-   * The arithmetic is elsewhere and pure: plan.js knows what a meal is,
-   * shoplist.js knows what a shop is, planstore.js knows where the plan
-   * lives. Everything here is the screen — which control exists, what it
-   * says, and what it does when a thumb lands on it.
-   *
-   * Two things are worth saying out loud, because they are decisions
-   * rather than plumbing. Planning is a mode over the list and not a
-   * screen of its own (J12.4), so nothing below narrows or reorders
-   * anything: search, the chips, Favourites and the ranking all go on
-   * working exactly as they were, because choosing between recipes is
-   * what the list is already for. And a viewer gets no planner at all
-   * (J12.10) — the plan is the book's, so adding to it is a write.
+   * The plan readout and its summed shopping list are gone (J18.26): the
+   * book's lists are where the shopping lives now. What stays until step
+   * 2 is the mode over the recipe list, and its add puts the recipe on the
+   * book's first checklist as one item with its ingredients nested under
+   * it, at the portions the card's stepper shows (J18.18).
    */
-  const thePlan = () => (planStore ? planStore.plan : null);
 
-  /** Is there a planner here at all, and is this book ours to plan in? */
+  /** May this reader put things on the book's lists? (J18.4, J7.17) */
   function canPlan() {
-    return Boolean(planStore) && canEditBook;
+    return Boolean(listStore) && canEditBook;
   }
 
-  /** The shop as it stands, for this reader's units (J13.6). */
-  function shopList() {
-    return RecipeShopList.build(thePlan(), store.recipes, store.prefs);
-  }
-
-  function prunePlan() {
-    if (!planStore) return;
-    const plan = planStore.plan;
-    const pruned = RecipePlan.prune(plan, store.recipes.map((r) => r.id));
-    if (pruned !== plan) planStore.setPlan(pruned);
-  }
-
-  /** Every entry this recipe has in the plan — it may have several (J12.6). */
-  function mealsFor(recipeId) {
-    const plan = thePlan();
-    return plan ? plan.meals.filter((m) => m.recipeId === recipeId) : [];
+  /** The list plan mode adds to: the book's first checklist, Shopping. */
+  function firstChecklist() {
+    return listStore ? listStore.lists.find((l) => l.kind === "checklist") || null : null;
   }
 
   /**
-   * How a meal's portions read, in the words the recipe view uses for the
-   * same thing (J12.5): servings where the recipe has them, a multiplier
-   * where it has not.
-   */
-  function portionsLabel(meal, recipe) {
-    if (meal.portions) return `Serves ${Math.round(meal.portions * 10) / 10}`;
-    return `× ${RecipeScale.formatQuantity(RecipePlan.factorFor(meal, recipe))}`;
-  }
-
-  /**
-   * Put a recipe in the plan at the portions on screen.
-   *
-   * `addMeal` puts it in at the recipe's own servings, which is the
-   * default J12.5 asks for. Where the reader has already stepped the
-   * portions — in the recipe view, whose stepper this reuses — the new
-   * meal is walked to match by the same steps a finger would take,
-   * rather than by writing a number in behind them: one definition of
-   * what a step is, and it is plan.js's.
-   */
-  function addToPlan(recipe, factor = 1) {
-    if (!planStore || !recipe) return null;
-    const now = Date.now();
-    let plan = RecipePlan.addMeal(thePlan(), recipe, now);
-    const id = plan.meals[plan.meals.length - 1].id;
-    const at = (p) => RecipePlan.factorFor(p.meals.find((m) => m.id === id), recipe);
-    // Bounded twice over: by the step that stops improving — a limit
-    // reached, or a half-batch step that would overshoot — and by a
-    // guard, because a loop that walks towards a number must not be the
-    // one thing in the app that can spin.
-    for (let guard = 0; guard < 32; guard++) {
-      const current = at(plan);
-      if (Math.abs(current - factor) < 0.01) break;
-      const next = RecipePlan.stepPortions(plan, id, current < factor ? "up" : "down", recipe, now);
-      if (next === plan || Math.abs(at(next) - factor) >= Math.abs(current - factor)) break;
-      plan = next;
-    }
-    planStore.setPlan(plan);
-    return id;
-  }
-
-  // --- Plan mode over the list -----------------------------------------
-
-  /**
-   * The portions a card's stepper is showing before anything of this
-   * recipe is in the plan — what the next add will use (J12.4).
-   *
-   * It sits in the same UI state as which tag is selected and is written
-   * nowhere else: the plan is the only place portions live for real
-   * (J12.5, J4.3). A number nobody has acted on is not a fact about the
-   * book, so it is neither cached nor synced — two people steering one
-   * stepper neither of them can see is not a feature — and plan mode
-   * going off takes it with it.
+   * The portions a card's stepper is showing — what the next add will
+   * use. UI state like which tag is on, and like it never stored or
+   * synced: leaving plan mode forgets it (J12.5).
    */
   let pendingPortions = Object.create(null);
-  const PENDING = "pending";
 
   function forgetPendingPortions() {
     pendingPortions = Object.create(null);
   }
 
-  /**
-   * A meal-shaped thing for a recipe that has no meal yet, so the label,
-   * the factor and the step can all be asked about it in the words they
-   * already use for a real one. Defaults are the recipe's own servings,
-   * exactly as `addMeal` would have set them (J12.5).
-   */
-  function pendingMeal(recipe) {
+  /** Servings where the recipe says them, else the J4.2 multiplier. */
+  function portionsFor(recipe) {
     const held = pendingPortions[recipe.id];
     if (held) return held;
-    const servings = Number(recipe.servings) > 0 ? Number(recipe.servings) : null;
-    return {
-      id: PENDING,
-      recipeId: recipe.id,
-      name: recipe.name,
-      portions: servings,
-      multiplier: servings ? null : 1,
-    };
+    return Number(recipe.servings) > 0 ? Number(recipe.servings) : 1;
   }
 
-  /**
-   * Step that number. It goes through plan.js on a plan of one meal that
-   * is not the plan, so what a step is has one definition and this is not
-   * a second one: one serving where servings are known, half a batch
-   * where they are not (J4.2, J12.5).
-   */
+  /** Step the way the recipe view steps (J4.2): a serving, or half a batch. */
   function stepPending(recipe, direction) {
-    const meal = pendingMeal(recipe);
-    const stepped = RecipePlan.stepPortions({ meals: [meal] }, PENDING, direction, recipe);
-    pendingPortions[recipe.id] = stepped.meals[0];
+    const now = portionsFor(recipe);
+    pendingPortions[recipe.id] =
+      Number(recipe.servings) > 0
+        ? direction === "up" ? now + 1 : Math.max(1, now - 1)
+        : Math.min(8, Math.max(0.5, now + (direction === "up" ? 0.5 : -0.5)));
   }
 
-  /** What a card's stepper is showing: the plan's meal, or the pending number. */
-  function showingFor(recipe) {
-    const mine = mealsFor(recipe.id);
-    return mine[mine.length - 1] || pendingMeal(recipe);
+  function portionsLabel(recipe, portions) {
+    return Number(recipe.servings) > 0
+      ? `Serves ${Math.round(portions * 10) / 10}`
+      : `× ${RecipeScale.formatQuantity(portions)}`;
   }
 
   /**
-   * What a card offers in plan mode: a way in, and a stepper that is
-   * always there. It has one meaning — the portions this recipe is in the
-   * plan at, or is about to go in at — so the row does not change shape
-   * under a thumb that has already reached for it, and the portions can
-   * be chosen before the add rather than corrected after it. The row's
-   * height was being spent either way.
+   * Put a recipe on the first checklist, at the top, as one item with its
+   * ingredients under it, scaled and in this reader's units (J18.18). It
+   * says so with an Undo, like every other way an item comes or goes here.
    */
+  function addRecipeToList(recipe, portions) {
+    if (!canPlan() || !recipe) return false;
+    const list = firstChecklist();
+    if (!list) {
+      toast("There is no checklist to put it on — make one in Lists.");
+      return false;
+    }
+    const rootId = RecipeLists.newId();
+    const node = RecipeLists.recipeItems(recipe, portions, store.prefs);
+    const after = listStore.change(list.id, (l) =>
+      RecipeLists.addTree(l, node, {
+        atTop: true,
+        makeId: (_, path) => (path.length === 0 ? rootId : RecipeLists.newId()),
+      })
+    );
+    if (!after || !after.items.some((i) => i.id === rootId)) {
+      toast(`“${list.name}” is full — clear some of it first.`);
+      return false;
+    }
+    toast(`Added “${recipe.name}” to ${list.name}.`, {
+      label: "Undo",
+      run: () => {
+        listStore.change(list.id, (l) => RecipeLists.deleteItems(l, RecipeLists.subtree(l, rootId)));
+        listsChanged([list.id]);
+      },
+    });
+    listsChanged([list.id]);
+    return true;
+  }
+
+  /** What a card offers in plan mode: a way on, and the portions it adds at. */
   function planCardRow(recipe) {
     if (!planMode || !canPlan()) return "";
-    const mine = mealsFor(recipe.id);
-    const showing = showingFor(recipe);
     const id = escapeHTML(recipe.id);
     const name = escapeHTML(recipe.name);
+    const target = firstChecklist();
+    const where = escapeHTML(target ? target.name : "a list");
     return `
         <div class="plan-card-row">
           <button type="button" class="btn btn-ghost plan-add" data-plan="add" data-id="${id}"
-                  aria-label="${mine.length ? `Add ${name} to the plan again` : `Add ${name} to the plan`}"
-                  >${mine.length ? "+ Again" : "+ Plan"}</button>
-          ${
-            `<span class="plan-portions" role="group" aria-label="Portions of ${name}">
-              <button type="button" class="scale-btn" data-plan="down" data-id="${id}"
-                      aria-label="Fewer portions of ${name}">−</button>
-              <span class="scale-value">${escapeHTML(portionsLabel(showing, recipe))}</span>
-              <button type="button" class="scale-btn" data-plan="up" data-id="${id}"
-                      aria-label="More portions of ${name}">+</button>
-            </span>`
-          }
-          ${
-            // The glyph is a count, and "times 2" is not what it says. The
-            // words go beside it where a screen reader will read them.
-            mine.length > 1
-              ? `<span class="plan-times"><span aria-hidden="true">×${mine.length}</span
-                 ><span class="visually-hidden">${mine.length} meals of ${name} planned</span></span>`
-              : ""
-          }
+                  aria-label="Add ${name} to ${where}">+ Add</button>
+          <span class="plan-portions" role="group" aria-label="Portions of ${name}">
+            <button type="button" class="scale-btn" data-plan="down" data-id="${id}"
+                    aria-label="Fewer portions of ${name}">−</button>
+            <span class="scale-value">${escapeHTML(portionsLabel(recipe, portionsFor(recipe)))}</span>
+            <button type="button" class="scale-btn" data-plan="up" data-id="${id}"
+                    aria-label="More portions of ${name}">+</button>
+          </span>
         </div>`;
   }
 
-  /**
-   * A tap on a card's plan controls. The stepper edits the most recent
-   * meal of this recipe once there is one, and the number the next add
-   * will use before there is; adding takes whatever it is showing, so
-   * "+ Again" puts a second night in at the portions on screen rather
-   * than back at the recipe's own servings.
-   */
   function cardPlanAction(action, recipeId) {
     if (!canPlan()) return;
     const recipe = store.getById(recipeId);
     if (!recipe) return;
-    const mine = mealsFor(recipeId);
-    const last = mine[mine.length - 1];
     if (action === "add") {
-      addToPlan(recipe, RecipePlan.factorFor(showingFor(recipe), recipe));
-      // The plan holds those portions now, and it is the only place they
-      // live: the stepper reads the meal from here on.
+      addRecipeToList(recipe, portionsFor(recipe));
       delete pendingPortions[recipeId];
-      toast(`Added “${recipe.name}” to the plan.`);
-    } else if (last) {
-      planStore.setPlan(RecipePlan.stepPortions(thePlan(), last.id, action, recipe));
     } else {
       stepPending(recipe, action);
     }
     render();
   }
 
-  /**
-   * The header toggle, its count, and the bar over the list. Called from
-   * render(), so anything that changes the plan keeps them honest.
-   */
+  /** The header toggle and the bar over the list. Called from render(). */
   function syncPlanUI() {
     const available = canPlan();
     const planBtn = $("#plan-btn");
@@ -1642,713 +1569,854 @@
       planBtn.setAttribute("aria-pressed", String(planMode));
       planBtn.classList.toggle("is-on", planMode);
     }
-    const meals = available ? thePlan().meals.length : 0;
-    const count = $("#plan-count");
-    if (count) {
-      // A count of nothing is not a count: the toggle carries a number
-      // once there is a plan to have one (J12.4).
-      count.hidden = meals === 0;
-      const text = meals ? String(meals) : "";
-      if (count.textContent !== text) count.textContent = text;
-    }
+    // Lists are read by everyone in the book (J18.4), so the way in is
+    // there for a viewer too.
+    const listsBtn = $("#lists-btn");
+    if (listsBtn) listsBtn.hidden = !listStore;
     const bar = $("#plan-bar");
     if (bar) bar.hidden = !(available && planMode);
     const barText = $("#plan-bar-text");
     if (barText && available && planMode) {
-      const left = shopList().toBuy.length;
-      // A plan can be only lines added by hand (J12.13), and that is not
-      // "nothing in the plan".
-      const lines = RecipePlan.liveItems(thePlan()).length;
-      const toBuy = left === 0 ? "nothing left to buy" : `${left} ${left === 1 ? "thing" : "things"} to buy`;
-      barText.textContent =
-        meals === 0 && lines === 0
-          ? "Nothing in the plan yet — add recipes below."
-          : meals === 0
-            ? `No meals in the plan yet · ${toBuy}`
-            : `${meals} ${meals === 1 ? "meal" : "meals"} in the plan · ${toBuy}`;
+      const target = firstChecklist();
+      barText.textContent = target
+        ? `Adding to ${target.name} — choose the portions on a card, then + Add.`
+        : "No checklist to add to yet — make one in Lists.";
+      const open = $("#plan-open-btn");
+      if (open) open.textContent = target ? `Open ${target.name}` : "Open lists";
     }
-    syncPlanButtons();
+    const detailBtn = $("#detail-plan-btn");
+    if (detailBtn) detailBtn.hidden = !(available && planMode);
   }
 
   /**
-   * The recipe view gains a way in only in plan mode (J12.7) — the rule
-   * Copy and Move already follow. J4.19 fought to keep that row on one
-   * line at 360px, and a control for something you are not doing is not
-   * what the room is spent on.
+   * --- Lists (J18) -----------------------------------------------------
+   *
+   * The model is lists.js and the cache liststore.js; sync.js merges and
+   * polls. Everything here is the screen, and the screen is for a phone
+   * held in one hand: an item is its words and nothing else but its tick
+   * box or its counter (J18.5), the words are the editor (J18.6), and
+   * every change is a tap, a swipe or a hold rather than a button.
    */
-  function syncPlanButtons() {
-    const btn = $("#detail-plan-btn");
-    if (btn) btn.hidden = !(canPlan() && planMode);
+
+  /** Which "Ticked (n)" groups are open, per list. Not kept (J18.12). */
+  const tickedOpen = new Map();
+  const openSet = (id) => {
+    if (!tickedOpen.has(id)) tickedOpen.set(id, new Set());
+    return tickedOpen.get(id);
+  };
+
+  let openListId = null;
+  /**
+   * The item being typed in, and what it said when the caret arrived —
+   * what Escape puts back and what decides whether leaving writes
+   * anything (J18.6, J13.16). While it is set a pull does not redraw the
+   * list; `listStale` remembers the redraw is owed.
+   */
+  let editingItem = null;
+  let editingName = null;
+  let listStale = false;
+  // A redraw this screen makes itself, with the caret going straight back
+  // in: the focusout it causes is not somebody leaving an item.
+  let restructuring = false;
+
+  const currentList = () => (listStore && openListId ? listStore.get(openListId) : null);
+
+  function listMeta(list) {
+    const live = RecipeLists.liveItems(list);
+    if (list.kind === "stock") {
+      return `Stock list · ${live.length ? `${live.length} ${live.length === 1 ? "item" : "items"}` : "empty"}`;
+    }
+    const left = live.filter((i) => !i.ticked).length;
+    return `Checklist · ${live.length === 0 ? "empty" : left === 0 ? "all ticked" : `${left} left`}`;
   }
 
-  // --- The plan readout (J12.9, J13) -----------------------------------
+  function renderLists() {
+    if (!listStore) return;
+    const lists = listStore.lists;
+    const index = lists.length
+      ? `<ul class="lists-index">${lists
+          .map(
+            (l) => `
+          <li><button type="button" class="lists-row" data-lists-open="${escapeHTML(l.id)}">
+            <span class="lists-name">${escapeHTML(l.name)}</span>
+            <span class="lists-meta">${escapeHTML(listMeta(l))}</span>
+          </button></li>`
+          )
+          .join("")}</ul>`
+      : `<p class="plan-empty">No lists in this book yet.</p>`;
+    // A list is made with its kind, and the kind is for good (J18.2).
+    const make = canEditBook
+      ? `
+        <form class="lists-new" data-lists-new autocomplete="off">
+          <h3>New list</h3>
+          <input type="text" name="name" class="plan-add-input" maxlength="${RecipeLists.limits.MAX_NAME_CHARS}"
+                 placeholder="Name — e.g. Freezer" aria-label="Name of the new list" enterkeyhint="done">
+          <div class="lists-kind" role="radiogroup" aria-label="Kind of list">
+            <label class="lists-kind-opt"><input type="radio" name="kind" value="checklist" checked>
+              <span><strong>Checklist</strong> — tick things off</span></label>
+            <label class="lists-kind-opt"><input type="radio" name="kind" value="stock">
+              <span><strong>Stock list</strong> — count what you have</span></label>
+          </div>
+          <p class="lists-hint">The kind can't be changed afterwards.</p>
+          <button type="submit" class="btn btn-primary lists-make">Make the list</button>
+        </form>`
+      : "";
+    listsContent.innerHTML = index + make;
+  }
 
-  /**
-   * Meals above the shopping list, sharing one scroll, for the reason
-   * J4.16 gives for ingredients above steps: two panes would be the top
-   * half of each, and neither list would ever be finished.
-   */
-  function openPlanView({ restoring = false } = {}) {
-    if (!planStore) return false;
-    const wasOpen = planView.open;
-    renderPlan();
-    if (!wasOpen) {
-      if (!restoring) pushRoute("#plan");
-      showView(planView);
+  function openListsView({ restoring = false } = {}) {
+    if (!listStore) return false;
+    renderLists();
+    if (!listsView.open) {
+      if (!restoring) pushRoute("#lists");
+      showView(listsView);
       renderCrumbs();
-      // The heading, not the first control — which is a portions stepper
-      // and does not say what has just filled the screen (J4.21).
-      const heading = $("#plan-heading");
+      const heading = $("#lists-heading");
       if (heading && heading.focus) heading.focus();
+      catchUpLists();
     }
     return true;
   }
 
-  /**
-   * The line being edited, if one is (J13.16): its id and what it said when
-   * the edit began, which is what Escape puts back. While it is set the
-   * readout is not redrawn — a sync landing mid-word would take the words
-   * and the caret with it — and `planStale` remembers that a redraw is
-   * owed for when the line is left.
-   */
-  let editingLine = null;
-  let planStale = false;
+  function openList(id, { restoring = false } = {}) {
+    if (!listStore || !listStore.get(id)) return false;
+    const wasOpen = listView.open && openListId === id;
+    openListId = id;
+    editingItem = null;
+    editingName = null;
+    renderList(true);
+    if (!wasOpen) {
+      if (!restoring) pushRoute(`#list/${id}`);
+      showView(listView);
+      renderCrumbs();
+      const heading = $("#list-heading");
+      if (heading && heading.focus) heading.focus();
+      pullLists();
+    }
+    return true;
+  }
 
-  function renderPlan() {
-    if (!planStore) return;
-    // Only while the plan is on screen. A view hidden with a line still
-    // focused may never hear the line lose focus — not every browser says
-    // so for an element that is hidden — and an edit that outlived its
-    // view would otherwise freeze the readout for good.
-    if (editingLine && planView.open) {
-      planStale = true;
+  /** Back to the Lists screen from a list, however the list was reached. */
+  function backToLists() {
+    const cold = pushedDepth === 0;
+    closeView(listView);
+    // Opened from its address, there is no Lists entry underneath to go
+    // back to, so the screen is opened rather than returned to.
+    if (cold) openListsView();
+  }
+
+  function itemRowHTML(list, row, editable) {
+    const item = row.item;
+    const id = escapeHTML(item.id);
+    const text = escapeHTML(item.text);
+    const said = text || "this item";
+    const checklist = list.kind === "checklist";
+    const cls = ["li-row"];
+    if (checklist && item.ticked) cls.push("li-ticked");
+    if (row.faded) cls.push("li-faded");
+    if (row.hasChildren) cls.push("li-parent");
+    const tick = checklist
+      ? `<button type="button" class="li-tick" data-li="tick" data-id="${id}" aria-pressed="${item.ticked}"
+                 aria-label="${item.ticked ? "Untick" : "Tick"} ${said}"${editable ? "" : " disabled"}><span
+                 aria-hidden="true">${item.ticked ? "✓" : ""}</span></button>`
+      : "";
+    // The words are the editor (J18.6): plain text only, one line.
+    const words = editable
+      ? `<span class="li-text" id="li-${id}" contenteditable="plaintext-only" role="textbox"
+               aria-label="Item" spellcheck="true" enterkeyhint="next" data-li-text="${id}">${text}</span>`
+      : `<span class="li-text">${text}</span>`;
+    let counter = "";
+    if (row.counter !== null) {
+      counter = editable
+        ? `<span class="li-count" role="group" aria-label="How many ${said}">
+            <button type="button" class="li-step" data-li="down" data-id="${id}"
+                    aria-label="One fewer ${said}"${row.counter === 0 ? " disabled" : ""}>−</button>
+            <span class="li-n">${row.counter}</span>
+            <button type="button" class="li-step" data-li="up" data-id="${id}"
+                    aria-label="One more ${said}">+</button>
+          </span>`
+        : `<span class="li-count"><span class="li-n">${row.counter}</span></span>`;
+    }
+    return `
+        <li class="${cls.join(" ")}" data-li-row="${id}" data-depth="${Math.min(row.depth, 8)}"
+            data-level="${row.depth}">${tick}${words}${counter}</li>`;
+  }
+
+  function foldRowHTML(row) {
+    return `
+        <li class="li-fold" data-depth="${Math.min(row.depth, 8)}"><button type="button" class="li-fold-btn"
+            data-li="fold" data-parent="${escapeHTML(row.parentId || "")}" aria-expanded="${row.open}"
+            >Ticked (${row.count})</button></li>`;
+  }
+
+  /**
+   * Draw the open list. Not under an item being typed in, unless `force`:
+   * a pull landing mid-word would take the words and the caret with it
+   * (J18.24), so it waits until the item is left.
+   */
+  function renderList(force = false) {
+    if (!listStore || !openListId) return;
+    if (!force && editingItem && listView.open) {
+      listStale = true;
       return;
     }
-    editingLine = null;
-    planStale = false;
-    const plan = thePlan();
-    const list = shopList();
-    planContent.innerHTML = planMealsHTML(plan) + shopListHTML(list);
-
-    const nothingToBuy = list.toBuy.length === 0;
-    // Offered only where there is something for it to do (J4.13).
-    $("#plan-copy-btn").hidden = nothingToBuy;
-    $("#plan-share-btn").hidden = nothingToBuy || !canShareText();
-    // Finishing needs something on the list, recipe or not (J14.3); an
-    // empty plan has nothing to finish or clear.
-    const empty = !RecipePlan.hasSomething(plan);
-    $("#plan-done-btn").hidden = empty;
-    $("#plan-clear-btn").hidden = empty;
-  }
-
-  /**
-   * The box for adding to the list by hand (J12.13). Offered only to
-   * somebody who may plan (J12.10). What is typed is what goes in.
-   */
-  function planAddFormHTML({ id, label, placeholder }) {
-    if (!canPlan()) return "";
-    return `
-        <form class="plan-add-form" data-plan-add="item" autocomplete="off">
-          <input type="text" class="plan-add-input" id="${escapeHTML(id)}" name="text"
-                 maxlength="${window.RecipePlanStore.limits.MAX_ITEM_CHARS}" enterkeyhint="done"
-                 placeholder="${escapeHTML(placeholder)}" aria-label="${escapeHTML(label)}">
-          <button type="submit" class="btn btn-ghost plan-add-submit">Add</button>
-        </form>`;
-  }
-
-  function planMealsHTML(plan) {
-    if (!plan || plan.meals.length === 0) {
-      return `
-        <section class="plan-section">
-          <h3>Meals</h3>
-          <p class="plan-empty">Nothing in the plan yet. Turn on Meal plan above the
-             recipe list, then add recipes from there.</p>
-        </section>`;
+    listStale = false;
+    if (force) editingItem = null;
+    const list = currentList();
+    if (!list) return;
+    const editable = canEditBook;
+    const heading = $("#list-heading");
+    if (heading && !editingName) {
+      heading.innerHTML = editable
+        ? `<span class="li-name" contenteditable="plaintext-only" role="textbox" aria-label="List name"
+                 spellcheck="true" enterkeyhint="done" data-li-name>${escapeHTML(list.name)}</span>`
+        : escapeHTML(list.name);
     }
-    return `
-      <section class="plan-section">
-        <h3>Meals</h3>
-        <ul class="plan-meals">${plan.meals.map(planMealHTML).join("")}</ul>
-      </section>`;
-  }
-
-  function planMealHTML(meal) {
-    const recipe = store.getById(meal.recipeId);
-    // The name the plan copied down, so an archived plan still reads
-    // correctly after the recipe has gone (J14.12).
-    const name = escapeHTML(meal.name || (recipe && recipe.name) || "");
-    const id = escapeHTML(meal.id);
-    return `
-          <li class="plan-meal">
-            <span class="plan-meal-name">${name}</span>
-            <span class="plan-portions" role="group" aria-label="Portions of ${name}">
-              <button type="button" class="scale-btn" data-plan="meal-down" data-meal="${id}"
-                      aria-label="Fewer portions of ${name}">−</button>
-              <span class="scale-value">${escapeHTML(portionsLabel(meal, recipe))}</span>
-              <button type="button" class="scale-btn" data-plan="meal-up" data-meal="${id}"
-                      aria-label="More portions of ${name}">+</button>
-            </span>
-            <button type="button" class="icon-btn plan-meal-remove" data-plan="meal-remove"
-                    data-meal="${id}" aria-label="Take ${name} out of the plan">×</button>
-          </li>`;
-  }
-
-  function shopListHTML(list) {
-    // Always there, and first: adding milk needs no recipe and no meal
-    // (J12.13), and it is the thing somebody reaches for in the shop.
-    const addItem = planAddFormHTML({
-      id: "plan-add-item",
-      label: "Add to the list",
-      placeholder: "Add to the list — e.g. 2 l milk",
-    });
-    if (list.lines.length === 0) {
-      return `
-        <section class="plan-section">
-          <h3>Shopping list</h3>
-          ${addItem}
-          <p class="plan-empty">The shopping list is whatever the meals above ask for,
-             and anything you add here.</p>
-        </section>`;
-    }
-    const removed = list.alreadyHave;
-    return `
-      <section class="plan-section">
-        <h3>Shopping list</h3>
-        ${addItem}
-        <ul class="shop-lines">
-          ${list.toBuy.map((l) => shopLineHTML(l, "")).join("")}
-          ${list.inBasket.map((l) => shopLineHTML(l, "got")).join("")}
-        </ul>
-        ${
-          removed.length
-            ? `<details class="shop-have">
-          <summary>${removed.length} ${removed.length === 1 ? "thing" : "things"} you already have</summary>
-          <ul class="shop-lines shop-lines-have">
-            ${removed.map((l) => shopLineHTML(l, "have")).join("")}
-          </ul>
-        </details>`
-            : ""
-        }
-      </section>`;
-  }
-
-  /**
-   * One line of the shop: the combined amount, what it is made of, and
-   * the two gestures that settle it.
-   *
-   * `state` is how the line stands — still wanted, in the basket, or at
-   * home already. ✗ and ✓ both record an amount rather than a tick
-   * (J13.9), and both can be taken back, because ✗ is a fast gesture and
-   * fast gestures are mistyped (J13.14).
-   */
-  function shopLineHTML(line, state) {
-    const amount = line.amount === null ? "" : RecipeScale.formatQuantity(line.amount);
-    const measure = [amount, line.unit].filter(Boolean).join(" ");
-    // Both numbers, on the one line that has two (J13.10). The total is
-    // what the plan asks for and stays where it was; the shortfall is
-    // what a shop is for, and is the number Copy takes away. Worked out
-    // in shoplist.js with the rest of the display-unit arithmetic, so
-    // the screen and the copy cannot end up meaning different things by
-    // the same word.
-    const part = line.partText
-      ? ` <span class="shop-part">· ${escapeHTML(line.partText)}</span>`
+    const rows = RecipeLists.rows(list, openSet(list.id));
+    const body = rows.map((r) => (r.type === "ticked" ? foldRowHTML(r) : itemRowHTML(list, r, editable))).join("");
+    const add = editable
+      ? `<button type="button" class="li-add" data-li="add"><span aria-hidden="true">+</span> Add an item</button>`
       : "";
-    const item = escapeHTML(line.item);
-    const key = escapeHTML(line.key);
-    // A line added by hand is its own editor (J13.16): the words are
-    // editable in place, plain text only, and the dotted underline is the
-    // whole of the affordance. A recipe's line is worked out, not typed,
-    // and stays words to read.
-    // Its label is what it is, not what it says: the words are its value,
-    // and a label repeating them would go stale the moment they changed.
-    const words =
-      line.byHand && canPlan()
-        ? `<span class="shop-edit" contenteditable="plaintext-only" role="textbox"
-                 aria-label="A line on the list" spellcheck="true" enterkeyhint="done"
-                 data-edit-item="${escapeHTML(line.itemId)}">${item}</span>`
-        : item;
-    const buttons =
-      state === "have"
-        ? `<button type="button" class="btn btn-ghost shop-restore" data-plan="unhave" data-key="${key}"
-                   aria-label="Put ${item} back on the list">Put back</button>`
-        : state === "got"
-          ? `<button type="button" class="icon-btn shop-btn is-on" data-plan="unget" data-key="${key}"
-                     aria-pressed="true" aria-label="Take ${item} out of the basket">✓</button>`
-          : `<button type="button" class="icon-btn shop-btn" data-plan="have" data-key="${key}"
-                     aria-label="We already have ${item}">✗</button>
-             <button type="button" class="icon-btn shop-btn" data-plan="got" data-key="${key}"
-                     aria-pressed="false" aria-label="Put ${item} in the basket">✓</button>`;
-    return `
-            <li class="shop-line${state === "got" ? " shop-line-got" : ""}">
-              <div class="shop-line-text">
-                <p class="shop-what">${
-                  measure ? `<span class="shop-amount">${escapeHTML(measure)}</span> ` : ""
-                }${words}${line.toTaste ? ' <span class="shop-taste">to taste</span>' : ""}${part}</p>
-                ${shopFromHTML(line)}
-              </div>
-              <div class="shop-line-btns">${buttons}</div>
-            </li>`;
+    listContent.innerHTML =
+      (rows.length
+        ? `<ul class="li-rows li-${list.kind}">${body}</ul>`
+        : `<p class="plan-empty">Nothing on this list yet.</p>`) + add;
+    const clear = $("#list-clear-btn");
+    if (clear) clear.hidden = !(editable && list.kind === "checklist" && RecipeLists.tickedIds(list).length > 0);
+    const del = $("#list-delete-btn");
+    if (del) del.hidden = !editable;
   }
 
-  /**
-   * What the line is made of (J13.7) — "Bolognese 4 · Curry 2".
-   *
-   * Where the recipes wrote the item differently the line says what each
-   * of them wrote, because the plural rule (J13.4) is what makes a wrong
-   * merge and naming the recipes alone would not show it. Where they all
-   * wrote the same thing that parenthetical is noise, and goes.
-   */
-  function shopFromHTML(line) {
-    if (!line.from.length) return "";
-    const differ = new Set(line.from.map((f) => f.item)).size > 1;
-    const bits = line.from.map((f) => {
-      const written = differ ? ` (${f.item})` : "";
-      return escapeHTML(`${f.name}${f.text ? ` ${f.text}` : ""}${written}`);
-    });
-    return `<p class="shop-from">${bits.join(" · ")}</p>`;
-  }
-
-  /**
-   * Something typed into the list's box (J12.13). Focus goes back to the
-   * box, because the list is written a line at a time and usually several
-   * lines at once.
-   */
-  function planAdd(text) {
-    if (!canPlan()) return false;
-    const words = String(text || "").trim();
-    if (!words) return false;
-    const plan = thePlan();
-    const limits = window.RecipePlanStore.limits;
-    if (RecipePlan.liveItems(plan).length >= limits.MAX_LIST_LINES) {
-      toast(`The list is full — it holds ${limits.MAX_LIST_LINES} things added by hand. Clear some first.`);
-      return false;
+  /** A pull, an Undo or an add from plan mode changed these lists. */
+  function listsChanged(ids = []) {
+    if (listView.open && openListId) {
+      if (!listStore.get(openListId)) {
+        // Deleted on another phone while it was open here.
+        editingItem = null;
+        backToLists();
+        toast("That list was deleted.");
+      } else if (ids.includes(openListId)) {
+        renderList();
+        renderCrumbs();
+      }
     }
-    planStore.setPlan(RecipePlan.addItem(plan, words));
-    render();
-    const again = $("#plan-add-item");
-    if (again && again.focus) again.focus();
-    return true;
+    if (listsView.open) renderLists();
+    syncPlanUI();
+  }
+
+  // --- Polling: "within seconds" with no realtime service (J18.24) ----
+
+  const LIST_POLL_MS = 5000;
+  let listPollTimer = null;
+
+  const listsOnScreen = () => Boolean(listStore) && (listsView.open || listView.open);
+  const pageVisible = () => document.visibilityState !== "hidden";
+
+  /** Ask the server for the open list — or every list, on the Lists screen. */
+  function pullLists() {
+    const cloud = window.RecipeCloud;
+    const sync = cloud && cloud.sync;
+    if (!sync || typeof sync.pullLists !== "function" || !listsOnScreen() || !pageVisible()) return null;
+    return sync.pullLists(listView.open ? openListId : null);
   }
 
   /**
-   * Redraw the readout a moment from now, not now. A line is left by
-   * tapping something else, and the something else is often the ✓ on the
-   * next line: the line loses focus on the way down, the tap lands on the
-   * way up, and a redraw in between replaces the ✓ before its tap
-   * arrives. A tap in the readout redraws it anyway, and runs whatever is
-   * owed first (see the click listener).
+   * On the Lists screen: a full sync for a book whose plan has not yet
+   * moved into Shopping (build step 1) — only syncNow does that, after
+   * the plan itself has synced — and a pull otherwise.
    */
-  let redrawOwed = false;
-  function redrawSoon() {
-    redrawOwed = true;
-    window.setTimeout(redrawNow, 350);
+  function catchUpLists() {
+    const cloud = window.RecipeCloud;
+    const sync = cloud && cloud.sync;
+    if (listStore && !listStore.seeded && sync && typeof sync.syncNow === "function") {
+      return sync.syncNow();
+    }
+    return pullLists();
   }
-  function redrawNow() {
-    if (!redrawOwed) return;
-    redrawOwed = false;
-    render();
+
+  /** Poll while a list is on screen and the tab can be seen, and only then. */
+  function syncListPolling() {
+    const want = listsOnScreen() && pageVisible() && typeof window.setInterval === "function";
+    if (want && !listPollTimer) listPollTimer = window.setInterval(pullLists, LIST_POLL_MS);
+    if (!want && listPollTimer) {
+      window.clearInterval(listPollTimer);
+      listPollTimer = null;
+    }
+  }
+
+  document.addEventListener("visibilitychange", () => {
+    syncListPolling();
+    if (pageVisible()) pullLists();
+  });
+  window.addEventListener("focus", () => pullLists());
+
+  // --- Editing an item in place (J18.6, J18.7, J18.10) -----------------
+
+  let listRedrawOwed = false;
+  /** Redraw a moment from now: see `redrawSoon` for why not now. */
+  function listRedrawSoon() {
+    listRedrawOwed = true;
+    window.setTimeout(listRedrawNow, 350);
+  }
+  function listRedrawNow() {
+    if (!listRedrawOwed) return;
+    listRedrawOwed = false;
+    renderList();
+  }
+
+  /** Redraw after a change made from the keyboard, and put the caret back. */
+  function redrawAndFocus(id) {
+    restructuring = true;
+    try {
+      renderList(true);
+    } finally {
+      restructuring = false;
+    }
+    if (id) focusItem(id);
+  }
+
+  function focusItem(id) {
+    const el = document.getElementById(`li-${id}`);
+    if (!el || !el.focus) return;
+    el.focus();
+    // The caret at the end, where Backspace from the item below means it.
+    const sel = typeof window.getSelection === "function" ? window.getSelection() : null;
+    if (!sel || typeof document.createRange !== "function") return;
+    const range = document.createRange();
+    range.selectNodeContents(el);
+    range.collapse(false);
+    sel.removeAllRanges();
+    sel.addRange(range);
+  }
+
+  /** Take items off, saying so with an Undo (J18.10). */
+  function deleteWithUndo(ids, label) {
+    const listId = openListId;
+    listStore.change(listId, (l) => RecipeLists.deleteItems(l, ids));
+    toast(label, {
+      label: "Undo",
+      run: () => {
+        listStore.change(listId, (l) => RecipeLists.restoreItems(l, ids));
+        listsChanged([listId]);
+      },
+    });
+  }
+
+  function deletedLabel(item, count) {
+    const what = item.text ? `“${item.text}”` : "an item";
+    return count > 1 ? `Deleted ${what} and ${count - 1} under it.` : `Deleted ${what}.`;
   }
 
   /**
-   * The words of a line being edited, as one line. innerText where there
-   * is one, because a line break that got in — a paste, or Enter from a
-   * keyboard mid-word — is a <br> there, which textContent reads as
-   * nothing and runs two words together.
+   * Save what an item says. `leaving`: the caret has gone, so an empty
+   * item is deleted — silently if it never said anything and held
+   * nothing (a line Enter made and nobody used), with an Undo otherwise.
+   * An item left as it was writes nothing (J13.16).
+   */
+  function commitText(el, leaving = false) {
+    const id = el.dataset.liText;
+    const began = editingItem && editingItem.id === id ? editingItem : null;
+    const list = currentList();
+    const item = list && RecipeLists.liveItems(list).find((i) => i.id === id);
+    if (!item || !canEditBook) return "missing";
+    const typed = lineWords(el);
+    const words = RecipeLists.cleanText(typed);
+    if (!words) {
+      if (!leaving) return "empty";
+      const ids = RecipeLists.subtree(list, id);
+      if (!item.text && ids.length === 1) listStore.change(openListId, (l) => RecipeLists.deleteItems(l, ids));
+      else deleteWithUndo(ids, deletedLabel(item, ids.length));
+      return "deleted";
+    }
+    const before = began ? RecipeLists.cleanText(began.before) : item.text;
+    if (words === before) return "same";
+    listStore.change(openListId, (l) => RecipeLists.editText(l, id, words));
+    if (began) began.before = words;
+    if (el.textContent !== words) el.textContent = words;
+    const max = RecipeLists.limits.MAX_TEXT_CHARS;
+    if (typed.length > max) toast(`An item is ${max} characters at most — the end was left off.`);
+    return "saved";
+  }
+
+  /** Enter: the next item, directly below at the same depth (J18.7). */
+  function enterAt(el) {
+    if (!lineWords(el)) {
+      // Enter on an empty item is the end of typing: it goes, quietly.
+      el.blur();
+      return;
+    }
+    const id = el.dataset.liText;
+    commitText(el);
+    const newId = RecipeLists.newId();
+    const after = listStore.change(openListId, (l) => RecipeLists.addItem(l, { afterId: id, id: newId }));
+    if (!after || !after.items.some((i) => i.id === newId)) {
+      toast(`This list is full — it holds ${RecipeLists.limits.MAX_LIVE} items.`);
+      return;
+    }
+    redrawAndFocus(newId);
+  }
+
+  /** Backspace in an empty item: it goes, and the caret goes up (J18.10). */
+  function backspaceAt(el) {
+    const id = el.dataset.liText;
+    const list = currentList();
+    if (!list) return;
+    const item = RecipeLists.liveItems(list).find((i) => i.id === id);
+    if (!item) return;
+    const items = RecipeLists.rows(list, openSet(list.id)).filter((r) => r.type === "item");
+    const at = items.findIndex((r) => r.id === id);
+    const above = at > 0 ? items[at - 1].id : null;
+    const ids = RecipeLists.subtree(list, id);
+    if (!item.text && ids.length === 1) listStore.change(openListId, (l) => RecipeLists.deleteItems(l, ids));
+    else deleteWithUndo(ids, deletedLabel(item, ids.length));
+    redrawAndFocus(above);
+  }
+
+  /** Nest or un-nest an item (J18.8), keeping the caret if it had it. */
+  function nest(id, direction) {
+    if (!canEditBook || !currentList()) return;
+    const el = document.getElementById(`li-${id}`);
+    const typing = Boolean(editingItem && editingItem.id === id);
+    if (typing && el) commitText(el);
+    const before = currentList();
+    const after = listStore.change(openListId, (l) =>
+      direction === "in" ? RecipeLists.indent(l, id) : RecipeLists.outdent(l, id)
+    );
+    if (after === before) return;
+    if (typing) redrawAndFocus(id);
+    else renderList(true);
+  }
+
+  function listAction(action, data) {
+    const list = currentList();
+    if (!list) return;
+    if (action === "fold") {
+      const set = openSet(list.id);
+      const key = data.parent || "";
+      if (set.has(key)) set.delete(key);
+      else set.add(key);
+      renderList();
+      return;
+    }
+    if (!canEditBook) return;
+    if (action === "tick") {
+      const item = RecipeLists.liveItems(list).find((i) => i.id === data.id);
+      if (!item) return;
+      listStore.change(list.id, (l) => RecipeLists.setTicked(l, data.id, !item.ticked));
+      renderList();
+    } else if (action === "up" || action === "down") {
+      listStore.change(list.id, (l) => RecipeLists.bump(l, data.id, action === "up" ? 1 : -1, listStore.deviceId));
+      renderList();
+    } else if (action === "add") {
+      const newId = RecipeLists.newId();
+      const after = listStore.change(list.id, (l) => RecipeLists.addItem(l, { id: newId }));
+      if (!after || !after.items.some((i) => i.id === newId)) {
+        toast(`This list is full — it holds ${RecipeLists.limits.MAX_LIVE} items.`);
+        return;
+      }
+      redrawAndFocus(newId);
+    }
+  }
+
+  /**
+   * The words of an item being edited, as one line. innerText where there
+   * is one: a line break that got in is a <br> there, which textContent
+   * reads as nothing and runs two words together.
    */
   const lineWords = (el) =>
     String((el && (el.innerText !== undefined ? el.innerText : el.textContent)) || "")
       .replace(/\s+/g, " ")
       .trim();
 
-  /**
-   * A line added by hand has been left after editing (J13.16). Leaving is
-   * saving; nothing was written while it was being typed.
-   *
-   * What decides whether there was an edit is the words the line had when
-   * it was entered, not the words it has now: another phone's edit can
-   * land while the caret is in the line, and leaving without typing —
-   * or with Escape — must not write the old words back over it.
-   *
-   * Nothing here redraws there and then (see `redrawSoon`). The words on
-   * screen are made to match what was saved, in place, and the readout
-   * catches up a moment later if it has to: the line was emptied, or a
-   * sync arrived while it was being edited.
-   */
-  function finishEdit(el) {
-    const began = editingLine;
-    editingLine = null;
-    const id = el.dataset.editItem;
-    if (!canPlan()) {
-      if (planStale) redrawSoon();
-      return;
-    }
-    const plan = thePlan();
-    const item = RecipePlan.liveItems(plan).find((i) => i.id === id);
-    if (!item) {
-      // Taken off from the other phone while it was being edited.
-      redrawSoon();
-      return;
-    }
-    const limits = window.RecipePlanStore.limits;
-    const typed = lineWords(el);
-    const words = window.RecipePlanStore.clip(typed, limits.MAX_ITEM_CHARS).trim();
-    const before = began && began.id === id ? String(began.before || "").replace(/\s+/g, " ").trim() : null;
+  const itemTarget = (event) =>
+    event.target && event.target.closest ? event.target.closest("[data-li-text]") : null;
 
-    if (!words) {
-      // Emptied is removed, with a way back (J13.16).
-      const prior = item.state;
-      planStore.setPlan(RecipePlan.setItemState(plan, id, "removed"));
-      redrawSoon();
-      toast(`Took “${item.text}” off the list.`, {
-        label: "Undo",
-        run: () => {
-          const now = thePlan();
-          if (!RecipePlan.liveItems(now).some((i) => i.id === id)) {
-            planStore.setPlan(RecipePlan.setItemState(now, id, prior));
-          }
-          render();
-        },
-      });
-      return;
-    }
-    if (words === before) {
-      // Nothing was typed — or it was, and Escape took it back. Nothing
-      // is written, whatever has arrived since (J13.16).
-      if (planStale) redrawSoon();
-      return;
-    }
-    if (words !== item.text) planStore.setPlan(RecipePlan.editItem(plan, id, words));
-    if (el.textContent !== words) el.textContent = words;
-    if (typed.length > limits.MAX_ITEM_CHARS) {
-      toast(`A line is ${limits.MAX_ITEM_CHARS} characters at most — the end was left off.`);
-    }
-    if (planStale) redrawSoon();
-  }
-
-  /** A tap inside the readout: the meals above, the shop below. */
-  function planAction(action, dataset) {
-    if (!canPlan()) return;
-    if (action === "meal-remove") {
-      const plan = thePlan();
-      const meal = plan.meals.find((m) => m.id === dataset.meal);
-      planStore.setPlan(RecipePlan.removeMeal(plan, dataset.meal));
-      if (meal) toast(`Took “${meal.name}” out of the plan.`);
-      render();
-      return;
-    }
-    if (action === "meal-up" || action === "meal-down") {
-      const plan = thePlan();
-      const meal = plan.meals.find((m) => m.id === dataset.meal);
-      if (!meal) return;
-      const direction = action === "meal-up" ? "up" : "down";
-      planStore.setPlan(
-        RecipePlan.stepPortions(plan, meal.id, direction, store.getById(meal.recipeId))
-      );
-      render();
-      return;
-    }
-    // Returned rather than dropped: settling the last line finishes the
-    // plan, which is a promise, and a test wants to be able to wait for it.
-    if (action === "have" || action === "got") return settleShopLine(dataset.key, action);
-    if (action === "unhave" || action === "unget") {
-      unsettleShopLine(dataset.key, action === "unhave" ? "have" : "got");
-    }
-    return undefined;
-  }
-
-  /**
-   * ✗ and ✓, and the one moment a plan finishes itself.
-   *
-   * Whether this tap finishes the shop is asked of the list **before** the
-   * tap lands (J14.2). `allSettled` after the fact cannot tell somebody
-   * settling the last line from a requirement that fell away — dropping a
-   * meal, or a recipe leaving the book from another device, takes an
-   * outstanding amount off the list with nobody touching it, and a plan
-   * that archived itself on that would be recording a shop nobody said
-   * they had done.
-   */
-  function settleShopLine(key, field) {
-    const list = shopList();
-    const line = list.lines.find((l) => l.key === key);
-    if (!line) return;
-    const finishes = RecipeShopList.finishesShop(list, line);
-    planStore.setPlan(RecipeShopList.settleLine(thePlan(), line, field, Date.now()));
-    render();
-    return finishes ? finishPlan() : undefined;
-  }
-
-  function unsettleShopLine(key, field) {
-    const line = shopList().lines.find((l) => l.key === key);
-    if (!line) return;
-    planStore.setPlan(RecipeShopList.unsettleLine(thePlan(), line, field, Date.now()));
-    render();
-  }
-
-  // --- Finishing, and taking it back (J14.1, J14.2) --------------------
-
-  /**
-   * Done: every recipe in the plan is stamped as planned, the plan is
-   * archived, and an empty one takes its place — or, where there is no
-   * recipe in it, the list simply goes and nothing is recorded (J14.3).
-   * It says what it did and
-   * offers Undo rather than asking first — pressing Done, or settling the
-   * last line, is somebody saying they have finished, and you do not
-   * interrogate them about it.
-   *
-   * The plan closes with it: the shop is over, and what is left to say
-   * fits in the toast that carries the way back.
-   */
-  async function finishPlan() {
-    if (!canPlan()) return;
-    const plan = thePlan();
-    if (!RecipePlan.hasSomething(plan)) return; // J14.3
-    const cloud = window.RecipeCloud;
-    const sync = cloud && cloud.sync;
-    if (!sync || !sync.completePlan) {
-      toast("Finishing a plan needs your account — sign in and try again.");
-      return;
-    }
-    let done;
-    try {
-      done = await sync.completePlan(Date.now());
-    } catch (err) {
-      console.warn("Recipe Friend: could not finish the plan.", err);
-      toast("Couldn't finish that plan — it is still here.");
-      render();
-      return;
-    }
-    if (!done) return;
-    if (planView.open) closeView(planView);
-    render();
-    // A shop with no recipe in it recorded nothing (J14.3), so it says so
-    // in its own words, and its Undo is local: there is no record to take
-    // back.
-    if (!done.archived) {
-      toast("Shopping done.", { label: "Undo", run: () => undoUnrecorded(done.previous) });
-      return;
-    }
-    const count = done.archived.meals.length;
-    toast(`Planned ${count} ${count === 1 ? "meal" : "meals"}.`, {
-      label: "Undo",
-      // The record keeps no lines added by hand (J14.13), so Undo is the
-      // one place they can come back from — held here, and nowhere else.
-      run: () => undoFinishPlan(done.archived.id, done.items || []),
-    });
-  }
-
-  /** Undo after a Done that recorded nothing: no network needed (J14.2). */
-  function undoUnrecorded(previous) {
-    const cloud = window.RecipeCloud;
-    const sync = cloud && cloud.sync;
-    if (!sync || !sync.restoreUnrecorded) return;
-    try {
-      sync.restoreUnrecorded(previous, Date.now());
-    } catch (err) {
-      console.warn("Recipe Friend: could not undo finishing the plan.", err);
-      toast("Couldn't undo that.");
-      return;
-    }
-    render();
-    toast("The list is back.");
-  }
-
-  /**
-   * Undo is the one thing in the plan that needs a network (J14.2). A
-   * finished plan is recorded for the whole book, so taking the record
-   * back has to reach the server — a device that dropped it locally would
-   * be handed it straight back by the next sync. It says so rather than
-   * appearing to work.
-   */
-  async function undoFinishPlan(planId, items = []) {
-    const cloud = window.RecipeCloud;
-    const sync = cloud && cloud.sync;
-    if (!sync || !sync.undoComplete) {
-      toast("Undo needs a connection — that plan is on the record for the whole book.");
-      return;
-    }
-    try {
-      const restored = await sync.undoComplete(planId, Date.now(), items);
-      render();
-      toast(restored ? "The plan is back." : "That plan has already gone from the record.");
-    } catch (err) {
-      console.warn("Recipe Friend: could not undo finishing the plan.", err);
-      toast("Couldn't undo that — it needs a connection, and the plan is still recorded.");
-    }
-  }
-
-  /**
-   * Clear discards a plan without recording it: a week that never
-   * happened should not claim to have been planned (J14.4). Unlike Done
-   * it is not something you have just said you wanted, and it cannot be
-   * taken back, so it asks first — the same question everything
-   * destructive here asks (J2.10).
-   */
-  async function clearPlan() {
-    if (!canPlan()) return;
-    const plan = thePlan();
-    const meals = plan.meals.length;
-    const lines = RecipePlan.liveItems(plan).length;
-    if (meals === 0 && lines === 0) return;
-    const going = [
-      meals ? `${meals} ${meals === 1 ? "meal" : "meals"}` : "",
-      lines ? `${lines} ${lines === 1 ? "thing" : "things"} added to the list` : "",
-    ].filter(Boolean).join(" and ");
-    const ok = await RecipeAsk.ask(
-      `Clear the plan? ${going} ${meals + lines === 1 ? "goes" : "go"} from it, along with ` +
-        "everything ticked off the shopping list, and nothing is recorded as planned.",
-      { confirmLabel: "Clear", danger: true }
-    );
-    if (!ok) return;
-    // A new plan is a new generation, and a generation carries the moment
-    // it began: stamped past the plan it replaces, so a device still
-    // holding the old one yields to this rather than handing it back
-    // (see mergePlans in plan.js). `generationAfter` is where that sum
-    // lives, so Clear, Done and Undo all order themselves the same way.
-    planStore.setPlan(RecipePlan.emptyPlan(RecipePlan.generationAfter(plan)));
-    if (planView.open) closeView(planView);
-    toast("Plan cleared.");
-    render();
-  }
-
-  // --- Taking the list to the shop (J13.13) ----------------------------
-
-  const canShareText = () => Boolean(navigator && typeof navigator.share === "function");
-
-  /** What is left: neither removed nor settled, and never asked for twice. */
-  const outstandingText = () => RecipeShopList.copyText(shopList());
-
-  // --- Wiring ----------------------------------------------------------
-
-  $("#plan-btn").addEventListener("click", () => {
-    if (!canPlan()) return;
-    planMode = !planMode;
-    // Leaving the mode leaves nothing behind: a portion somebody dialled
-    // up and never added is a thought, not a decision (J12.4).
-    if (!planMode) forgetPendingPortions();
-    render();
+  listsContent.addEventListener("click", (event) => {
+    const row = event.target.closest ? event.target.closest("[data-lists-open]") : null;
+    if (row) openList(row.dataset.listsOpen);
   });
 
-  $("#plan-open-btn").addEventListener("click", () => {
-    if (canPlan()) openPlanView();
+  listsContent.addEventListener("submit", (event) => {
+    const form = event.target.closest ? event.target.closest("[data-lists-new]") : null;
+    if (!form) return;
+    event.preventDefault();
+    if (!canEditBook) return;
+    const nameEl = form.elements && form.elements.name;
+    const name = RecipeLists.cleanText(nameEl ? nameEl.value : "", RecipeLists.limits.MAX_NAME_CHARS);
+    if (!name) {
+      toast("Give the list a name first.");
+      if (nameEl && nameEl.focus) nameEl.focus();
+      return;
+    }
+    const kindEl = form.elements && form.elements.kind;
+    const kind = kindEl && kindEl.value === "stock" ? "stock" : "checklist";
+    const made = listStore.create(name, kind);
+    if (!made) {
+      toast("This book has as many lists as it can hold.");
+      return;
+    }
+    openList(made.id);
   });
 
-  $("#detail-plan-btn").addEventListener("click", () => {
-    const recipe = detailId && store.getById(detailId);
-    if (!recipe || !canPlan()) return;
-    // At the portions on screen: the recipe view's own stepper is the one
-    // the plan reuses, so what it says is what goes in (J12.5).
-    addToPlan(recipe, detailScale);
-    toast(`Added “${recipe.name}” to the plan.`);
-    render();
-  });
-
-  planContent.addEventListener("click", (event) => {
-    const btn = event.target.closest("[data-plan]");
-    // A redraw owed from leaving a line is paid here, after the tap has
-    // found what it was aimed at (see `redrawSoon`).
-    if (!btn || !btn.dataset.plan) {
-      redrawNow();
+  listContent.addEventListener("click", (event) => {
+    if (suppressClick) {
+      suppressClick = false;
       return undefined;
     }
-    const done = planAction(btn.dataset.plan, btn.dataset);
-    redrawNow();
+    const btn = event.target.closest ? event.target.closest("[data-li]") : null;
+    if (!btn || !btn.dataset.li) {
+      listRedrawNow();
+      return undefined;
+    }
+    const done = listAction(btn.dataset.li, btn.dataset);
+    listRedrawNow();
     return done;
   });
 
-  // Editing a line added by hand in place (J13.16). focusin and focusout,
-  // not focus and blur, because those are the ones that bubble up to here.
-  const editTarget = (event) =>
-    event.target && event.target.closest ? event.target.closest("[data-edit-item]") : null;
-
-  planContent.addEventListener("focusin", (event) => {
-    const el = editTarget(event);
-    if (!el || !canPlan()) return;
-    editingLine = { id: el.dataset.editItem, before: el.textContent };
+  listContent.addEventListener("focusin", (event) => {
+    const el = itemTarget(event);
+    if (!el || !canEditBook) return;
+    editingItem = { id: el.dataset.liText, before: el.textContent };
   });
 
-  planContent.addEventListener("keydown", (event) => {
-    const el = editTarget(event);
-    if (!el || event.isComposing) return;
+  listContent.addEventListener("focusout", (event) => {
+    const el = itemTarget(event);
+    if (!el || restructuring) return;
+    const result = commitText(el, true);
+    editingItem = null;
+    if (result === "deleted" || result === "missing" || listStale) listRedrawSoon();
+  });
+
+  listContent.addEventListener("keydown", (event) => {
+    const el = itemTarget(event);
+    if (!el || event.isComposing || !canEditBook) return;
+    const id = el.dataset.liText;
     if (event.key === "Enter") {
-      // One line is one line: Enter is Done, not a new paragraph.
       event.preventDefault();
-      el.blur();
+      enterAt(el);
     } else if (event.key === "Escape") {
       event.preventDefault();
-      if (editingLine && editingLine.id === el.dataset.editItem) el.textContent = editingLine.before;
+      if (editingItem && editingItem.id === id) el.textContent = editingItem.before;
       el.blur();
+    } else if (event.key === "Tab") {
+      // Tab and Shift-Tab nest, as a swipe does (J18.8).
+      event.preventDefault();
+      nest(id, event.shiftKey ? "out" : "in");
+    } else if (event.key === "Backspace" && !lineWords(el)) {
+      event.preventDefault();
+      backspaceAt(el);
     }
   });
 
-  planContent.addEventListener("focusout", (event) => {
-    const el = editTarget(event);
+  // One line is one line (J18.6). A keyboard that sends Enter as input
+  // rather than as a key still means Enter.
+  listContent.addEventListener("beforeinput", (event) => {
+    const el = itemTarget(event);
     if (!el) return;
-    finishEdit(el);
-  });
-
-  // One line is one line. A line break asked for — Enter from a keyboard
-  // that sent it as input rather than as a key, or a paste of several
-  // lines — becomes a space, not a second paragraph inside the first.
-  planContent.addEventListener("beforeinput", (event) => {
-    if (!editTarget(event)) return;
     if (event.inputType === "insertParagraph" || event.inputType === "insertLineBreak") {
       event.preventDefault();
+      enterAt(el);
     }
   });
 
-  planContent.addEventListener("paste", (event) => {
-    if (!editTarget(event) || !event.clipboardData) return;
+  listContent.addEventListener("paste", (event) => {
+    if (!itemTarget(event) || !event.clipboardData) return;
     event.preventDefault();
     const text = String(event.clipboardData.getData("text/plain") || "").replace(/\s+/g, " ");
     if (document.execCommand) document.execCommand("insertText", false, text);
   });
 
-  planContent.addEventListener("submit", (event) => {
-    const form = event.target.closest ? event.target.closest("[data-plan-add]") : null;
-    if (!form) return;
-    event.preventDefault();
-    const input = form.elements && form.elements.text;
-    const text = input ? input.value : "";
-    // Emptied only once it has gone in: a refusal — the list is full —
-    // should not also throw away what somebody typed.
-    if (planAdd(text) && input) input.value = "";
+  // --- Swipe to nest, hold to drag (J18.8, J18.9) ----------------------
+
+  const SWIPE_PX = 56; // far enough that a wobbly tap is not a swipe
+  const SLOP_PX = 10;
+  const HOLD_MS = 450;
+  const STEP_PX = 32; // a level of depth, carried sideways while dragging
+  let gesture = null;
+  let suppressClick = false;
+
+  function endGesture() {
+    const g = gesture;
+    gesture = null;
+    if (!g) return;
+    window.clearTimeout(g.timer);
+    if (g.row && g.row.style) g.row.style.transform = "";
+    if (g.row) {
+      g.row.classList.remove("li-swiping");
+      g.row.classList.remove("li-dragging");
+    }
+  }
+
+  listContent.addEventListener("pointerdown", (event) => {
+    if (!canEditBook || gesture || (event.button !== undefined && event.button !== 0)) return;
+    const row = event.target && event.target.closest ? event.target.closest("[data-li-row]") : null;
+    if (!row || event.target.closest("button")) return;
+    const id = row.dataset.liRow;
+    // In the item being typed in, a hold is the browser's — selecting
+    // words — and only a swipe is ours.
+    const typing = Boolean(editingItem && editingItem.id === id);
+    gesture = { id, row, x0: event.clientX, y0: event.clientY, dx: 0, mode: "pending", typing, pointerId: event.pointerId };
+    if (!typing) gesture.timer = window.setTimeout(startDrag, HOLD_MS);
   });
 
-
-  onViewClose(planView, () => {
-    unwind(currentRoute().name === "plan");
+  listContent.addEventListener("pointermove", (event) => {
+    const g = gesture;
+    if (!g || event.pointerId !== g.pointerId) return;
+    const dx = event.clientX - g.x0;
+    const dy = event.clientY - g.y0;
+    g.dx = dx;
+    if (g.mode === "pending") {
+      if (Math.abs(dx) > SLOP_PX && Math.abs(dx) > 2 * Math.abs(dy)) {
+        g.mode = "swipe";
+        window.clearTimeout(g.timer);
+        g.row.classList.add("li-swiping");
+      } else if (Math.abs(dx) > SLOP_PX || Math.abs(dy) > SLOP_PX) {
+        endGesture(); // a scroll, which is the browser's
+        return;
+      }
+    }
+    if (g.mode === "swipe") {
+      g.row.style.transform = `translateX(${Math.max(-72, Math.min(72, dx))}px)`;
+    } else if (g.mode === "drag") {
+      if (event.preventDefault) event.preventDefault();
+      dragMove(event.clientY, dx);
+    }
   });
 
-  $("#plan-done-btn").addEventListener("click", () => finishPlan());
-  $("#plan-clear-btn").addEventListener("click", () => clearPlan());
-
-  $("#plan-copy-btn").addEventListener("click", async () => {
-    const text = outstandingText();
-    if (!text) {
-      toast("Nothing left to buy.");
+  function finishGesture(event) {
+    const g = gesture;
+    if (!g || (event && event.pointerId !== g.pointerId)) return;
+    if (g.mode === "swipe") {
+      suppressClick = true;
+      endGesture();
+      if (g.dx >= SWIPE_PX) nest(g.id, "in");
+      else if (g.dx <= -SWIPE_PX) nest(g.id, "out");
       return;
     }
-    try {
-      await navigator.clipboard.writeText(text);
-      toast("Shopping list copied.");
-    } catch {
-      // No clipboard permission, or an insecure context: fall back to
-      // something the person can actually get at.
-      window.prompt("Copy your shopping list:", text);
+    if (g.mode === "drag") {
+      endGesture();
+      finishDrag(g);
+      return;
+    }
+    endGesture();
+  }
+
+  listContent.addEventListener("pointerup", finishGesture);
+  listContent.addEventListener("pointercancel", (event) => {
+    const g = gesture;
+    if (!g || event.pointerId !== g.pointerId) return;
+    endGesture();
+    if (g.mode === "drag") renderList(true);
+  });
+
+  // While a finger is swiping or dragging, the page must not scroll under
+  // it, and a hold must not become the browser's text selection.
+  listContent.addEventListener(
+    "touchmove",
+    (event) => {
+      if (gesture && (gesture.mode === "drag" || gesture.mode === "swipe")) event.preventDefault();
+    },
+    { passive: false }
+  );
+  for (const type of ["contextmenu", "selectstart"]) {
+    listContent.addEventListener(type, (event) => {
+      if (gesture && !gesture.typing) event.preventDefault();
+    });
+  }
+
+  /** The hold has lasted: the item lifts and follows the finger (J18.9). */
+  function startDrag() {
+    const g = gesture;
+    if (!g || g.mode !== "pending") return;
+    const list = currentList();
+    if (!list) return;
+    g.mode = "drag";
+    g.carried = new Set(RecipeLists.subtree(list, g.id));
+    g.depth0 = Number(g.row.dataset.level) || 0;
+    g.drop = null;
+    g.row.classList.add("li-dragging");
+    // What is nested under it moves with it, out of the way while it does.
+    for (const r of listContent.querySelectorAll("[data-li-row]")) {
+      if (r !== g.row && g.carried.has(r.dataset.liRow)) r.classList.add("li-carried");
+    }
+    const active = document.activeElement;
+    if (active && active.blur && listContent.contains(active)) active.blur();
+    const sel = typeof window.getSelection === "function" ? window.getSelection() : null;
+    if (sel) sel.removeAllRanges();
+    if (listContent.setPointerCapture && g.pointerId !== undefined) {
+      try {
+        listContent.setPointerCapture(g.pointerId);
+      } catch {
+        /* a pointer that has already gone */
+      }
+    }
+    if (navigator.vibrate) navigator.vibrate(12);
+    suppressClick = true;
+    dragMove(g.y0, 0);
+  }
+
+  const shown = (r) => !r.classList.contains("li-carried");
+
+  /** Move the lifted row to where the finger is, at the depth it is carried to. */
+  function dragMove(y, dx) {
+    const g = gesture;
+    const ul = g.row.parentNode;
+    if (!ul) return;
+    const others = [...ul.children].filter((r) => r !== g.row && shown(r));
+    let before = null;
+    for (const r of others) {
+      const box = r.getBoundingClientRect();
+      if (y < box.top + box.height / 2) {
+        before = r;
+        break;
+      }
+    }
+    if (before) {
+      if (g.row.nextElementSibling !== before) ul.insertBefore(g.row, before);
+    } else if (ul.lastElementChild !== g.row) {
+      ul.appendChild(g.row);
+    }
+    // The item rows either side of where it now sits.
+    const near = (step) => {
+      let r = step(g.row);
+      while (r && (!r.dataset.liRow || !shown(r))) r = step(r);
+      return r;
+    };
+    const prev = near((r) => r.previousElementSibling);
+    const next = near((r) => r.nextElementSibling);
+    const level = (r) => (r ? { depth: Number(r.dataset.level) || 0 } : null);
+    const { min, max } = RecipeListDrop.depthRange(level(prev), level(next));
+    const depth = Math.max(min, Math.min(max, g.depth0 + Math.round(dx / STEP_PX)));
+    g.row.dataset.depth = String(Math.min(depth, 8));
+    g.drop = { prevId: prev ? prev.dataset.liRow : null, depth };
+    // Near an edge, the page comes to meet the finger.
+    const h = window.innerHeight || 0;
+    if (typeof window.scrollBy === "function" && h) {
+      if (y < 64) window.scrollBy(0, -14);
+      else if (y > h - 64) window.scrollBy(0, 14);
+    }
+  }
+
+  function finishDrag(g) {
+    dropItem(g.id, g.drop ? g.drop.prevId : undefined, g.drop ? g.drop.depth : g.depth0);
+  }
+
+  /**
+   * Put an item after the row `prevId` (null: the top), at `depth`. The
+   * one place a drag turns into a change to the list.
+   */
+  function dropItem(id, prevId, depth) {
+    const list = currentList();
+    if (!list || !canEditBook || prevId === undefined) {
+      renderList(true);
+      return;
+    }
+    const carried = new Set(RecipeLists.subtree(list, id));
+    const rows = RecipeLists.rows(list, openSet(list.id)).filter((r) => r.type === "item" && !carried.has(r.id));
+    const prevIndex = prevId ? rows.findIndex((r) => r.id === prevId) : -1;
+    const spot = RecipeListDrop.place(rows, prevIndex, depth);
+    listStore.change(list.id, (l) => RecipeLists.move(l, id, spot));
+    renderList(true);
+  }
+
+  // --- The list's name, Clear ticked, Delete (J18.3, J18.13) ----------
+
+  const nameTarget = (event) =>
+    event.target && event.target.closest ? event.target.closest("[data-li-name]") : null;
+
+  $("#list-heading").addEventListener("focusin", (event) => {
+    const el = nameTarget(event);
+    if (el && canEditBook) editingName = { before: el.textContent };
+  });
+
+  $("#list-heading").addEventListener("keydown", (event) => {
+    const el = nameTarget(event);
+    if (!el || event.isComposing) return;
+    if (event.key === "Enter") {
+      event.preventDefault();
+      el.blur();
+    } else if (event.key === "Escape") {
+      event.preventDefault();
+      if (editingName) el.textContent = editingName.before;
+      el.blur();
     }
   });
 
-  $("#plan-share-btn").addEventListener("click", async () => {
-    const text = outstandingText();
-    if (!text || !canShareText()) return;
-    try {
-      await navigator.share({ title: "Shopping list", text });
-    } catch (err) {
-      // Backing out of the share sheet is an answer, not a failure.
-      if (err && err.name === "AbortError") return;
-      console.warn("Recipe Friend: could not share the shopping list.", err);
-      toast("Couldn't share that list — it is still on the clipboard's Copy.");
+  $("#list-heading").addEventListener("focusout", (event) => {
+    const el = nameTarget(event);
+    if (!el) return;
+    const began = editingName;
+    editingName = null;
+    const list = currentList();
+    if (!list || !canEditBook) return;
+    const words = RecipeLists.cleanText(lineWords(el), RecipeLists.limits.MAX_NAME_CHARS);
+    // A list always has a name: emptied, it keeps the one it had.
+    if (!words || (began && words === RecipeLists.cleanText(began.before))) {
+      el.textContent = list.name;
+      return;
     }
+    const renamed = listStore.rename(list.id, words);
+    if (renamed) el.textContent = renamed.name;
+    renderCrumbs();
+  });
+
+  $("#list-clear-btn").addEventListener("click", () => {
+    const list = currentList();
+    if (!list || !canEditBook) return;
+    const ids = RecipeLists.tickedIds(list);
+    if (!ids.length) return;
+    // What Clear takes is lists.js's to say (J18.13); the count is of that.
+    deleteWithUndo(ids, `Cleared ${ids.length} ticked ${ids.length === 1 ? "item" : "items"}.`);
+    renderList(true);
+  });
+
+  $("#list-delete-btn").addEventListener("click", async () => {
+    const list = currentList();
+    if (!list || !canEditBook) return;
+    const count = RecipeLists.liveItems(list).length;
+    const ok = await RecipeAsk.ask(
+      `Delete “${list.name}”?${count ? ` Everything on it goes too — ${count} ${count === 1 ? "item" : "items"}.` : ""}`,
+      { confirmLabel: "Delete", danger: true }
+    );
+    if (!ok || !listStore.get(list.id)) return;
+    listStore.remove(list.id);
+    editingItem = null;
+    backToLists();
+    toast(`Deleted “${list.name}”.`);
+  });
+
+  onViewClose(listsView, () => unwind(currentRoute().name === "lists"));
+  onViewClose(listView, () => {
+    editingItem = null;
+    editingName = null;
+    unwind(currentRoute().name === "openlist");
+  });
+
+  // --- Wiring ----------------------------------------------------------
+
+  $("#lists-btn").addEventListener("click", () => openListsView());
+
+  $("#plan-btn").addEventListener("click", () => {
+    if (!canPlan()) return;
+    planMode = !planMode;
+    if (!planMode) forgetPendingPortions();
+    render();
+  });
+
+  // Over the Lists screen, so Back from the list goes where it always does.
+  $("#plan-open-btn").addEventListener("click", () => {
+    const target = firstChecklist();
+    openListsView();
+    if (target) openList(target.id);
+  });
+
+  $("#detail-plan-btn").addEventListener("click", () => {
+    const recipe = detailId && store.getById(detailId);
+    if (!recipe || !canPlan()) return;
+    // At the portions on screen: the recipe view's own stepper (J18.18).
+    const portions = Number(recipe.servings) > 0 ? Math.round(recipe.servings * detailScale * 10) / 10 : detailScale;
+    addRecipeToList(recipe, portions);
+    render();
   });
 
   // --- Import / export ---
@@ -2862,6 +2930,16 @@
     // Whatever Back just walked out of, it is no longer ours to unwind.
     if (pushedDepth > 0) pushedDepth -= 1;
 
+    // Home from a list is two steps back, and this is the first landing
+    // (see climbTo).
+    if (climbingHome) {
+      climbingHome = false;
+      if (route.name === "lists" && pushedDepth > 0) {
+        history.back();
+        return;
+      }
+    }
+
     // Leaving the editor by Back is still leaving the editor, so typed
     // work gets the question it gets from Escape (J2.9). "Keep editing"
     // puts the entry back, so Back still means Back next time.
@@ -2877,7 +2955,7 @@
 
     if (detailView.open) closeQuietly(detailView);
     if (editorView.open) closeQuietly(editorView);
-    if (planView.open) closeQuietly(planView);
+    leaveLists();
     // Back into a recipe that has since been deleted or moved away: the
     // address must not go on naming it. Only ever reached from a live
     // navigation, so this cannot strip a link that is merely waiting on
@@ -2944,7 +3022,7 @@
 
   // Close dialogs when clicking the backdrop. These hold nothing that
   // isn't already saved, so they go without asking.
-  for (const dialog of [detailView, planView, prefsDialog, aiHelpDialog, pasteDialog]) {
+  for (const dialog of [detailView, prefsDialog, aiHelpDialog, pasteDialog]) {
     dialog.addEventListener("click", (event) => {
       if (event.target === dialog) dialog.close();
     });
@@ -2997,10 +3075,10 @@
 
   // Handle for the sync layer (account.js/sync.js): shared store plus a
   // way to redraw once remote changes land.
-  // planStore goes out with it: account.js adopts this one rather than
-  // making a second, so the screen and the sync layer read one plan.
+  // planStore and listStore go out with it: account.js adopts these rather
+  // than making second ones, so the screen and the sync layer read one copy.
   window.RecipeApp = {
-    store, planStore, render, toast, showPendingShare, openFromHash, setCanEdit,
+    store, planStore, listStore, render, toast, showPendingShare, openFromHash, setCanEdit,
     leaveAllViews,
   };
 

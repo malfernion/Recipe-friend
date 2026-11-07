@@ -128,18 +128,28 @@
     const planStore =
       app.planStore || (window.RecipePlanStore ? new window.RecipePlanStore() : null);
     if (planStore) app.planStore = planStore;
-    const sync = new window.RecipeSync(app.store, api, showStatus, planStore);
+    // The book's lists (J18), adopted from the app the same way, so a pull
+    // lands in the copy the screen draws from.
+    const listStore =
+      app.listStore || (window.RecipeListStore ? new window.RecipeListStore() : null);
+    if (listStore) app.listStore = listStore;
+    const sync = new window.RecipeSync(app.store, api, showStatus, planStore, listStore);
     window.RecipeCloud.api = api;
     window.RecipeCloud.sync = sync;
     window.RecipeCloud.planStore = planStore;
+    window.RecipeCloud.listStore = listStore;
     // Local edits from here on push automatically (debounced) — one
     // debounce and one status line for both, so a plan and the recipes it
     // names never disagree about whether the device is in sync.
     app.store.onChange = () => sync.schedulePush();
-    if (planStore) {
-      planStore.onChange = () => sync.schedulePush();
-      app.store.onForgetBook = (bookId) => planStore.forgetBook(bookId);
-    }
+    if (planStore) planStore.onChange = () => sync.schedulePush();
+    // A list edit goes up on the same debounce; what comes down redraws
+    // through the onRemote the app set on the store.
+    if (listStore) listStore.onChange = () => sync.schedulePush();
+    app.store.onForgetBook = (bookId) => {
+      if (planStore) planStore.forgetBook(bookId);
+      if (listStore) listStore.forgetBook(bookId);
+    };
     try {
       const remembered =
         window.RecipeBooks && window.RecipeBooks.rememberedSelection(session.user.id);
@@ -149,6 +159,7 @@
       // setBook, so the plan cache is pointed at it here too.
       app.store.useBook(sync.bookId);
       if (planStore) planStore.useBook(sync.bookId);
+      if (listStore) listStore.useBook(sync.bookId);
       if (window.RecipeBooks) {
         window.RecipeBooks.rememberSelection(session.user.id, sync.bookId);
         books = new window.RecipeBooks.BooksUI(sync, api, app);
@@ -192,8 +203,10 @@
       app.store.onChange = null;
       app.store.onForgetBook = null;
       if (app.planStore) app.planStore.onChange = null;
+      if (app.listStore) app.listStore.onChange = null;
     }
     window.RecipeCloud.planStore = null;
+    window.RecipeCloud.listStore = null;
     if (window.RecipeCloud.sync) window.RecipeCloud.sync.stop();
     window.RecipeCloud.sync = null;
     showStatus(null);

@@ -92,13 +92,17 @@ function loadUI(options = {}) {
   // asks for them, so this is not a supported configuration — it is the
   // one a failed fetch produces, and the list still has to draw in it.
   const planner = options.planner === false ? [] : ["plan.js", "planstore.js", "shoplist.js"];
+  // The lists (J18) go in the same way; `lists: false` is the page that
+  // did not get them.
+  const lists = options.lists === false ? [] : ["lists.js", "liststore.js", "listdrop.js"];
   const base = loadApp(
-    "api.js", "units.js", "scale.js", "storage.js", ...planner,
+    "api.js", "units.js", "scale.js", "storage.js", ...planner, ...lists,
     "share.js", "cookmode.js"
   );
 
   for (const key of ["RecipeHTML", "RecipeApi", "RecipeUnits", "RecipeScale", "RecipeStore",
-                     "RecipePlan", "RecipePlanStore", "RecipeShopList", "RecipeShare", "RecipeCookMode"]) {
+                     "RecipePlan", "RecipePlanStore", "RecipeShopList", "RecipeShare", "RecipeCookMode",
+                     "RecipeLists", "RecipeListStore", "RecipeListDrop"]) {
     // A module that was left out leaves its global unset here too, rather
     // than carrying the last test's copy over on globalThis.
     win[key] = base[key];
@@ -139,6 +143,7 @@ function loadUI(options = {}) {
     app: win.RecipeApp,
     store: win.RecipeApp.store,
     planStore: win.RecipeApp.planStore,
+    listStore: win.RecipeApp.listStore,
     restore,
   };
 }
