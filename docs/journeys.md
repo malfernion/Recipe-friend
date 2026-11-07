@@ -521,6 +521,8 @@ Covers a share link someone sent, and a recipe an assistant wrote out.
 
 ## J12 · Planning a week
 
+> Being replaced by J18 (planned). Plan mode goes; see J18.26.
+
 Someone picks several recipes, at the portions they mean to cook them at,
 so the app can tell them what to buy.
 
@@ -621,6 +623,8 @@ so the app can tell them what to buy.
     and a box under the row, and nothing a line did not already do.
 
 ## J13 · Shopping from a plan
+
+> Being replaced by J18 (planned). See J18.26 for what goes.
 
 1. The shopping list is every planned recipe's ingredients, scaled to the
    portions planned, summed into one line per thing to buy — and, beside
@@ -770,6 +774,8 @@ so the app can tell them what to buy.
     the tick each carry their own stamp, and each merges on its own.
 
 ## J14 · What the plan remembers
+
+> Being replaced by J18 (planned). Done, Clear and the archive go; "Last planned" stays, recorded when a recipe is added to a list (J18.21).
 
 1. **Done finishes the plan**, and is the moment a plan is recorded: every
    recipe in it is stamped as planned, the plan is archived, and an empty
@@ -1462,6 +1468,153 @@ release.
     dead in the same statement. Its last access token names an agent
     that no longer exists; this server stops believing it within the
     same bound as a key (J17.3).
+
+---
+
+## J18 · Lists
+
+> **Planned — not yet built.** This is the agreed specification for
+> replacing the shopping list. Until each step of the build order below
+> ships, J12–J14 still describe what the app does; as each step ships,
+> the criteria it replaces come out of J12–J14 and this note shrinks.
+
+Somebody keeps the household's lists in the app: the shopping, what is in
+the freezer, whatever else is worth writing down. The shopping list as
+J12–J14 built it — totals summed across recipes, part-settled amounts, a
+plan mode over the recipe list, Done — was too much to read in an aisle
+and was not used. Its replacement is a plain list that is good to use,
+and a recipe drops onto it as a single item.
+
+### Lists
+
+1. **A book holds any number of lists**, each with a name — "Shopping",
+   "Freezer", "Cupboard". They belong to the book the way its recipes do
+   (J3.6): every member sees every list, and switching books switches
+   lists.
+2. **A list is one of two kinds, chosen when it is made, and the kind
+   does not change afterwards.**
+   - A **checklist** has a tick box beside each item. Shopping is a
+     checklist.
+   - A **stock list** has a counter beside each item. The freezer is a
+     stock list.
+
+   Everything else in this journey is the same for both.
+3. A list can be renamed. Deleting one asks first, because it takes every
+   item in it.
+4. **A read-only member reads lists and changes nothing**, the same rule
+   as recipes (J7.17).
+
+### Items
+
+5. **An item is a line of text**, and the text is what you read: nothing
+   else shares its row but the tick box or the counter.
+6. **Tap the text to change it.** The words are the editor, with the
+   rules J13.16 already settled: leaving the item saves it, Escape puts
+   back what was there, an item left unchanged writes nothing, and a line
+   break becomes a space.
+7. **Enter makes the next item**, directly below and at the same depth,
+   with the cursor in it — so a list can be typed out without touching
+   anything else.
+8. **Items nest.** Swipe an item right to put it under the one above;
+   swipe left to bring it back out. On a keyboard, Tab and Shift-Tab do
+   the same. Whatever is nested under an item moves with it.
+9. **Drag to reorder**, by holding an item. Dropping it to the left or
+   right of where it started changes its depth the way a swipe does.
+10. **Emptying an item's text deletes it**, and says so with an Undo.
+    Backspace in an item that is already empty does the same and moves
+    the cursor to the end of the item above.
+
+### Checklists
+
+11. **Ticking an item ticks everything nested under it**, and unticking
+    it unticks them. Ticking a recipe (J18.18) is how a recipe that is
+    no longer wanted goes from the list in one tap.
+12. **Ticked items fold away.** They go to a "Ticked (n)" group at the
+    bottom of whatever they are nested in — at the top level, the bottom
+    of the list — collapsed until it is opened. Unticking one puts it
+    back where it was.
+13. **The ticked can be cleared.** "Clear ticked" deletes every ticked
+    item in the list, with an Undo.
+
+### Stock lists
+
+14. **Each item has a counter, `− 3 +`.** A new item starts at 1. One
+    tap on − or + changes it; no typing is needed to say one has been
+    used.
+15. **At 0 an item stays on the list, faded**, so the list shows what
+    has run out. It is never taken off by the counter, only by deleting
+    it (J18.10). The counter does not go below 0.
+16. **An item with something nested under it is a heading and has no
+    counter** — "Top drawer" holds things rather than being one. If what
+    is under it goes, its counter comes back.
+17. **Two people taking one each both count.** Two phones that each tap
+    − on "Bolognese 4", even with no signal, leave it at 2 when they
+    meet, not 3. The counter merges as changes, not as whoever wrote
+    last.
+
+### Putting a recipe on a list
+
+18. **A recipe goes onto a checklist as one item, with its ingredients
+    nested under it.** From the recipe view, "Add to list" asks which
+    checklist and at how many portions — starting from the recipe's own
+    servings, stepped the way J4.2 steps them — and adds the recipe's
+    name as an item at the top of that list, with each ingredient under
+    it at that size, in the reader's own units (J8).
+19. **After that they are ordinary items.** They can be edited, ticked,
+    reordered or deleted like anything typed. Editing the recipe later
+    does not change the list, and nothing is summed with another recipe:
+    two recipes that each want onions show onions under each.
+20. A recipe can go on a list more than once; each add is its own item.
+21. **Adding a recipe to a list is what "Last planned" records** (J14.5,
+    J14.6). The date is the day it was added. Undoing the add takes the
+    record back. Planning history already recorded is kept.
+
+### Sync
+
+22. **Lists work with no network** (J9.1), and changes made offline are
+    kept when the phone reconnects.
+23. **Two phones working on one list both keep what they did.** Each
+    item's text, its tick or count, and its place in the list merge
+    separately, so an edit on one phone and a tick on the other both
+    survive (J13.16).
+24. **Changes from other members appear within seconds**, without
+    reloading. The list does not redraw under an item being edited
+    (J13.16).
+
+### The agent
+
+25. **An agent (J16) sees every list in its book** and can read them,
+    add, edit, move, tick and delete items, change counts, and put a
+    recipe on a checklist at a chosen size (J18.18). It cannot make,
+    rename or delete a list — those belong to the people in the book, the
+    way deleting a recipe does (J16).
+
+### What goes
+
+26. Removed when this ships: summing across recipes and everything that
+    serves it (J13.1–J13.12), part-settled amounts and ✗ "already have"
+    (J13.9–J13.14), plan mode and the portions stepper on recipe cards
+    (J12.4–J12.7), Done, Clear and the archive of finished plans
+    (J14.1–J14.4). "Last planned" and the sort by it stay (J14.5 on,
+    J18.21).
+
+### Build order
+
+Each step is a pull request of its own, and each removes the criteria it
+replaces from J12–J14 as it lands.
+
+1. **Lists and items, both kinds** (J18.1–J18.17, J18.22–J18.24),
+   replacing the current list. The book's current plan becomes a
+   checklist called "Shopping": its typed lines become items with their
+   ticks, and each planned recipe becomes a recipe item at its planned
+   portions (J18.18). The agent's plan tools (`get_plan`, `add_to_plan`,
+   `remove_from_plan`, `add_to_list`, `remove_from_list`, `edit_list`)
+   are switched off here, so nothing writes to a plan that is no longer
+   read; the agent keeps its recipe tools until step 3.
+2. **"Add to list" on a recipe** (J18.18–J18.21), and plan mode leaves
+   the recipe list.
+3. **Agent tools for lists** (J18.25), replacing the plan tools step 1
+   switched off.
 
 ---
 
