@@ -163,6 +163,7 @@
       this.listStore = listStore || null;
       this.listsBusy = false;
       this.listsAgain = false;
+      this.listsSeed = false;
       this.bookId = null;
       this.readOnly = false; // a book we may read and not write (J7.17)
       this.addOnly = false; // an agent: adds recipes, never edits them (J16.3)
@@ -415,7 +416,9 @@
         if (pushed > 0) await this.api.pushRecipes(mine);
 
         const plans = await this.syncPlans();
-        const lists = await this.syncLists();
+        // The plan has just been pulled, so this is the one run that may
+        // move it into Shopping (build step 1).
+        const lists = await this.syncLists(null, { seed: true });
 
         this.status("synced", { pushed, pulled: rows.length, plans, lists });
         return { pushed, pulled: rows.length, plans, lists };
@@ -841,6 +844,9 @@
      * Quiet: it does not touch the status line, and a failure (no
      * signal, J18.22) is swallowed and answered with null, because the
      * next poll is the retry. The list itself never waits on it.
+     *
+     * It never moves the plan into Shopping: that waits for `syncNow`,
+     * which pulls the plan first, so a stale copy is never what moves.
      */
     async pullLists(listId = null) {
       if (!this.listStore || !this.bookId) return null;
@@ -866,38 +872,47 @@
      * else: it may not make, rename or delete a list (J18.25), and the
      * database says the same.
      *
-     * The first time an editor's device finds the book with no list rows
-     * at all, the live plan moves into a "Shopping" checklist (build
-     * step 1). It runs after `syncPlans`, so the plan is the book's and
-     * not a stale copy, and its ids are fixed by the plan, so two devices
-     * doing it at once make one list. A deleted list leaves a tombstone
-     * row, so a book whose Shopping list was deleted is not seeded again.
+     * With `seed` — only `syncNow` passes it, after `syncPlans` has
+     * pulled the plan in the same run — the first time an editor's device
+     * finds the book with no list rows at all, the live plan moves into a
+     * "Shopping" checklist (build step 1). Its ids are fixed by the plan,
+     * so two devices doing it at once make one list. A deleted list
+     * leaves a tombstone row, so a book whose Shopping list was deleted
+     * is not seeded again.
+     *
+     * Tombstones older than 30 days are pruned on the way (RecipeLists.prune).
      *
      * One run at a time: a call that arrives while one is running asks
      * for another pass when it ends, and returns null.
      */
-    async syncLists(onlyId = null) {
+    async syncLists(onlyId = null, { seed = false } = {}) {
       const ls = this.listStore;
       if (!ls || !this.bookId) return null;
       if (this.listsBusy) {
+        // Asked for again when the running pass ends — seeding included,
+        // when this call was the one allowed to.
         this.listsAgain = true;
+        this.listsSeed = this.listsSeed || seed;
         return null;
       }
       this.listsBusy = true;
       try {
-        let result = await this.reconcileLists(onlyId);
+        let result = await this.reconcileLists(onlyId, seed);
         while (this.listsAgain) {
+          const again = this.listsSeed;
           this.listsAgain = false;
-          result = await this.reconcileLists(null);
+          this.listsSeed = false;
+          result = await this.reconcileLists(null, again);
         }
         return result;
       } finally {
         this.listsBusy = false;
         this.listsAgain = false;
+        this.listsSeed = false;
       }
     }
 
-    async reconcileLists(onlyId) {
+    async reconcileLists(onlyId, seed = false) {
       const Lists = global.RecipeLists;
       const ls = this.listStore;
       const bookId = this.bookId;
@@ -910,6 +925,7 @@
           nameAt: row.name_at,
           kind: row.kind,
           createdAt: toMillis(row.created_at),
+          prunedTo: row.pruned_to,
           items: row.items,
         });
 
@@ -923,7 +939,7 @@
 
       if (!onlyId) {
         if (rows.length > 0) ls.markSeeded();
-        else if (canMake && !ls.seeded) {
+        else if (seed && canMake && !ls.seeded) {
           const recipes = this.store && this.store.recipes ? this.store.recipes : [];
           const prefs = this.store && this.store.prefs ? this.store.prefs : {};
           const seeded = ls.seedFromPlan(bookId, this.planStore ? this.planStore.plan : null, recipes, prefs);
@@ -971,11 +987,14 @@
         let seen = entry.seenAt;
         for (let attempt = 0; attempt < 3; attempt++) {
           ls.markKnown(id);
-          if (ls.applyRemote(Lists.mergeLists(ls.get(id), server))) changed.add(id);
+          if (ls.applyRemote(Lists.prune(Lists.mergeLists(ls.get(id), server), Date.now()))) changed.add(id);
           const held = ls.get(id);
           if (!held || !canWrite) break;
           const fields = {};
-          if (!Lists.sameItems(held, server)) fields.items = held.items;
+          if (!Lists.sameItems(held, server)) {
+            fields.items = held.items;
+            fields.pruned_to = held.prunedTo;
+          }
           if (canMake && (held.name !== server.name || held.nameAt !== server.nameAt)) {
             fields.name = held.name;
             fields.name_at = held.nameAt;

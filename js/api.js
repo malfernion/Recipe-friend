@@ -207,7 +207,7 @@
     async fetchLists(bookId) {
       const { data, error } = await this.client
         .from("lists")
-        .select("id, name, name_at, kind, items, deleted_at, created_at, updated_at")
+        .select("id, name, name_at, kind, items, pruned_to, deleted_at, created_at, updated_at")
         .eq("book_id", bookId);
       if (error) throw error;
       return data || [];
@@ -217,7 +217,7 @@
     async fetchList(bookId, listId) {
       const { data, error } = await this.client
         .from("lists")
-        .select("id, name, name_at, kind, items, deleted_at, created_at, updated_at")
+        .select("id, name, name_at, kind, items, pruned_to, deleted_at, created_at, updated_at")
         .eq("book_id", bookId)
         .eq("id", listId)
         .maybeSingle();
@@ -229,12 +229,22 @@
      * Make a list the server has never seen. Insert-if-absent: two devices
      * moving the plan into the same "Shopping" list at once both land here
      * with one id, and the second must not overwrite what the first has
-     * since been given — it merges on its next pull instead.
+     * since been given — it merges on its next pull instead. The key is
+     * the book and the id (012), so a row in another book can never be
+     * the one that is "already there".
      */
     async insertList(bookId, list) {
       const { error } = await this.client.from("lists").upsert(
-        { id: list.id, book_id: bookId, name: list.name, name_at: list.nameAt, kind: list.kind, items: list.items },
-        { onConflict: "id", ignoreDuplicates: true }
+        {
+          id: list.id,
+          book_id: bookId,
+          name: list.name,
+          name_at: list.nameAt,
+          kind: list.kind,
+          items: list.items,
+          pruned_to: list.prunedTo || 0,
+        },
+        { onConflict: "book_id,id", ignoreDuplicates: true }
       );
       if (error) throw error;
     }
@@ -243,7 +253,7 @@
      * Write a list over the row it was merged with, and only that row:
      * `seenAt` is the row's updated_at when it was read. Returns false
      * where somebody else wrote in between, so the caller merges again.
-     * `fields` is { items } and, for an editor, { name, name_at }.
+     * `fields` is { items, pruned_to } and, for an editor, { name, name_at }.
      */
     async updateList(bookId, listId, fields, seenAt) {
       let q = this.client.from("lists").update(fields).eq("book_id", bookId).eq("id", listId);

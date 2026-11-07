@@ -194,8 +194,8 @@ e2e("J18.17, J18.23, J18.25 · two phones and an agent work on one book's lists 
 
   // The first device to open the book moves the plan into Shopping; the
   // second finds it there.
-  await a.sync.syncLists();
-  await b.sync.syncLists();
+  await a.sync.syncLists(null, { seed: true });
+  await b.sync.syncLists(null, { seed: true });
   const shopping = a.L.shoppingListId(ann.book);
   assert.deepEqual(b.lists.lists.map((l) => [l.id, l.name]), [[shopping, "Shopping"]]);
 
@@ -204,12 +204,12 @@ e2e("J18.17, J18.23, J18.25 · two phones and an agent work on one book's lists 
   const bol = a.L.newId();
   a.lists.change(freezer.id, (l) => a.L.addItem(l, { text: "Bolognese", id: bol }));
   for (let i = 0; i < 3; i++) a.lists.change(freezer.id, (l) => a.L.bump(l, bol, +1, a.lists.deviceId));
-  await a.sync.syncLists();
-  await b.sync.syncLists();
+  await a.sync.syncLists(null, { seed: true });
+  await b.sync.syncLists(null, { seed: true });
   a.lists.change(freezer.id, (l) => a.L.bump(l, bol, -1, a.lists.deviceId));
   b.lists.change(freezer.id, (l) => b.L.bump(l, bol, -1, b.lists.deviceId));
-  await a.sync.syncLists();
-  await b.sync.syncLists();
+  await a.sync.syncLists(null, { seed: true });
+  await b.sync.syncLists(null, { seed: true });
   await a.sync.pullLists(freezer.id);
   for (const d of [a, b]) assert.equal(d.L.count(d.lists.get(freezer.id).items[0]), 2);
 
@@ -218,15 +218,15 @@ e2e("J18.17, J18.23, J18.25 · two phones and an agent work on one book's lists 
   const stale = await ann.api.fetchLists(ann.book);
   const milk = b.L.newId();
   b.lists.change(shopping, (l) => b.L.addItem(l, { text: "milk", id: milk }));
-  await b.sync.syncLists();
+  await b.sync.syncLists(null, { seed: true });
   a.lists.change(shopping, (l) => a.L.addItem(l, { text: "eggs" }));
   const fetch = a.sync.api.fetchLists.bind(a.sync.api);
   a.sync.api.fetchLists = async () => {
     a.sync.api.fetchLists = fetch;
     return stale;
   };
-  await a.sync.syncLists();
-  await b.sync.syncLists();
+  await a.sync.syncLists(null, { seed: true });
+  await b.sync.syncLists(null, { seed: true });
   const texts = (d) => d.L.liveItems(d.lists.get(shopping)).map((i) => i.text).sort();
   assert.deepEqual(texts(a), ["eggs", "milk"]);
   assert.deepEqual(texts(b), ["eggs", "milk"]);
@@ -238,12 +238,12 @@ e2e("J18.17, J18.23, J18.25 · two phones and an agent work on one book's lists 
   const bot = device(apiFor(supabase.createClient(cfg.url, cfg.anonKey, { accessToken: async () => token })), {
     addOnly: true,
   });
-  await bot.sync.syncLists();
+  await bot.sync.syncLists(null, { seed: true });
   bot.lists.change(shopping, (l) => bot.L.setTicked(bot.L.addItem(l, { text: "bread" }), milk, true));
   bot.lists.rename(shopping, "Bot's list");
   bot.lists.create("Bot's own", "checklist");
-  await bot.sync.syncLists();
-  await a.sync.syncLists();
+  await bot.sync.syncLists(null, { seed: true });
+  await a.sync.syncLists(null, { seed: true });
   const seen = a.lists.get(shopping);
   assert.equal(seen.name, "Shopping");
   assert.deepEqual(texts(a), ["bread", "eggs", "milk"]);
@@ -252,10 +252,10 @@ e2e("J18.17, J18.23, J18.25 · two phones and an agent work on one book's lists 
 
   // J18.3: deleting travels, and the book is not seeded again after it.
   a.lists.remove(shopping);
-  await a.sync.syncLists();
-  await b.sync.syncLists();
+  await a.sync.syncLists(null, { seed: true });
+  await b.sync.syncLists(null, { seed: true });
   assert.deepEqual(b.lists.lists.map((l) => l.name), ["Freezer"]);
   const fresh = device(apiFor(ann.client));
-  await fresh.sync.syncLists();
+  await fresh.sync.syncLists(null, { seed: true });
   assert.deepEqual(fresh.lists.lists.map((l) => l.name), ["Freezer"]);
 });

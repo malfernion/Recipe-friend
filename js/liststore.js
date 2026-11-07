@@ -56,7 +56,7 @@
    * session, which only costs a counter's taps their author.
    */
   function deviceId() {
-    const ok = (v) => typeof v === "string" && /^[A-Za-z0-9]{8,24}$/.test(v);
+    const ok = (v) => typeof v === "string" && /^[A-Za-z0-9]{8,16}$/.test(v);
     try {
       const held = global.localStorage.getItem(DEVICE_KEY);
       if (ok(held)) return held;
@@ -175,7 +175,9 @@
       const before = this.state.lists[at];
       const after = fn(before);
       if (!after || after === before) return before;
-      const clean = global.RecipeLists.sanitizeList({ ...after, id: before.id, kind: before.kind });
+      const clean = global.RecipeLists.sanitizeList(
+        global.RecipeLists.prune({ ...after, id: before.id, kind: before.kind }, Date.now())
+      );
       if (!clean) return before;
       this.state.lists[at] = clean;
       this._persist(true);
