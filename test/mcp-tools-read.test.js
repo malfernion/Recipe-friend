@@ -177,101 +177,6 @@ test("J14.9 · what we have not had in ages comes from the archive, never from t
   assert.deepEqual(out.recipes.map((r) => r.name), ["Lentil soup", "Roast chicken", "Chicken pie"]);
 });
 
-test("J13.4 · get_plan gives the plan and the one list those meals add up to", async () => {
-  const { book, win } = await aBook();
-  const pie = book.recipes.find((r) => r.name === "Chicken pie");
-  const soup = book.recipes.find((r) => r.name === "Lentil soup");
-  let plan = win.RecipePlan.addMeal(win.RecipePlan.emptyPlan(1), pie, 1001);
-  plan = win.RecipePlan.addMeal(plan, soup, 1002);
-  book.planStore.setPlan(plan);
-
-  const out = await by("get_plan").run(book);
-
-  assert.deepEqual(out.meals.map((m) => m.name), ["Chicken pie", "Lentil soup"]);
-  assert.deepEqual(out.shoppingList.toBuy.sort(), [
-    "200 g lentils", "200 ml cream", "3 onions", "500 g chicken",
-  ], "one onion and two onions are one line, and it is plural");
-  assert.deepEqual(out.shoppingList.alreadyHave, []);
-});
-
-test("J13.10 · the list says what is left to buy, not what the recipes asked for", async () => {
-  const { book, win } = await aBook();
-  const soup = book.recipes.find((r) => r.name === "Lentil soup");
-  let plan = win.RecipePlan.addMeal(win.RecipePlan.emptyPlan(1), soup, 1000);
-  const first = win.RecipeShopList.build(plan, book.recipes, book.prefs);
-  const onions = first.lines.find((l) => l.text.includes("onion"));
-  // Somebody says they already have one of the two onions.
-  plan = win.RecipePlan.settle(plan, onions.key, "have", 1, Date.now());
-  book.planStore.setPlan(plan);
-
-  const out = await by("get_plan").run(book);
-
-  // What the phone's Copy would hand to a shop, and nothing else: the
-  // whole requirement would buy two to get one, which is the mistake
-  // settling a line exists to prevent.
-  const copied = win.RecipeShopList.copyText(
-    win.RecipeShopList.build(book.plan, book.recipes, book.prefs)
-  ).split("\n").filter(Boolean);
-  assert.deepEqual(out.shoppingList.toBuy.slice().sort(), copied.slice().sort());
-  assert.ok(out.shoppingList.toBuy.includes("1 onions"), out.shoppingList.toBuy.join(" · "));
-  assert.ok(!out.shoppingList.toBuy.includes("2 onions"), "not the total");
-  assert.deepEqual(out.shoppingList.partlySorted, ["onions: 1 sorted, 1 to get"],
-    "and it says which line, which a bare count could not");
-});
-
-test("J12.8 · a recipe that has left the book leaves the plan the tools report", async () => {
-  const { book, win, api } = await aBook();
-  let plan = win.RecipePlan.emptyPlan(1);
-  for (const recipe of book.recipes) plan = win.RecipePlan.addMeal(plan, recipe, Date.now());
-  book.planStore.setPlan(plan);
-  const gone = book.recipes.find((r) => r.name === "Lentil soup");
-
-  // Somebody deletes it from a phone: the row comes back tombstoned.
-  const rows = book.recipes.map((r) => ({
-    id: r.id,
-    data: r,
-    updated_at: new Date(1000).toISOString(),
-    deleted_at: r.id === gone.id ? new Date(Date.now() + 1000).toISOString() : null,
-  }));
-  api.fetchRecipes = async () => rows;
-  await book.refresh();
-
-  const out = await by("get_plan").run(book);
-
-  // The app prunes on every render and the shopping list skips such a
-  // meal, so reporting it lists a meal the phone does not show and buys
-  // nothing for it — one answer contradicting itself.
-  assert.ok(!book.recipes.some((r) => r.id === gone.id), "it really has gone");
-  assert.ok(!out.meals.some((m) => m.recipeId === gone.id), out.meals.map((m) => m.name).join(" · "));
-  assert.ok(out.meals.length, "and the rest of the plan is still reported");
-  assert.ok(!out.shoppingList.toBuy.some((line) => line.includes("lentils")));
-});
-
-test("J12.4 · a meal planned by multiplier says how much of it there is", async () => {
-  const { book, win } = await aBook({
-    extra: [
-      {
-        name: "Big batch chilli",
-        ingredients: [{ amount: 2, unit: "kg", item: "beef mince" }],
-        steps: ["Cook it."],
-      },
-    ],
-  });
-  const batch = book.recipes.find((r) => r.name === "Big batch chilli");
-  let plan = win.RecipePlan.addMeal(win.RecipePlan.emptyPlan(1), batch, Date.now());
-  const mealId = plan.meals[0].id;
-  plan = win.RecipePlan.stepPortions(plan, mealId, "up", batch, Date.now());
-  book.planStore.setPlan(plan);
-
-  const out = await by("get_plan").run(book);
-
-  // A recipe with no servings carries its amount in a multiplier, which
-  // the screen shows as "× 1.5". Without it, one batch and three are the
-  // same two lines of JSON.
-  assert.equal(out.meals[0].portions, null);
-  assert.equal(out.meals[0].multiplier, 1.5);
-});
-
 test("J16.10 · a stored photo does not travel, and a linked one does", async () => {
   const { book } = await aBook({
     extra: [
@@ -317,32 +222,6 @@ test("J16.10 · a stored photo does not travel, and a linked one does", async ()
   const third = await by("get_recipe").run(book, { ids: [pasted.id] });
   assert.equal(third.recipes[0].image, NO_PHOTO);
   assert.ok(!JSON.stringify(third).includes("base64"), "not one byte of it travels");
-});
-
-test("J13.13 · a settled line reports the amount that was settled, not what is left of it", async () => {
-  const { book, win } = await aBook();
-  const soup = book.recipes.find((r) => r.name === "Lentil soup");
-  let plan = win.RecipePlan.addMeal(win.RecipePlan.emptyPlan(1), soup, 1000);
-  const built = win.RecipeShopList.build(plan, book.recipes, book.prefs);
-  const onions = built.lines.find((l) => l.text.includes("onion"));
-  // Both onions are in the cupboard, so the line is settled whole.
-  plan = win.RecipePlan.settle(plan, onions.key, "have", 2, Date.now());
-  book.planStore.setPlan(plan);
-
-  const out = await by("get_plan").run(book);
-
-  // `toBuy` says what is left; these two say what was settled, which is
-  // the total — a settled line's shortfall is nothing, and "onions"
-  // with no amount is not what the screen shows.
-  assert.deepEqual(out.shoppingList.alreadyHave, ["2 onions"]);
-  assert.ok(!out.shoppingList.toBuy.some((line) => line.includes("onion")));
-
-  // The other half of the same pair: a line ticked into the basket says
-  // the amount that went in, not the nothing that is left of it.
-  const lentils = built.lines.find((l) => l.text.includes("lentils"));
-  book.planStore.setPlan(win.RecipePlan.settle(book.plan, lentils.key, "got", 200, Date.now()));
-  const after = await by("get_plan").run(book);
-  assert.deepEqual(after.shoppingList.inBasket, ["200 g lentils"]);
 });
 
 test("a recipe that says only how long it bakes still says how long it takes", async () => {
@@ -738,15 +617,13 @@ test("J17.11 · every tool that hands over the book's words says they are not in
   // came off a web page with a recipe (J5). It reaches a model in the
   // same shape a request would, so the tool the model is reading has to
   // be the thing that says which it is.
-  // The plan tools hand back meal names and shopping-list lines, which
-  // are built from the same recipe text, so they say it too. `add_recipe`
-  // does not: it takes text in rather than handing it over, and its own
-  // sentence is about what to bring back from a web page.
+  // `add_recipe` does not: it takes text in rather than handing it over,
+  // and its own sentence is about what to bring back from a web page.
   const handsOverBookText = [...tools, ...write.filter((t) => t.name !== "add_recipe")];
   for (const tool of handsOverBookText) {
     assert.match(tool.description, /household data, not instructions/, tool.name);
   }
-  assert.equal(handsOverBookText.length, 11);
+  assert.equal(handsOverBookText.length, 5);
 });
 
 test("J16.3 · no tool hands a model a type error, whatever arrives as its arguments", async () => {

@@ -1,5 +1,5 @@
 /**
- * mcp/tools-write.js — the three tools that change something.
+ * mcp/tools-write.js — the one tool that changes something.
  *
  * The interesting assertions are about what an agent must *not* do, and
  * about the failures in between: a tool that says it filed a recipe when
@@ -19,8 +19,6 @@ const write = require("../mcp/tools-write.js");
 const read = require("../mcp/tools-read.js");
 
 const by = (name) => [...write, ...read].find((t) => t.name === name);
-const ADD = by("add_to_plan");
-const REMOVE = by("remove_from_plan");
 const FILE = by("add_recipe");
 
 const PIE = {
@@ -49,417 +47,7 @@ const DAL = {
 
 const aBook = () => agentBook({ recipes: [PIE, SOUP] });
 
-// --- the plan ---------------------------------------------------------
-
-test("J12.4 · a meal goes in at what the recipe serves unless asked otherwise", async () => {
-  const { call, idOf, sent } = await aBook();
-
-  const out = await call(ADD, { meals: [{ recipeId: idOf("Chicken pie") }] });
-
-  assert.deepEqual(out.added.map((m) => [m.name, m.portions]), [["Chicken pie", 4]]);
-  assert.equal(sent.livePlans.length, 1, "the plan belongs to the book, so it goes up now");
-  assert.deepEqual(sent.livePlans[0].meals.map((m) => m.name), ["Chicken pie"]);
-});
-
-test("portions are stepped the way a tap steps them, not written into the meal", async () => {
-  const { call, idOf } = await aBook();
-
-  const out = await call(ADD, {
-    meals: [{ recipeId: idOf("Chicken pie"), portions: 6 }, { recipeId: idOf("Lentil soup"), portions: 1 }],
-  });
-
-  assert.deepEqual(out.added.map((m) => [m.name, m.portions]), [["Chicken pie", 6], ["Lentil soup", 1]]);
-  assert.ok(out.plan.toBuy.includes("750 g chicken"), out.plan.toBuy.join(" · "));
-});
-
-test("a recipe that is not in the book is reported rather than silently skipped", async () => {
-  const { call, idOf } = await aBook();
-
-  const out = await call(ADD, { meals: [{ recipeId: idOf("Lentil soup") }, { recipeId: "gone" }] });
-
-  assert.deepEqual(out.added.map((m) => m.name), ["Lentil soup"]);
-  assert.deepEqual(out.missing, ["gone"]);
-});
-
-test("J14.4 · a meal can come back out, and nothing is written down about it", async () => {
-  const { call, idOf, sent } = await aBook();
-  const added = await call(ADD, { meals: [{ recipeId: idOf("Chicken pie") }] });
-  // Real milliseconds, because the merge runs on them: two writes inside
-  // one tick are a tie, and a tie is broken on the fingerprint rather
-  // than on which came second (J12.11). The tool reports that honestly
-  // when it happens — there is a test for it above — but it is not what
-  // this test is about.
-  await new Promise((resume) => setTimeout(resume, 2));
-
-  const out = await call(REMOVE, { mealIds: [added.added[0].mealId] });
-
-  assert.deepEqual(out.removed.map((m) => m.name), ["Chicken pie"]);
-  assert.deepEqual(out.plan.meals, []);
-  assert.deepEqual(sent.archived, [], "clearing records nothing");
-});
-
-test("a mealId that is not in the plan is an answer, not a failure", async () => {
-  const { call } = await aBook();
-
-  const out = await call(REMOVE, { mealIds: ["not-a-meal"] });
-
-  assert.deepEqual(out.removed, []);
-  assert.deepEqual(out.missing, ["not-a-meal"]);
-});
-
-test("J17.9 · a meal somebody added from a phone survives the agent's write (J12.11)", async () => {
-  const { call, win, idOf, setRemotePlan, sent, book } = await aBook();
-  await call(ADD, { meals: [{ recipeId: idOf("Lentil soup") }] });
-  const asPushed = sent.livePlans.at(-1);
-
-  // A phone puts a pie in the same plan, a moment later. Meals do not
-  // merge — the more recently touched body wins whole — so the agent has
-  // to be looking at that plan before it writes, not at the one it read.
-  const pie = book.recipes.find((r) => r.name === "Chicken pie");
-  setRemotePlan(win.RecipePlan.addMeal(asPushed, pie, asPushed.updatedAt + 1));
-  await new Promise((resume) => setTimeout(resume, 5));
-
-  await call(ADD, { meals: [{ recipeId: idOf("Lentil soup") }] });
-
-  assert.deepEqual(
-    sent.livePlans.at(-1).meals.map((m) => m.name).sort(),
-    ["Chicken pie", "Lentil soup", "Lentil soup"]
-  );
-});
-
-test("J17.9 · a meal is stamped after the pull, or the plan it was pulled from outranks it", async () => {
-  const { book, api, win, idOf } = await aBook();
-  // The book's plan, stamped the moment it is first read — which is what
-  // a plan somebody else has just written looks like when it arrives.
-  // A stamp taken before that read is older than the plan it is being
-  // written onto, and the merge hands the whole plan to the other side
-  // (J12.11): the meal goes, and only the report would say otherwise.
-  let held = null;
-  api.fetchLivePlan = async () => {
-    if (!held) {
-      const plan = win.RecipePlan.emptyPlan(Date.now());
-      held = { book_id: BOOK, data: plan, updated_at: new Date().toISOString() };
-    }
-    return held;
-  };
-  await book.refresh();
-
-  const out = await ADD.run(book, { meals: [{ recipeId: idOf("Chicken pie") }] });
-
-  assert.deepEqual(out.added.map((m) => m.name), ["Chicken pie"]);
-  assert.ok(!out.dropped, "nothing outranked it");
-});
-
-test("J17.9 · a write dropped by somebody else's is reported as dropped, not as done", async () => {
-  const { book, win, idOf, setRemotePlan } = await aBook();
-  await book.refresh();
-
-  // The other device's plan lands between this tool's pull and its
-  // push, and is the newer body — so it wins whole and takes the
-  // agent's meal with it (J12.11). Saying "added" here would be a tool
-  // reporting something the book does not contain.
-  const pie = book.recipes.find((r) => r.name === "Chicken pie");
-  setRemotePlan(win.RecipePlan.addMeal(book.plan, pie, Date.now() + 60000));
-
-  const out = await ADD.run(book, { meals: [{ recipeId: idOf("Lentil soup") }] });
-
-  assert.deepEqual(out.added, [], "nothing of ours survived");
-  assert.deepEqual(out.dropped, ["Lentil soup"]);
-  assert.match(out.note, /another device at the same moment/);
-  assert.deepEqual(out.plan.meals.map((m) => m.name), ["Chicken pie"], "and the plan says so too");
-});
-
-test("J17.10 · a plan write that could not be sent is taken back out, not left to land later", async () => {
-  const { call, book, idOf, breakPlanPush, mendNetwork, sent } = await aBook();
-  // The pull succeeds and the push does not, which is the only way this
-  // failure happens: the server pulls before the tool runs.
-  await book.refresh();
-  breakPlanPush();
-
-  await assert.rejects(() => ADD.run(book, { meals: [{ recipeId: idOf("Chicken pie") }] }));
-
-  // The bug this replaces: the meal stayed in the plan this process
-  // holds, and the next call pushed it — so a model retrying after a
-  // reported failure put two pies in the household's week.
-  mendNetwork();
-  const out = await call(ADD, { meals: [{ recipeId: idOf("Lentil soup") }] });
-
-  assert.deepEqual(out.plan.meals.map((m) => m.name), ["Lentil soup"]);
-  assert.deepEqual(sent.livePlans.at(-1).meals.map((m) => m.name), ["Lentil soup"]);
-});
-
-test("J17.10 · two plan writes at once, both failing, leave nothing behind between them", async () => {
-  const { book, idOf, breakPlanPush, mendNetwork, sent } = await aBook();
-  await book.refresh();
-  breakPlanPush();
-
-  // Two tool calls in one model turn is ordinary, and this is where the
-  // undo used to go wrong: it restored the whole plan as it was at the
-  // top of the call, so the second call's idea of "as it was" already
-  // contained the first call's meal — and putting that back after the
-  // first had rolled it back left a meal both calls had reported as
-  // failed, for the next call to push.
-  const both = await Promise.allSettled([
-    ADD.run(book, { meals: [{ recipeId: idOf("Chicken pie") }] }),
-    ADD.run(book, { meals: [{ recipeId: idOf("Lentil soup") }] }),
-  ]);
-
-  assert.deepEqual(both.map((r) => r.status), ["rejected", "rejected"]);
-  assert.deepEqual(book.plan.meals, [], "nothing survived a failure both callers were told about");
-
-  mendNetwork();
-  await book.refresh();
-  assert.deepEqual(sent.livePlans, [], "and no later call pushes what nobody asked for");
-});
-
-test("a dropped removal is never blamed on a full plan, which is not a reason to fail one", async () => {
-  const { book, win, setRemotePlan } = await aBook();
-  await book.refresh();
-  const pie = book.recipes.find((r) => r.name === "Chicken pie");
-
-  // A full plan, and somebody else's newer body arriving before the push
-  // — so taking a meal out is dropped, and the plan is still at the cap.
-  let full = book.plan;
-  for (let i = 0; i < win.RecipePlanStore.limits.MAX_MEALS; i++) {
-    full = win.RecipePlan.addMeal(full, pie, Date.now() + i);
-  }
-  book.planStore.setPlan(full);
-  setRemotePlan({ ...full, updatedAt: Date.now() + 60000 });
-
-  const out = await REMOVE.run(book, { mealIds: [full.meals[0].id] });
-
-  assert.deepEqual(out.removed, []);
-  assert.equal(out.dropped.length, 1);
-  assert.match(out.note, /another device at the same moment/);
-  assert.ok(
-    !/plan is full/.test(out.note),
-    "telling somebody emptying a plan that it is full and to empty it is not advice"
-  );
-});
-
-test("a plan with no room says so, rather than blaming another device", async () => {
-  const { book, win, idOf } = await aBook();
-  await book.refresh();
-  const pie = book.recipes.find((r) => r.name === "Chicken pie");
-  let full = book.plan;
-  for (let i = 0; i < win.RecipePlanStore.limits.MAX_MEALS; i++) {
-    full = win.RecipePlan.addMeal(full, pie, Date.now() + i);
-  }
-  book.planStore.setPlan(full);
-
-  const out = await ADD.run(book, { meals: [{ recipeId: idOf("Lentil soup") }] });
-
-  assert.deepEqual(out.added, []);
-  assert.deepEqual(out.dropped, ["Lentil soup"]);
-  assert.match(out.note, /plan is full/);
-  assert.ok(!/another device/.test(out.note), "a full plan is not somebody else's write");
-});
-
-test("J13.10 · a plan write answers with what is left to buy, like get_plan does", async () => {
-  const { book, win, idOf, call } = await aBook();
-  await call(ADD, { meals: [{ recipeId: idOf("Lentil soup") }] });
-
-  // Somebody says one of the two onions is already in.
-  const built = win.RecipeShopList.build(book.plan, book.recipes, book.prefs);
-  const onions = built.lines.find((l) => l.text.includes("onion"));
-  book.planStore.setPlan(win.RecipePlan.settle(book.plan, onions.key, "have", 1, Date.now()));
-
-  const out = await call(REMOVE, { mealIds: ["not-a-meal"] });
-
-  // The same field get_plan uses, for the same reason: the whole
-  // requirement would buy two to get one.
-  assert.ok(out.plan.toBuy.includes("1 onions"), out.plan.toBuy.join(" · "));
-  assert.ok(!out.plan.toBuy.includes("2 onions"), "not the total");
-  assert.deepEqual(out.plan.partlySorted, ["onions: 1 sorted, 1 to get"]);
-});
-
-test("J12.4 · a recipe that does not say what it serves cannot take a portion count, and says so", async () => {
-  const { book, call, api } = await aBook();
-  // A recipe with no servings is planned by a multiplier, not portions.
-  const batch = book.win.RecipeStore.sanitizeRecipe({
-    name: "Big batch chilli",
-    ingredients: [{ amount: 2, unit: "kg", item: "beef mince" }],
-    steps: ["Cook it."],
-  });
-  api.rows = undefined;
-  book.store.add(batch);
-  const filed = book.recipes.find((r) => r.name === "Big batch chilli");
-
-  const out = await call(ADD, { meals: [{ recipeId: filed.id, portions: 8 }] });
-
-  assert.equal(out.added[0].portions, null);
-  assert.deepEqual(out.notScaled, ["Big batch chilli"]);
-  assert.match(out.scalingNote, /do not say what they serve/);
-});
-
-test("J12.5 · a batch cook comes back the size it went out at", async () => {
-  const { book, win, call } = await aBook();
-  // A recipe with no servings is scaled by a multiplier, which is the
-  // control the screen has and the server had not.
-  const batch = book.win.RecipeStore.sanitizeRecipe({
-    name: "Batch chilli",
-    ingredients: [{ amount: 2, unit: "kg", item: "beef mince" }],
-    steps: ["Cook it."],
-  });
-  book.store.add(batch);
-  const filed = book.recipes.find((r) => r.name === "Batch chilli");
-
-  const added = await call(ADD, { meals: [{ recipeId: filed.id, multiplier: 1.5 }] });
-  assert.equal(added.added[0].multiplier, 1.5, "the amount asked for");
-  const beforeList = (await call(by("get_plan"), {})).shoppingList.toBuy;
-  assert.ok(beforeList.includes("3 kg beef mince"), beforeList.join(" · "));
-
-  // Taken out, and what comes out says how much it was.
-  const removed = await call(REMOVE, { mealIds: [added.added[0].mealId] });
-  assert.deepEqual(removed.removed[0].was, { multiplier: 1.5 });
-
-  // Put back at that amount, the week is as it was — which is what the
-  // tool's own description promises. Without a multiplier control it
-  // came back at one batch and the list halved to 2 kg.
-  const back = await call(ADD, { meals: [{ recipeId: filed.id, ...removed.removed[0].was }] });
-  assert.equal(back.added[0].multiplier, 1.5);
-  assert.deepEqual((await call(by("get_plan"), {})).shoppingList.toBuy, beforeList);
-});
-
-test("J12.11 · two changes in the same millisecond both survive", async () => {
-  const { book, call, idOf } = await aBook();
-
-  // `newerBody` breaks a tie on `updatedAt` with a string compare of
-  // sorted meal ids, which the plan holding *more* meals loses about
-  // half the time — so two calls landing in one millisecond were a coin
-  // flip on whether the second one existed, reported as somebody else's
-  // write from a device nobody was using. The app has the same hazard
-  // and the same answer: stamp one past what you are replacing, so the
-  // same hand cannot tie with itself.
-  const first = await call(ADD, { meals: [{ recipeId: idOf("Chicken pie") }] });
-  const second = await call(ADD, { meals: [{ recipeId: idOf("Lentil soup") }] });
-
-  assert.deepEqual(first.added.map((m) => m.name), ["Chicken pie"]);
-  assert.deepEqual(second.added.map((m) => m.name), ["Lentil soup"]);
-  assert.ok(!second.dropped, "nothing was dropped, so nothing should say it was");
-  assert.deepEqual(
-    second.plan.meals.map((m) => m.name).sort(),
-    ["Chicken pie", "Lentil soup"]
-  );
-});
-
-test("J12.5 · a meal planned by portions also comes back the size it went out at", async () => {
-  const { book, call, idOf } = await aBook();
-  const added = await call(ADD, { meals: [{ recipeId: idOf("Chicken pie"), portions: 7 }] });
-  const listed = (await call(by("get_plan"), {})).shoppingList.toBuy;
-
-  const removed = await call(REMOVE, { mealIds: [added.added[0].mealId] });
-
-  // The other branch of `was` — the one J12.5's sibling test does not
-  // reach, where the amount is a portion count rather than a multiplier.
-  assert.deepEqual(removed.removed[0].was, { portions: 7 });
-
-  const back = await call(ADD, { meals: [{ recipeId: idOf("Chicken pie"), ...removed.removed[0].was }] });
-  assert.equal(back.added[0].portions, 7);
-  assert.deepEqual((await call(by("get_plan"), {})).shoppingList.toBuy, listed);
-});
-
-test("an amount the app cannot step to says where it landed instead", async () => {
-  const { book, call } = await aBook();
-  const batch = book.win.RecipeStore.sanitizeRecipe({
-    name: "Batch chilli",
-    ingredients: [{ amount: 2, unit: "kg", item: "beef mince" }],
-    steps: ["Cook it."],
-  });
-  book.store.add(batch);
-  const filed = book.recipes.find((r) => r.name === "Batch chilli");
-
-  // The app steps multipliers in halves between 0.5 and 8, and the
-  // schema says so without anything enforcing it.
-  const high = await call(ADD, { meals: [{ recipeId: filed.id, multiplier: 12 }] });
-  assert.equal(high.added[0].multiplier, 8);
-  assert.deepEqual(high.clamped, ["Batch chilli: asked for 12, went in at 8"]);
-
-  const odd = await call(ADD, { meals: [{ recipeId: filed.id, multiplier: 3.7 }] });
-  assert.equal(odd.added[0].multiplier, 3.5);
-  assert.match(odd.clamped[0], /asked for 3.7, went in at 3.5/);
-
-  const fine = await call(ADD, { meals: [{ recipeId: filed.id, multiplier: 2 }] });
-  assert.ok(!fine.clamped, "an amount it could honour says nothing");
-});
-
-test("J12.4 · asking with the wrong one of the two controls is a sentence, not a shrug", async () => {
-  const { book, call, idOf } = await aBook();
-  const batch = book.win.RecipeStore.sanitizeRecipe({
-    name: "Batch chilli",
-    ingredients: [{ amount: 2, unit: "kg", item: "beef mince" }],
-    steps: ["Cook it."],
-  });
-  book.store.add(batch);
-  const filed = book.recipes.find((r) => r.name === "Batch chilli");
-
-  // Portions on a recipe that does not say what it serves...
-  const one = await call(ADD, { meals: [{ recipeId: filed.id, portions: 8 }] });
-  assert.deepEqual(one.notScaled, ["Batch chilli"]);
-  assert.match(one.scalingNote, /ask again with `multiplier`/);
-
-  // ...and a multiplier on one that does.
-  const two = await call(ADD, { meals: [{ recipeId: idOf("Chicken pie"), multiplier: 2 }] });
-  assert.deepEqual(two.notScaled, ["Chicken pie"]);
-  assert.match(two.scalingNote, /scaled by `portions`, not `multiplier`/);
-  assert.equal(two.added[0].portions, 4, "and it went in at what the recipe serves");
-});
-
-test("J12.8 · a write reports the plan the phone would show, like get_plan does", async () => {
-  const { book, win, api, call, idOf } = await aBook();
-  await call(ADD, { meals: [{ recipeId: idOf("Chicken pie") }, { recipeId: idOf("Lentil soup") }] });
-  const gone = book.recipes.find((r) => r.name === "Lentil soup");
-
-  // Deleted from a phone while the plan still holds it.
-  const rows = book.recipes.map((r) => ({
-    id: r.id,
-    data: r,
-    updated_at: new Date(1000).toISOString(),
-    deleted_at: r.id === gone.id ? new Date(Date.now() + 1000).toISOString() : null,
-  }));
-  api.fetchRecipes = async () => rows;
-
-  const out = await call(REMOVE, { mealIds: ["not-a-meal"] });
-
-  assert.ok(!out.plan.meals.some((m) => m.recipeId === gone.id), out.plan.meals.map((m) => m.name).join(" · "));
-  assert.ok(out.plan.meals.length, "and the rest is still reported");
-});
-
-test("a mealId that could never be a meal is reported, not quietly dropped", async () => {
-  const { book, call } = await aBook();
-
-  const out = await call(REMOVE, { mealIds: [42, null, "  "] });
-
-  assert.deepEqual(out.removed, []);
-  assert.equal(out.missing.length, 3, "three were asked about and three are accounted for");
-});
-
-test("more meals than the schema allows is refused rather than worked through", async () => {
-  const { book, call, idOf, sent } = await aBook();
-
-  const out = await call(ADD, { meals: new Array(21).fill({ recipeId: idOf("Chicken pie") }) });
-
-  assert.match(out.error, /at most 20/);
-  assert.deepEqual(sent.livePlans, [], "and the write lane was not held while it happened");
-});
-
-test("J16.4 · a week that has been finished is not one an agent adds to", async () => {
-  const { call, idOf, win, setRemotePlan, sent } = await aBook();
-  // A Done that landed half way: on the record, and the empty plan that
-  // should have replaced it has not arrived. An agent leaves it for a
-  // person's device — and writing into it would put this meal into the
-  // record when that device finishes the job.
-  setRemotePlan({ ...win.RecipePlan.emptyPlan(1), completedAt: 5000 });
-
-  const out = await call(ADD, { meals: [{ recipeId: idOf("Chicken pie") }] });
-
-  assert.match(out.error, /finished/);
-  assert.deepEqual(sent.livePlans, [], "nothing went up");
-  const removing = await call(REMOVE, { mealIds: ["anything"] });
-  assert.match(removing.error, /finished/);
-});
-
-// --- filing a recipe --------------------------------------------------
+// --- filing a recipe ---------------------------------------------------
 
 test("J16.3 · a filed recipe goes up as a row the server has never seen", async () => {
   const { call, sent } = await aBook();
@@ -563,11 +151,12 @@ test("J17.10 · a recipe nobody can check on is not called filed and not called 
 });
 
 test("J17.9 · a change started while somebody else's sync is in flight still lands, and says so truly", async () => {
-  const { book, api, idOf, sent } = await aBook();
+  const { book, api, sent } = await aBook();
   await book.refresh();
 
   // An ordinary read's sync, parked mid-flight at an await every sync
-  // makes. It has already read the plan it will apply and push.
+  // makes. If the change shared the book with it, the sync would apply
+  // what it read over the top of the change.
   let release;
   const parked = new Promise((resume) => (release = resume));
   const real = api.fetchArchivedPlanIds.bind(api);
@@ -582,49 +171,43 @@ test("J17.9 · a change started while somebody else's sync is in flight still la
   const stranger = book.refresh();
   await new Promise((resume) => setTimeout(resume, 5));
 
-  // A change starts. If it shares the book with that sync, the sync
-  // applies the plan it read over the top of this one and pushes what it
-  // read — and the change is judged against a plan it never got into.
-  const writing = ADD.run(book, { meals: [{ recipeId: idOf("Lentil soup") }] });
+  const writing = FILE.run(book, DAL);
   await new Promise((resume) => setTimeout(resume, 5));
   release();
 
   const out = await writing;
   await stranger.catch(() => {});
 
-  assert.deepEqual(out.added.map((m) => m.name), ["Lentil soup"]);
-  assert.ok(!out.dropped, "nothing was dropped, so nothing should say it was");
-  assert.deepEqual(
-    sent.livePlans.at(-1).meals.map((m) => m.name),
-    ["Lentil soup"],
-    "and the book got what the tool said it got"
-  );
+  assert.equal(out.added.name, "Dal");
+  assert.ok(sent.recipes.some((r) => r.data.name === "Dal"), "and the book got what the tool said it got");
 });
 
 test("J17.9 · a question arriving while a change is in flight waits for it", async () => {
-  const { book, api, idOf } = await aBook();
+  const { book, api } = await aBook();
   await book.refresh();
 
   // The order is the assertion: a change reads, then pushes. A question
-  // that lands between those two has seen the book half-changed, which
-  // is where every one of this file's harder bugs came from.
+  // that lands between those two has seen the book half-changed.
   const order = [];
   const realRead = api.fetchRecipes.bind(api);
-  const realPush = api.pushLivePlan.bind(api);
-  api.fetchRecipes = async () => {
+  const realPush = api.pushRecipes.bind(api);
+  api.fetchRecipes = async (...args) => {
     order.push("read");
-    return realRead();
+    return realRead(...args);
   };
-  api.pushLivePlan = async (id, plan) => {
+  api.pushRecipes = async (...args) => {
     order.push("push");
-    return realPush(id, plan);
+    return realPush(...args);
   };
 
-  const writing = ADD.run(book, { meals: [{ recipeId: idOf("Chicken pie") }] });
+  const writing = FILE.run(book, DAL);
   const question = book.refresh();
   await Promise.all([writing, question]);
 
-  assert.deepEqual(order, ["read", "push", "read"], "the question waited its turn");
+  const firstPush = order.indexOf("push");
+  assert.ok(firstPush > 0, order.join(","));
+  assert.ok(order.slice(0, firstPush).includes("read"));
+  assert.equal(order.lastIndexOf("read") > firstPush, true, "the question waited its turn");
 });
 
 test("J16.3 · a field the schema never declared cannot ride in on a filed recipe", async () => {
@@ -676,20 +259,14 @@ test("J16.10 · a picture arrives as a link or not at all", async () => {
 
 test("J17.6 · no tool exists for anything the credential cannot do", () => {
   const names = [...read, ...write].map((t) => t.name);
-
-  // `edit_list` is the one name here that says "edit", and it edits the
-  // list's own lines, which an agent may (J16.5, J17.14). Nothing edits,
-  // deletes or favourites a recipe, and nothing finishes a week.
   assert.deepEqual(
-    names.filter(
-      (n) => n !== "edit_list" && /edit|update|delete|remove_recipe|favourite|favorite|star|done|finish|complete/.test(n)
-    ),
+    names.filter((n) => /edit|update|delete|remove|favourite|favorite|star|done|finish|complete/.test(n)),
     []
   );
+  // The plan tools went with the plan's shopping list (J18, build step 1).
   assert.deepEqual(names.sort(), [
-    "add_recipe", "add_to_list", "add_to_plan", "edit_list", "find_recipes", "get_plan",
-    "get_recipe", "list_recipes", "planning_history", "recipes_sharing_ingredients",
-    "remove_from_list", "remove_from_plan",
+    "add_recipe", "find_recipes", "get_recipe", "list_recipes", "planning_history",
+    "recipes_sharing_ingredients",
   ]);
 });
 
@@ -698,305 +275,4 @@ test("J17.10 · the one-way tool says so twice: to the client in a hint, to the 
   assert.equal(FILE.annotations.destructiveHint, true);
   assert.match(FILE.description, /cannot be undone/i);
   assert.match(FILE.description, /permanent until a person removes it/);
-
-  for (const tool of [ADD, REMOVE, by("add_to_list"), by("edit_list"), by("remove_from_list")]) {
-    assert.equal(tool.annotations.readOnlyHint, false, tool.name);
-    assert.equal(tool.annotations.destructiveHint, false, tool.name);
-  }
-});
-
-// --- meals that are not recipes, and the list (J17.14) -----------------
-
-const ADD_LINES = by("add_to_list");
-const REMOVE_LINES = by("remove_from_list");
-const GET_PLAN = by("get_plan");
-const tick = () => new Promise((resume) => setTimeout(resume, 2));
-
-test("J17.14 · a meal with neither a recipe nor a name is reported, not invented", async () => {
-  const { call } = await aBook();
-  const out = await call(ADD, { meals: [{ name: "   " }, {}] });
-  assert.deepEqual(out.added, []);
-  assert.equal(out.missing.length, 2);
-});
-
-test("J17.14 · lines go on the list as text, one line each, never combined", async () => {
-  const { call, idOf, sent } = await aBook();
-  await call(ADD, { meals: [{ recipeId: idOf("Chicken pie") }] });
-  await tick();
-
-  const out = await call(ADD_LINES, { items: ["1 onion", "milk", "milk"] });
-
-  assert.deepEqual(out.added.map((i) => i.text), ["1 onion", "milk", "milk"]);
-  assert.ok(out.added.every((i) => typeof i.itemId === "string"));
-  assert.ok(out.plan.toBuy.includes("1 onion"), "the pie's onion is its own line");
-  assert.equal(out.plan.toBuy.filter((t) => t === "1 onion").length, 2, "and so is the one added by hand");
-  assert.deepEqual(sent.livePlans.at(-1).items.map((i) => i.text), ["1 onion", "milk", "milk"]);
-});
-
-test("J17.14 · the tool says to read the list first and decide, because the server never combines", () => {
-  assert.match(ADD_LINES.description, /call get_plan first/);
-  assert.match(ADD_LINES.description, /never combined/);
-});
-
-test("J17.14 · a line comes off by its id, and what came off says what it was", async () => {
-  const { call } = await aBook();
-  const added = await call(ADD_LINES, { items: ["milk", "bread"] });
-  await tick();
-
-  const out = await call(REMOVE_LINES, { itemIds: [added.added[0].itemId, "not-a-line"] });
-
-  assert.deepEqual(out.removed, [{ itemId: added.added[0].itemId, text: "milk" }]);
-  assert.deepEqual(out.missing, ["not-a-line"]);
-  assert.deepEqual(out.plan.byHand.map((l) => l.text), ["bread"]);
-});
-
-test("J17.14 · get_plan says what each line added by hand is and how it stands", async () => {
-  const { call, book, win } = await aBook();
-  const added = await call(ADD_LINES, { items: ["milk", "bread"] });
-  // Somebody ticks the bread on their phone.
-  book.planStore.setPlan(win.RecipePlan.setItemState(book.plan, added.added[1].itemId, "got", Date.now() + 5));
-
-  const out = await GET_PLAN.run(book, {});
-
-  assert.deepEqual(out.shoppingList.byHand.map((l) => [l.text, l.state]), [["milk", "to buy"], ["bread", "in basket"]]);
-  assert.deepEqual(out.shoppingList.inBasket, ["bread"]);
-});
-
-test("J17.14 · a line from another phone survives the agent's write, because the list merges line by line", async () => {
-  const { call, win, setRemotePlan, sent, book } = await aBook();
-  await call(ADD_LINES, { items: ["milk"] });
-  const asPushed = sent.livePlans.at(-1);
-  // A phone adds kitchen roll a moment later — and adds a meal too, so its
-  // body is the newer one and would win whole if the list merged whole.
-  let theirs = win.RecipePlan.addItem(asPushed, "kitchen roll", Date.now() + 1);
-  const pie = book.recipes.find((r) => r.name === "Chicken pie");
-  theirs = win.RecipePlan.addMeal(theirs, pie, asPushed.updatedAt + 10);
-  setRemotePlan(theirs);
-  await tick();
-
-  const out = await call(ADD_LINES, { items: ["eggs"] });
-
-  assert.deepEqual(out.added.map((i) => i.text), ["eggs"]);
-  assert.deepEqual(out.plan.byHand.map((l) => l.text).sort(), ["eggs", "kitchen roll", "milk"]);
-});
-
-test("J17.14 · a full list says so, and adds nothing past it", async () => {
-  const { call, win, sent } = await aBook();
-  const max = win.RecipePlanStore.limits.MAX_LIST_LINES;
-  for (let i = 0; i < max; i += 20) {
-    await call(ADD_LINES, { items: Array.from({ length: Math.min(20, max - i) }, (_, j) => `thing ${i + j}`) });
-    await tick();
-  }
-  const pushes = sent.livePlans.length;
-
-  const out = await call(ADD_LINES, { items: ["one too many"] });
-
-  assert.deepEqual(out.added, []);
-  assert.deepEqual(out.notAdded, ["one too many"]);
-  assert.match(out.note, /The list is full/);
-  assert.equal(sent.livePlans.length, pushes, "refused before anything was written, not trimmed after");
-});
-
-test("J17.14 · a line that lands in a week somebody has just cleared says so, not that the list is full", async () => {
-  const { call, win, book, setRemotePlan } = await aBook();
-  await call(ADD_LINES, { items: ["milk"] });
-  await tick();
-  // Between the tool reading the book and writing it, somebody presses
-  // Clear: a new generation, later than this one.
-  await book.refresh();
-  setRemotePlan(win.RecipePlan.emptyPlan(win.RecipePlan.generationAfter(book.plan, Date.now() + 100000)));
-
-  const out = await ADD_LINES.run(book, { items: ["eggs"] });
-
-  assert.deepEqual(out.notAdded, ["eggs"]);
-  assert.match(out.note, /cleared or finished/);
-  assert.doesNotMatch(out.note, /full/);
-});
-
-test("J17.14 · a line is never cut half way through a character", async () => {
-  const { call, sent } = await aBook();
-  const out = await call(ADD_LINES, { items: ["a".repeat(119) + "😀"] });
-  const text = out.added[0].text;
-  assert.equal(text, "a".repeat(119), "the emoji that would not fit goes whole");
-  assert.doesNotMatch(JSON.stringify(sent.livePlans.at(-1)), /\\ud83d"/);
-});
-
-test("J17.14 · a finished week is not one to add lines to (J17.9)", async () => {
-  const { call, win, setRemotePlan } = await aBook();
-  setRemotePlan({ ...win.RecipePlan.emptyPlan(1000), completedAt: 2000 });
-  const out = await call(ADD_LINES, { items: ["milk"] });
-  assert.match(out.error, /finished/);
-  const off = await call(REMOVE_LINES, { itemIds: ["x"] });
-  assert.match(off.error, /finished/);
-});
-
-test("J17.14 · the list tools answer what arrives, whatever it is", async () => {
-  const { call } = await aBook();
-  for (const args of [{}, { items: null }, { items: [3, {}, null] }, { items: "milk" }]) {
-    const out = await call(ADD_LINES, args);
-    assert.ok(out && (out.error || Array.isArray(out.added)), JSON.stringify(args));
-  }
-  const many = await call(ADD_LINES, { items: Array.from({ length: 21 }, () => "x") });
-  assert.match(many.error, /at most 20/);
-  for (const args of [{}, { itemIds: null }, { itemIds: [3, {}] }]) {
-    const out = await call(REMOVE_LINES, args);
-    assert.ok(out && (out.error || Array.isArray(out.removed)), JSON.stringify(args));
-  }
-});
-
-test("J12.13 · a meal sent by name is pointed at the list, not added and not called missing", async () => {
-  const { call, idOf, sent } = await aBook();
-  const pushes = sent.livePlans.length;
-
-  const alone = await call(ADD, { meals: [{ name: "Frozen pizza" }] });
-  assert.deepEqual(alone.added, []);
-  assert.deepEqual(alone.missing, []);
-  assert.deepEqual(alone.notRecipes, ["Frozen pizza"]);
-  assert.match(alone.listNote, /add_to_list/);
-  assert.equal(sent.livePlans.length, pushes, "nothing was written");
-
-  const mixed = await call(ADD, { meals: [{ name: "Frozen pizza" }, { recipeId: idOf("Chicken pie") }] });
-  assert.deepEqual(mixed.added.map((m) => m.name), ["Chicken pie"]);
-  assert.deepEqual(mixed.notRecipes, ["Frozen pizza"]);
-  assert.match(mixed.listNote, /add_to_list/);
-  assert.ok(mixed.plan.meals.every((m) => m.recipeId), "no meal without a recipe got in");
-});
-
-test("J12.13 · a name sent where the schema wants a recipeId gets the same pointer to the list", async () => {
-  const { call, win } = await aBook();
-
-  const out = await call(ADD, { meals: [{ recipeId: "Frozen pizza" }, "Fish fingers"] });
-
-  assert.deepEqual(out.missing, ["Frozen pizza", "Fish fingers"], "still missing: they are not recipes");
-  assert.match(out.listNote, /add_to_list/, "and told where they belong");
-
-  const gone = await call(ADD, { meals: [{ recipeId: win.RecipeStore.newId() }] });
-  assert.equal(gone.listNote, undefined, "an id that is not in the book is just missing");
-
-  const long = await call(ADD, { meals: [{ name: "x".repeat(5000) }] });
-  assert.equal(long.notRecipes[0].length, win.RecipePlanStore.limits.MAX_NAME_CHARS, "nothing is echoed back unbounded");
-});
-
-test("J17.11 · a recipeId that is not text is not echoed back", async () => {
-  const { call } = await aBook();
-  const out = await call(ADD, { meals: [{ recipeId: { a: "x".repeat(3000) } }, { recipeId: ["Frozen pizza"] }] });
-  assert.deepEqual(out.missing, [null, null]);
-  assert.ok(JSON.stringify(out).length < 1500, "the answer is not a mirror of what was sent");
-});
-
-// --- changing a line where it stands (J17.14, J13.16) -------------------
-
-const EDIT_LINES = by("edit_list");
-
-test("J17.14 · a line is edited where it stands: same id, same place, same tick", async () => {
-  const { call, book, win, sent } = await aBook();
-  const added = await call(ADD_LINES, { items: ["milk", "6 eggs", "bread"] });
-  const eggs = added.added[1].itemId;
-  book.planStore.setPlan(win.RecipePlan.setItemState(book.plan, eggs, "got", Date.now() + 5));
-  await tick();
-
-  const out = await call(EDIT_LINES, { items: [{ itemId: eggs, text: "7 eggs", was: "6 eggs" }] });
-
-  assert.deepEqual(out.edited, [{ itemId: eggs, text: "7 eggs" }]);
-  assert.deepEqual(out.plan.byHand.map((l) => [l.text, l.state]),
-    [["milk", "to buy"], ["7 eggs", "in basket"], ["bread", "to buy"]]);
-  assert.deepEqual(sent.livePlans.at(-1).items.map((i) => i.id), added.added.map((a) => a.itemId));
-});
-
-test("J17.14 · a line a person has changed since it was read is not written over", async () => {
-  const { call, book, win, sent } = await aBook();
-  const added = await call(ADD_LINES, { items: ["6 eggs"] });
-  const id = added.added[0].itemId;
-  // Somebody makes it 7 on their phone; the agent read it as 6.
-  book.planStore.setPlan(win.RecipePlan.editItem(book.plan, id, "7 eggs", Date.now() + 5));
-  await book.pushNow();
-  const pushes = sent.livePlans.length;
-
-  const out = await call(EDIT_LINES, { items: [{ itemId: id, text: "12 eggs", was: "6 eggs" }] });
-
-  assert.deepEqual(out.edited, []);
-  assert.deepEqual(out.changed, [{ itemId: id, now: "7 eggs" }]);
-  assert.match(out.changedNote, /Read the plan again/);
-  assert.equal(sent.livePlans.length, pushes, "nothing was written");
-  assert.deepEqual(out.plan.byHand.map((l) => l.text), ["7 eggs"]);
-});
-
-test("J17.14 · an empty edit deletes nothing, and says what does", async () => {
-  const { call } = await aBook();
-  const added = await call(ADD_LINES, { items: ["milk"] });
-  const id = added.added[0].itemId;
-  const out = await call(EDIT_LINES, { items: [{ itemId: id, text: "   ", was: "milk" }] });
-  assert.deepEqual(out.edited, []);
-  assert.match(out.notEdited[0].reason, /remove_from_list/);
-  assert.deepEqual(out.plan.byHand.map((l) => l.text), ["milk"]);
-});
-
-test("J17.14 · a recipe's line, or a line that is not there, is missing rather than edited", async () => {
-  const { call, idOf } = await aBook();
-  const planned = await call(ADD, { meals: [{ recipeId: idOf("Chicken pie") }] });
-  const out = await call(EDIT_LINES, {
-    items: [{ itemId: "onion|unit:", text: "2 onions", was: "1 onion" }, { itemId: "nope", text: "x", was: "y" }],
-  });
-  assert.deepEqual(out.edited, []);
-  assert.deepEqual(out.missing, ["onion|unit:", "nope"]);
-  assert.deepEqual(out.plan.toBuy, planned.plan.toBuy, "the recipe's list is untouched");
-});
-
-test("J17.14 · an edit that loses to a person's edit landing at the same moment says so", async () => {
-  const { call, book, win, setRemotePlan } = await aBook();
-  const added = await call(ADD_LINES, { items: ["milk"] });
-  const id = added.added[0].itemId;
-  await tick();
-  // Between the tool reading the book and writing it, a phone edits the
-  // same line, stamped later.
-  await book.refresh();
-  setRemotePlan(win.RecipePlan.editItem(book.plan, id, "oat milk", Date.now() + 100000));
-
-  const out = await EDIT_LINES.run(book, { items: [{ itemId: id, text: "2 l milk", was: "milk" }] });
-
-  assert.deepEqual(out.edited, []);
-  assert.deepEqual(out.changed, [{ itemId: id, now: "oat milk" }]);
-  assert.match(out.changedNote, /Read the plan again/);
-});
-
-test("J17.14 · edit_list answers whatever arrives, and is held to the list's own limits", async () => {
-  const { call, win } = await aBook();
-  const added = await call(ADD_LINES, { items: ["milk"] });
-  const id = added.added[0].itemId;
-  for (const args of [{}, { items: null }, { items: [3, null, "x"] }, { items: [{ itemId: 5, text: 6 }] }]) {
-    const out = await call(EDIT_LINES, args);
-    assert.ok(out && (out.error || Array.isArray(out.edited)), JSON.stringify(args));
-  }
-  const many = await call(EDIT_LINES, { items: Array.from({ length: 21 }, () => ({ itemId: id, text: "x", was: "milk" })) });
-  assert.match(many.error, /at most 20/);
-  const long = await call(EDIT_LINES, { items: [{ itemId: id, text: "a".repeat(119) + "😀" + "b".repeat(50), was: "milk" }] });
-  assert.equal(long.edited[0].text, "a".repeat(119), "clipped whole, never half a character");
-  assert.equal(long.edited[0].text.length <= win.RecipePlanStore.limits.MAX_ITEM_CHARS, true);
-});
-
-test("J17.14 · a finished week is not one to edit lines in (J17.9)", async () => {
-  const { call, win, setRemotePlan } = await aBook();
-  setRemotePlan({ ...win.RecipePlan.emptyPlan(1000), completedAt: 2000 });
-  const out = await call(EDIT_LINES, { items: [{ itemId: "x", text: "y", was: "z" }] });
-  assert.match(out.error, /finished/);
-});
-
-test("J17.14 · add_to_list points at edit_list for something already on the list", () => {
-  assert.match(ADD_LINES.description, /edit that line \(edit_list\)/);
-  assert.match(EDIT_LINES.description, /`was`/);
-});
-
-test("J17.14 · an edit without `was` is not an edit: it cannot tell itself from an overwrite", async () => {
-  const { call, book, win } = await aBook();
-  const added = await call(ADD_LINES, { items: ["6 eggs"] });
-  const id = added.added[0].itemId;
-  book.planStore.setPlan(win.RecipePlan.editItem(book.plan, id, "7 eggs", Date.now() + 5));
-  await book.pushNow();
-
-  for (const was of [undefined, null, 6]) {
-    const out = await call(EDIT_LINES, { items: [{ itemId: id, text: "12 eggs", was }] });
-    assert.deepEqual(out.edited, [], String(was));
-    assert.match(out.notEdited[0].reason, /Send `was`/);
-  }
-  assert.deepEqual((await call(by("get_plan"), {})).shoppingList.byHand.map((l) => l.text), ["7 eggs"]);
 });

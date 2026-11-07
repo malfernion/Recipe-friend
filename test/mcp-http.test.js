@@ -153,7 +153,7 @@ test("a database that cannot be asked is a 503, not a wrong key", async () => {
   assert.equal(res.headers.get("retry-after"), "5");
 });
 
-test("J17.1 · with a good key, an MCP client connects and is offered the twelve tools", async () => {
+test("J17.1 · with a good key, an MCP client connects and is offered the six tools", async () => {
   const { url, asked, logged } = await start();
   const client = new Client({ name: "test", version: "1.0.0" });
   await client.connect(
@@ -165,7 +165,7 @@ test("J17.1 · with a good key, an MCP client connects and is offered the twelve
   const { tools } = await client.listTools();
   await client.close();
 
-  assert.equal(tools.length, 12);
+  assert.equal(tools.length, 6);
   assert.ok(asked.length >= 2 && asked.every((k) => k === GOOD), "every request is checked on its own");
   assert.ok(logged.some((line) => line.includes(`agent=${AGENT.slice(0, 8)}`)), "the log names the agent");
   assert.ok(logged.every((line) => !line.includes(GOOD)), "and never the key");
@@ -341,7 +341,7 @@ test("J17.15 · a connected app's token reaches the tools as its agent, and keys
   const { tools } = await client.listTools();
   await client.close();
 
-  assert.equal(tools.length, 12);
+  assert.equal(tools.length, 6);
   assert.deepEqual(asked[0], { agentId: APP_AGENT, clientId: CLIENT }, "resolved as the agent and app the token names");
   assert.ok(logged.some((l) => l.includes(`agent=${APP_AGENT.slice(0, 8)} via=app`)));
   assert.ok(logged.every((l) => !l.includes(token)), "and the token is not in the log");

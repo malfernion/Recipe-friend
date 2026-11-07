@@ -115,12 +115,12 @@ http("J17.1 · a key nobody issued is a 401, marked invalid_token", async () => 
   assert.match(res.headers.get("www-authenticate"), /invalid_token/);
 });
 
-http("J17.1 · a good key lists the twelve tools and reads its own book", async () => {
+http("J17.1 · a good key lists the six tools and reads its own book", async () => {
   const { key } = await household();
   const client = await connect(key);
   try {
     const { tools } = await client.listTools();
-    assert.equal(tools.length, 12);
+    assert.equal(tools.length, 6);
 
     const out = await client.callTool({ name: "list_recipes", arguments: {} });
     assert.equal(out.isError, undefined, out.content[0].text);
@@ -134,7 +134,7 @@ http("J16.9 · a key is the same key on every request: nothing in it runs down",
   const { key } = await household();
   for (let i = 0; i < 3; i++) {
     const client = await connect(key);
-    const out = await client.callTool({ name: "get_plan", arguments: {} });
+    const out = await client.callTool({ name: "planning_history", arguments: {} });
     assert.equal(out.isError, undefined, out.content[0].text);
     await client.close();
   }
