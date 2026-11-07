@@ -521,368 +521,114 @@ Covers a share link someone sent, and a recipe an assistant wrote out.
 
 ## J12 · Planning a week
 
-> Being replaced by J18 (planned). Plan mode goes; see J18.26.
+> Mostly replaced by J18. Build step 1 has shipped: the plan's readout
+> and its shopping list are gone, and a book's lists took their place.
+> What is left here is plan mode over the recipe list, until "Add to list"
+> replaces it in step 2 (J18.26). Criteria that have gone keep their
+> numbers, so references to them still land somewhere.
 
 Someone picks several recipes, at the portions they mean to cook them at,
-so the app can tell them what to buy.
+and puts them on the shopping list.
 
-1. **A plan is a bag of meals, not a calendar.** Recipes go in with the
-   portions wanted; nothing is assigned to a day, a slot or a date. The
-   shop does not care which night the curry is, and neither does the
-   question the plan exists to answer.
-2. **A plan belongs to the book, the way its recipes and its favourites
-   do** (J3.6). One household, one plan: whoever does the shop sees what
-   whoever planned it chose. There is one live plan per book, and it needs
-   no name and no date — it is "the plan".
-3. Each book keeps its own plan in its own local cache, exactly as each
-   book keeps its own recipes (J9.7). Switching books switches plans.
+1. *Replaced by J18.* The plan as a bag of meals is gone; a recipe goes
+   onto a list as an item (J18.18).
+2. *Replaced by J18.1.* Lists belong to the book.
+3. *Replaced by J18.1 and J18.22.*
 4. **Planning is a mode over the list, not a screen of its own.** Turning
    it on leaves search, tag chips, Favourites and the "chicken, rice"
-   ranking (J3) working as they are, and gives every card a way in and a
-   portions stepper. Choosing between recipes is what the list is already
-   for. **Its control is a toggle and looks like one** — pressed, wearing
-   the same treatment as cook mode (J4.9) — and is named for the thing it
-   turns on: "Plan" on its own read as a place to go, when what it does is
-   put you in a mode you will want to come back out of.
+   ranking (J3) working as they are, and gives every card a way on and a
+   portions stepper. Its control is a toggle and looks like one —
+   pressed, wearing the same treatment as cook mode (J4.9).
 
-   **The stepper is there before anything is planned**, showing what the
+   **Its add puts the recipe on the book's first checklist** — Shopping —
+   at the top, as one item with each ingredient nested under it at the
+   portions the stepper shows and in the reader's own units (J18.18). It
+   says so with an Undo. A book with no checklist says where to make one.
+
+   **The stepper is there before anything is added**, showing what the
    next add will use, so portions are chosen up front rather than
-   corrected afterwards. It appeared only once a meal existed, which
-   changed the row's shape under a thumb already reaching for it and spent
-   the row's height either way. Adding takes whatever it shows, so a
-   second night goes in at the portions on screen rather than back at the
-   recipe's own.
-
-   **An empty plan says what to do about it** — "Nothing in the plan yet
-   — add recipes below" — rather than counting nothing. A bar that reads
-   "0 meals" is arithmetic where a sentence was wanted.
+   corrected afterwards.
 5. Portions default to the recipe's own servings and step the way the
    recipe view steps them (J4.2) — one serving at a time where servings
-   are known, half a batch where they are not. The plan holds the
-   portions; **the recipe is never edited** (J4.3). Once a recipe has a
-   meal the stepper steers the most recent one, so there is one control
-   with one meaning: the portions this recipe is in the plan at, or is
-   about to go in at. **The number it holds before the first add is not
-   kept** — it is not a fact about the book until somebody acts on it, so
-   it is never stored, never synced, and leaving plan mode forgets it.
-   Two people steering one stepper neither of them can see is not a
-   feature.
-6. A recipe can be planned more than once — two nights, two entries, its
-   own portions each. The list sums them without caring.
-7. In plan mode the recipe view gains a way to add what is open. Outside
-   plan mode it gains nothing: those controls fit one row on a phone
-   (J4.19), and that is not spent on a control for something you are not
-   doing.
-8. **A recipe that leaves the book leaves the plan.** Deleted, or moved
-   out by its owner (J7.10), it goes from the plan with it — a plan is a
-   list of things to cook, and a recipe nobody in this book has is not one
-   of them. What was already settled against it on the shopping list stays
-   settled (J13.12).
-9. The plan has an address (`#plan`), so Back closes it the way it closes
-   an open recipe (J4.17), and it is a view rather than a dialog for the
-   same reasons (J4.22) — it is read one-handed in an aisle, which is no
-   place to be fighting a box that will not scroll. Its breadcrumb is the
-   book it belongs to (J4.23).
-10. **A read-only member cannot plan.** The plan is the book's, so adding
-    to it is a write, and a viewer's client never pushes (J7.17) — the
-    same rule that stops them favouriting. A viewer gets the recipes and
-    no planner. That is the price of the plan being shared, and it is the
-    first thing to revisit if plans are ever made personal.
-11. **Two people can settle lines at the same time.** Recipes merge whole,
-    most recent edit winning (J9.3), because a recipe has one author at a
-    time; a shopping list has two people in one aisle. So a plan's settled
-    amounts merge **per item**, each carrying when it was settled, and
-    each is an amount rather than a step — whoever's write lands last
-    still says the right total. The meals in a plan merge whole, like a
-    recipe: nobody races to add the curry. What is added to the list by
-    hand merges item by item (J12.13), because that is exactly what two
-    people do race to do.
-12. The plan works with no network, like the rest of the app (J9.1) — and
-    it matters more here than anywhere else, because the supermarket is
-    the one building where the phone has no signal.
-13. **Anything can be added to the list by hand.** Milk and kitchen roll
-    belong to no meal, and they are the reason the list lived somewhere
-    else. What is typed is the line, exactly as typed — "2 l milk",
-    "kitchen roll" — added from the plan, and it works with no network
-    like the rest of it (J12.12). Adding to the list needs no recipe and
-    no meal: an empty plan opens and takes a line.
-
-    **Two phones adding at once both keep what they added.** The meals
-    merge whole (J12.11) because nobody races to add the curry, but
-    adding to the list all week, in the shop, often with no signal, is
-    exactly that race — so the list merges one line at a time. A line
-    taken off on one phone stays off when an older copy of the list
-    arrives from the other, because taking it off is stamped like
-    settling it is, and the later stamp wins. Within a line, what it says
-    and whether it is ticked merge apart (J13.16).
-
-    **A line belongs to the list, not to a meal.** Frozen-pizza night is
-    "2 frozen pizzas" on the list; which night it is belongs to whoever
-    keeps the calendar, as every other night does (J12.1). A meal that
-    was only a name was tried and taken out again: it added a box, a row
-    and a box under the row, and nothing a line did not already do.
+   are known, half a batch where they are not. **The recipe is never
+   edited** (J4.3). **The number on the stepper is not kept** — it is
+   never stored or synced, and leaving plan mode forgets it. Once added,
+   the items are ordinary items (J18.19) and the stepper has nothing more
+   to do with them.
+6. *Replaced by J18.20.* A recipe can go on a list more than once.
+7. In plan mode the recipe view gains a way to add what is open, at the
+   portions its own stepper shows. Outside plan mode it gains nothing:
+   those controls fit one row on a phone (J4.19), and that is not spent
+   on a control for something you are not doing.
+8. *Gone.* Items on a list do not follow the recipe they came from
+   (J18.19).
+9. **The lists have addresses** (`#lists`, `#list/<id>`; the old `#plan`
+   leads to the Lists screen), so Back closes them the way it closes an
+   open recipe (J4.17), and they are views rather than dialogs for the
+   same reasons (J4.22) — a list is read one-handed in an aisle. A list's
+   breadcrumb is the book, then Lists.
+10. *Replaced by J18.4.* A read-only member reads lists and changes
+    nothing, and gets no plan mode.
+11. *Replaced by J18.23.*
+12. *Replaced by J18.22.*
+13. *Replaced by J18.5–J18.7.* Anything can go on a list by typing it.
 
 ## J13 · Shopping from a plan
 
-> Being replaced by J18 (planned). See J18.26 for what goes.
-
-1. The shopping list is every planned recipe's ingredients, scaled to the
-   portions planned, summed into one line per thing to buy — and, beside
-   them, whatever has been added to it by hand (J13.15).
-2. **Summing happens in base units and is formatted once, at the end.**
-   Formatting first and adding the results loses ingredients: J4.8 renders
-   anything below 0.05 as 0, and three lots of "0 tsp" is not none.
-3. **A shopping quantity is never rendered as 0.** J4.8 accepts it in a
-   recipe, where the recipe as written is one tap away at full portions; a
-   shopping list that says "0 g butter" is telling you to buy nothing.
-   Below that size the line shows the item without an amount.
-
-   **And a remainder that small is finished.** Settle a kilo of the
-   1000.4 g a plan happens to ask for and four tenths of a gram are
-   left: the line stayed under "to buy" saying "1000 g sorted" with
-   nothing after it, and Copy sent you out for caster sugar you already
-   had. Nobody buys a thousandth of an egg, so what cannot be said has
-   been dealt with. It takes something having been settled against the
-   line first — otherwise a genuine pinch of saffron would mark itself
-   bought the moment it appeared, which is the same mistake pointing the
-   other way.
-4. Lines combine on the item as written, tolerating simple plurals the way
-   search does (J3.4). The app already believes "tomatoes" and "tomato"
-   are the same word when looking for a recipe; believing it here too is
-   one rule rather than two. **Where the recipes spelled it differently
-   and the line asks for more than one, the line prints a plural one of
-   them wrote** — "6 onions", not "6 onion" because the Bolognese was
-   typed in first. The app has never pluralised anything and this does
-   not start: every spelling it can print is one somebody typed, and a
-   candidate has to be another contributor's word plus an "s" or an "es".
-   **Exactly one of a thing asks the same question backwards** and gets
-   a singular one of them wrote, so a shortfall of one onion is "1 onion"
-   rather than "1 onions" — on screen and in the copy, which are named
-   together. Where nobody typed the other spelling the line keeps its
-   own, so "1 gooses" stands as written rather than being guessed at, and
-   what each recipe wrote is still under the line (J13.7), so the choice
-   is visible rather than silent.
-5. **Amounts combine only within a unit family.** 400 g tomatoes and 1 tin
-   tomatoes are two lines under one heading, because nothing in the app
-   knows how big a tin is — the same honesty as J4.6 letting "clove" and
-   "pinch" through untouched. Mass combines with mass and volume with
-   volume, since those convert; spoons and unrecognised units combine only
-   with the same unit as written, since those do not (J4.6). Three
-   teaspoons and a tablespoon are two lines, and that is the same decision
-   as the tin.
-6. Amounts are shown in the reader's preferred units (J8), so two people
-   in one book read one list each their own way. **Where the reader keeps
-   units as entered (J8.1) a summed line has no single "as entered" to
-   keep**, so it reads in the unit that most of it came from — the largest
-   contributor's. Someone who writes in cups and asked for no conversion
-   must not be handed a list in millilitres; that is the preference they
-   expressed, arriving by the back door.
-7. Every line says what it is made of — "6 onions · Bolognese 4, Curry 2"
-   — so a combination that should not have happened is visible, and one
-   that should have is obvious. **Where the recipes wrote the item
-   differently, the line says what each of them wrote**: "3 peppers ·
-   Bolognese 2 (peppers), Curry 1 (pepper)". Without that this
-   criterion is a promise it cannot keep — the plural rule (J13.4) is what
-   makes the wrong merge, and naming the recipes it came from does not
-   show you that one of them said something else.
-8. Lines with no amount ("to taste", J2.3) are grouped at the end and
-   never summed. They are things you might be out of, not quantities.
-9. **Settling a line records how much of it is settled, not that it is
-   done.** ✗ ("we have this") and ✓ ("this is in the basket") both record
-   the amount that was on the line when pressed. What is left to buy is
-   the difference — so planning another recipe wanting two more onions
-   brings two onions back, without disturbing the three already settled.
-10. **A part-settled line shows both numbers, and what is copied is the
-    shortfall.** "4 onions · 3 sorted, 1 to get" — the total is what the
-    plan asks for and belongs on screen beside what it is made of (J13.7),
-    but the only useful thing to take to a shop is what is missing.
-    Copying the total would buy four onions to get one, which is the
-    mistake the settling was there to prevent. The screen and the copy
-    must not disagree about which number is which.
-11. A settled amount is never reduced when the requirement falls. Dropping
-    a recipe leaves nothing outstanding; putting it back surfaces exactly
-    the shortfall again, because what was settled was never forgotten.
-12. Settled amounts are held per item, not per recipe, so they survive
-    recipes joining and leaving the plan. Removing the recipe that put
-    onions on the list does not un-settle onions.
-13. **Copy gives what is left**: everything neither removed nor settled,
-    one line per item, amount first. A static site has no supermarket to
-    talk to (J11), so pasting into the shopping app of your choice is the
-    interop — and copying twice must never ask for the same thing twice.
-    Where the browser can share, the same text is shared instead.
-14. Removed lines are not gone. They collapse into a group that says how
-    many, and one tap puts one back: ✗ is a fast gesture, and fast
-    gestures are mistyped. **Putting one back retracts that settlement
-    whole**, rather than returning some part of the amount — a settlement
-    is a quantity (J13.9), but the gesture that made it was one tap and so
-    is the gesture that undoes it. The retraction is stamped like any
-    other settlement, so it wins the merge (J12.11) rather than being
-    quietly undone by an older device.
-15. **A line added by hand is one line, and stays one.** It is words,
-    not a quantity: it is never summed, converted or rounded, and it is
-    never combined — not with another line added by hand, and not with
-    what a recipe asks for. Milk added twice is two lines, and "2 l milk"
-    sits beside the pancakes' 300 ml rather than inside it. Whether two
-    of them are one need is for whoever keeps the list to decide, and
-    the app does not guess: combining words is the plural rule (J13.4)
-    without the recipes to show where each came from (J13.7).
-
-    It sits first under "to buy", because the lines added by hand are
-    the ones somebody has just thought of. It settles with the same ✗
-    and ✓ as every other line, and the same Put back, but whole — a line
-    of words has no amount for part of it to be settled, and it says
-    nothing about where it came from, having come from nowhere but the
-    person who typed it. Copy takes it as it was typed (J13.13), and the
-    shop is not finished while it is outstanding (J14.2).
-16. **A line added by hand can be changed where it stands.** A typo in
-    "piza", or 7 eggs rather than 6, is fixed by tapping the words and
-    typing — not by taking the line off and typing it again, and not by
-    a button that opens a form. The words are the editor.
-
-    **Leaving the line is saving it.** Tapping away, or the keyboard's
-    Enter, keeps what was typed; there is no Save. Escape puts back what
-    was there. Nothing is written until the line is left, so a half-typed
-    word never reaches the other phone — and **a line left as it was
-    entered writes nothing at all**, so a stray tap, or Escape, cannot
-    put its old words back over an edit the other phone made meanwhile.
-    A line is one line: a line break typed or pasted becomes a space, and
-    past what a line holds (J12.13) the end is left off, and it says so.
-
-    **Emptying a line takes it off the list**, and says so with an Undo —
-    the one way a line added by hand is removed for good rather than
-    ✗'d into "already have", which is where a mistyped line used to have
-    to go.
-
-    **The line keeps its place and its tick.** Changing "milk" to "2 l
-    milk" after ticking it leaves it ticked: the app cannot tell a typo
-    from a change of mind, and taking a tick back is one tap.
-
-    **Only lines added by hand are words to edit.** A recipe's line is
-    worked out from its recipes (J13.1), and is changed through their
-    portions. The lines that can be edited wear a faint dotted underline,
-    which is also what tells them from a recipe's at a glance; there is
-    no pencil and no edit mode.
-
-    **The list does not redraw under a line being edited.** A sync
-    arriving mid-word would otherwise take the words and the caret with
-    it — the screen catches up a moment after the line is left, not at
-    the moment it is left, because leaving a line is usually a tap on
-    something else, and a redraw then would take away what was tapped.
-
-    **An edit and a tick are two facts.** "7 eggs" typed on one phone and
-    ✓ tapped on the other both survive the merge (J12.13): the words and
-    the tick each carry their own stamp, and each merges on its own.
+> Replaced by J18 (build step 1 has shipped). The summed shopping list —
+> totals across recipes, plurals folded together, part-settled amounts,
+> ✗ "already have", Copy and Share — is gone (J18.26). Two things it
+> settled carry on in J18: editing in place (J13.16 → J18.6: the words are
+> the editor, leaving saves, Escape puts back, an unchanged item writes
+> nothing, a line break becomes a space, and the list does not redraw
+> under an item being edited, J18.24), and an edit and a tick being two
+> facts that merge apart (J18.23). The numbers J13.1–J13.16 are kept for
+> the references that cite them.
 
 ## J14 · What the plan remembers
 
-> Being replaced by J18 (planned). Done, Clear and the archive go; "Last planned" stays, recorded when a recipe is added to a list (J18.21).
+> Done, Clear and the archive of finished plans are gone with the plan
+> readout (J18, build step 1). "Last planned" and the sorts that read it
+> stay (J14.5 on). Until build step 2 records an add to a list as a plan
+> (J18.21), nothing new is recorded; what was recorded already is kept.
 
-1. **Done finishes the plan**, and is the moment a plan is recorded: every
-   recipe in it is stamped as planned, the plan is archived, and an empty
-   one takes its place. A plan with no recipe in it is finished the same
-   way and records nothing (J14.3).
-2. Done happens by itself when the last outstanding line is settled — you
-   have just said you are finished by settling it, so it does not also
-   ask. It says what it did and offers Undo. Settling the last line with ✗
-   counts: a week you already had everything for was still planned.
-   **Undo is the one thing here that needs a network.** A finished plan is
-   recorded for the whole book, and taking a record back has to reach the
-   server or another device will simply hand it back. It says so rather
-   than appearing to work, which is the exception J12.12's offline promise
-   has to carry. A plan that recorded nothing (J14.3) has no record to
-   take back, so its Undo works offline like everything else.
-
-   **Undo puts back what was finished and keeps what came since.** A line
-   added in the seconds after Done — on this phone before tapping Undo,
-   or on the other one — is still there afterwards. Undo means "put that
-   back", not "and forget everything since", and nothing says so if it
-   does forget. And **a Done pressed while a sync is running stays done**:
-   a sync that finds the plan changed under it merges again on top of
-   the change rather than writing back what it read before it.
-3. **Finishing needs something on the list, not something to record.**
-   Somebody shopping from the list does not care which lines came from a
-   recipe and which were typed in, and a shop of milk and bin bags is
-   finished the way any shop is — by pressing Done, or by settling the
-   last line. An empty plan has nothing to finish and offers no Done.
-
-   **What is recorded is only ever recipes** (J14.5), so a plan with no
-   recipe in it is finished without a record: the list goes, an empty
-   plan takes its place, and nothing claims a week was planned. It says
-   what it did — "Shopping done", not "Planned 0 meals" — and offers
-   Undo like any Done.
-4. **Clear discards a plan without recording it.** A week that never
-   happened should not claim to have been planned.
+1. *Gone* (J18.26). Done finished a plan and recorded it.
+2. *Gone.*
+3. *Gone.*
+4. *Gone.* Clear discarded a plan without recording it — a plan that was
+   cleared is still never reported as planned.
 5. **What is recorded is that a recipe was planned, not that it was
-   cooked.** This is a planner, not an oven: a plan finished today may be
-   for a fortnight's time, and nothing here can know whether a pan was
-   ever used. So the word is always "planned", and the date is the date
-   the plan was finished.
+   cooked.** This is a planner, not an oven: nothing here can know
+   whether a pan was ever used. So the word is always "planned", and the
+   date is the date it was recorded (J18.21).
 6. A recipe's card and its recipe view say when it was last planned, the
    ordinary way of saying it — **"Last planned 3 weeks ago"** — because
-   that is the question being asked, not which Tuesday it was. The word
-   "last" earns its place: on a line of particulars beside "Serves 4" the
-   bare participle reads as a label for the thing rather than an answer
-   about it, and it is what says this is the most recent of several
-   rather than the only one there ever was.
+   that is the question being asked, not which Tuesday it was.
 7. **A recipe that has never been planned says nothing.** "Never planned"
    reads as a reproach on a recipe typed in five minutes ago. It still
    sorts where it matters (J14.9).
-8. A recipe in the live plan says "In the plan" instead, which is more use
-   than a date while you are deciding, and stops it being added twice by
-   accident. **Both sit on the line of particulars** — after "Serves 4 ·
-   45 min" — in italic, rather than taking a row of their own. A card's
-   rows are the scarcest thing it has and three words were spending one
-   of them; and what the plan has to say about a recipe is a particular
-   like the others, so it belongs where they are. Where a recipe has no
-   particulars to give, the note is the line.
-
-   **A card no longer counts its ingredients.** Moving the note onto that
-   line saved nothing while it did: measured on a card, the line simply
-   wrapped, and a wrapped line costs what the separate row cost — 37px
-   against 36px, which is not a saving. Nobody chooses a dinner by how
-   many ingredients it has and it was the longest of the three, so it
-   went rather than the note going back. From 375px up the line now
-   holds, at 20px; at 320 it still wraps, which is no worse than what it
-   replaced.
-
-   **The live one is marked as live**, in the accent the Plan count wears
-   in the header, because they are the same fact said in two places. A
-   date is history and stays in the colour of the line it joins.
+8. **The note sits on the line of particulars** — after "Serves 4 ·
+   45 min" — in italic, rather than taking a row of its own. A card's
+   rows are the scarcest thing it has. Where a recipe has no particulars
+   to give, the note is the line. A card does not count its ingredients.
+   ("In the plan" went with the live plan.)
 9. **Least recently planned is one of the sorts** (J15.6): least recently
    planned first, never-planned before them. **It orders the list rather
-   than narrowing it.** There is no honest threshold for "lately" — a
-   fortnight is a lot for a weeknight supper and nothing at all for a
-   Sunday roast — and while you are deciding what to cook, hiding the
-   recipes you have had recently takes away the comparison you are trying
-   to make. It puts the neglected ones under your thumb and leaves
-   everything else where it was.
-
-   It was a chip beside Favourites first, which is why this criterion
-   once had to say in a paragraph that it sorted rather than filtered:
-   there was nothing on the screen to say so. In a menu called Sort there
-   is, and the rule about what happens when a listed search is also on
-   goes the other way now — the sort wins, and the ranking breaks its
-   ties (J15.7).
+   than narrowing it.** There is no honest threshold for "lately", and
+   while you are deciding what to cook, hiding the recipes you have had
+   recently takes away the comparison you are trying to make. In a menu
+   called Sort the sort wins, and the ranking breaks its ties (J15.7).
 10. How often a recipe has been planned is counted from the same archive,
     so "most often planned" needs nothing else stored. **Every appearance
-    counts**: a recipe planned twice in one plan (J12.6) was planned
-    twice, because it is about to be eaten twice. The count is the lesser
-    of the two questions — when a recipe was last planned is the one being
-    asked (J14.6, J14.9) — but "we seem to have this constantly" deserves
-    an answer that matches what actually went on the list.
+    counts.**
 11. **Nothing about planning is stored on the recipe.** A stamp there
-    would bump its `updatedAt`, which reorders the list and would let
-    finishing a plan overwrite an edit made on another device (J9.3). The
-    archive is the record, and the recipe is left alone.
+    would bump its `updatedAt`, which reorders the list and would let a
+    record overwrite an edit made on another device (J9.3). The archive is
+    the record, and the recipe is left alone.
 12. An archived plan keeps the names of the recipes it held, so a recipe
     deleted afterwards does not leave a blank line in what was planned.
-13. **What was added to the list by hand is not kept.** It lasts as long
-    as the plan does: Done records the meals and not the list (J14.1),
-    Clear discards it with everything else (J14.4), and nothing added by
-    hand carries into the next plan. A line nobody got to is gone with
-    the week it was for — the list is a note for one shop, and the
-    record is what was planned, not what was bought. There are no
-    staples: milk every week is milk added every week.
+13. *Gone.* Lines added by hand were not kept; a list's items now stay
+    until somebody deletes them (J18.10, J18.13).
 
 ## J15 · Choosing what to look at
 
@@ -956,6 +702,11 @@ ages" being the one this journey is named for.
     push the recipes off the screen while they are open.
 
 ## J16 · Letting a program help
+
+> Since J18 build step 1 an agent has no plan to work on: the plan tools
+> are switched off, and what it may do to a book's lists is J18.25 (step
+> 3). Criteria below about the plan describe what the database still
+> allows, not a tool anybody can call.
 
 Someone wants an assistant — a program, running somewhere else — to read
 their book and help with the week's plan. It is not a person and has no
@@ -1115,6 +866,11 @@ not somebody.
 ---
 
 ## J17 · The program on the other end
+
+> The plan tools — `get_plan`, `add_to_plan`, `remove_from_plan`,
+> `add_to_list`, `edit_list`, `remove_from_list` — are switched off since
+> J18 build step 1; the criteria about them (J17.14, and wherever another names one)
+> wait for the list tools of step 3 (J18.25) to replace them.
 
 J16 let an owner place something that is not somebody in a book, and hand
 it a key. This is what that key is handed *to*: a service in `mcp/`,
@@ -1473,10 +1229,12 @@ release.
 
 ## J18 · Lists
 
-> **Planned — not yet built.** This is the agreed specification for
-> replacing the shopping list. Until each step of the build order below
-> ships, J12–J14 still describe what the app does; as each step ships,
-> the criteria it replaces come out of J12–J14 and this note shrinks.
+> **Being built.** Build step 1 has shipped — lists and items, both
+> kinds, with the plan moved into a "Shopping" checklist and the agent's
+> plan tools switched off. Steps 2 ("Add to list" on a recipe, J18.18–
+> J18.21) and 3 (agent tools for lists, J18.25) have not: until they do,
+> plan mode (J12.4–J12.7) is how a recipe reaches a list, nothing new is
+> recorded as planned, and an agent has no list tools.
 
 Somebody keeps the household's lists in the app: the shopping, what is in
 the freezer, whatever else is worth writing down. The shopping list as

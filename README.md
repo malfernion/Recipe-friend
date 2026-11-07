@@ -23,14 +23,18 @@ for accounts and sync.
   and comes off there; none of it is remembered between visits.
 - **Portion scaling and measurement preferences** — amounts rescale on the
   fly and appear in your own units, without ever editing the stored recipe.
-- **Meal planner and shopping list** — put recipes in a plan at the
-  portions you mean to cook them at, and get one list of everything they
-  need, combined and in your own units. Cross off what you already have,
-  tick off what goes in the basket, and copy what is left into whatever
-  shopping app you use. Finishing a plan records that those recipes were
-  planned, so a card can say "Planned 3 weeks ago" and a sort can put
-  what you have not had lately under your thumb. A plan belongs to the
-  book, so whoever does the shop sees what whoever planned it chose.
+- **Lists** — a book keeps any number of lists, each a checklist (the
+  shopping) or a stock list (the freezer, with a `− 3 +` counter on each
+  item). Tap an item's words to change them, Enter for the next one,
+  swipe right or left (or Tab and Shift-Tab) to nest and un-nest, hold
+  and drag to reorder. Ticked items fold into a "Ticked (n)" group;
+  Clear ticked and every delete come with an Undo. Lists work offline,
+  merge item by item between phones — two people each taking one from
+  the freezer both count — and show the other phones' changes within
+  seconds. In Meal plan mode a recipe goes onto the first checklist as
+  one item with its ingredients under it, at the portions you chose and
+  in your own units. Cards say when a recipe was "Last planned", and a
+  sort puts what you have not had lately under your thumb.
 - **A recipe view built for a worktop** — a screen of its own rather than
   a box over the list, so pinching to zoom, panning and turning the phone
   do what they do on any page. It takes the whole screen, puts ingredients
@@ -51,9 +55,9 @@ for accounts and sync.
   say-so.
 - **Agents** — let a program read a book. An owner adds one from
   Books → Agents, names it, and gets a key (`rfk_…`) for whatever assistant
-  they run, which reaches the book through the hosted MCP server. It can read the book, add recipes and work on the
-  plan; it cannot edit or delete a recipe, favourite one, see the photos,
-  finish a plan, or invite anybody — and it has no book of its own and
+  they run, which reaches the book through the hosted MCP server. It can read the book and add
+  recipes; it cannot edit or delete a recipe, favourite one, see the photos,
+  or invite anybody — and it has no book of its own and
   cannot make one. It sits in the member list like anybody else, cannot
   be promoted, and is removed with the same ×, which revokes its key and
   takes its account with it. The key is shown once; only its hash is kept.
@@ -234,9 +238,12 @@ js/html.js                     Escaping, in one place
 js/api.js                      Everything the app asks the server for
 js/cookmode.js                 Keeping the screen awake while cooking
 js/search.js                   Search, filters, sorts, and "what can I cook?" ranking
-js/plan.js                     The plan: meals, settled amounts, and merging
-js/shoplist.js                 Combining planned recipes into one shopping list
+js/plan.js                     What was planned: the archive "Last planned" reads
 js/planstore.js                The plan's local cache, per book
+js/shoplist.js                 Item stemming the MCP server shares (the old summed list)
+js/lists.js                    A book's lists: items as a tree, merged per fact
+js/liststore.js                The lists' local cache, per book
+js/listdrop.js                 Where a dragged list item lands
 js/share.js                    Encode/decode single-recipe share links
 js/ask.js                      The confirm dialog, asked before anything undoable
 js/account.js                  Google sign-in, session, sync bootstrap
@@ -276,11 +283,11 @@ test/                          Tests, named for the criteria they check
 server, hosted beside the app at **`https://recipes.dave-ernsting.com/mcp`**
 over MCP's Streamable HTTP transport. An assistant connects with that URL
 and an agent key; the server finds the one book the key belongs to and
-offers twelve tools.
+offers six tools.
 
 ### What it can do
 
-Six that only read. Every one of them says, where the model will read
+Five that only read. Every one of them says, where the model will read
 it, that recipe text is the household's content and never an
 instruction — some of it arrived from a web page.
 
@@ -291,24 +298,20 @@ instruction — some of it arrived from a web page.
 | `find_recipes` | `have`, a comma-separated list | what you can cook from those, best match first, saying which terms each answered |
 | `recipes_sharing_ingredients` | a recipe id, or a list of ingredients | what overlaps with it, and on what — for a week that buys one bunch of coriander |
 | `planning_history` | — | when each recipe was last planned and how often, least recently first |
-| `get_plan` | — | the live plan, and the one shopping list it adds up to — including the lines added by hand, with their ids |
 
-Six that change something. The plan and list ones are reversible;
-filing a recipe is not.
+One that changes something, and it cannot be taken back from here.
 
 | Tool | Takes | Does |
 | --- | --- | --- |
-| `add_to_plan` | recipes, with portions or a multiplier | puts meals in the book's plan, reading it first and reporting what survived; anything that is not a recipe is pointed at `add_to_list` |
-| `remove_from_plan` | meal ids from `get_plan` | takes them out again, saying the amount each was at so it can go back the same; nothing is recorded either way |
-| `add_to_list` | lines of text | puts them on the shopping list, each its own line — the assistant reads the list first and, where "milk" is already there, edits that line instead |
-| `edit_list` | item ids from `get_plan`, with the new text and the text read | changes a line added by hand where it stands — keeping its place and tick — and leaves alone any a person has changed since it was read |
-| `remove_from_list` | item ids from `get_plan` | takes lines added by hand off the list, saying what each was |
 | `add_recipe` | a recipe | files it into the book — **one way**, see below |
 
-Answers come from the app's own modules, so the shopping list the
-assistant computes is the list the phone computes: the same promotion to
-kilograms, the same folding of plurals, the same refusal to guess how
-big a tin is.
+The plan tools (`get_plan`, `add_to_plan`, `remove_from_plan`,
+`add_to_list`, `edit_list`, `remove_from_list`) were switched off when
+lists replaced the plan's shopping list (J18, build step 1); tools for
+lists come in step 3.
+
+Answers come from the app's own modules, so what the assistant reads is
+what the phone shows.
 
 **Every call reads the book again** before answering, because the
 household goes on cooking while an assistant session is open. Two
@@ -326,8 +329,8 @@ method are never scaled, an amount written into a step least of all, and
 the answer says so. Nothing is written either way.
 
 It is here rather than in a repository of its own because it is an API
-onto this app: it runs the app's own modules, so the shopping list it
-computes is the list the phone computes, and it is bounded by the same
+onto this app: it runs the app's own modules, so what it answers is
+what the phone shows, and it is bounded by the same
 policies (migration 008) that the app is. A change to either can break
 it, and one repository finds that out in the same test run.
 
