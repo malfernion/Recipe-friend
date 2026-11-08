@@ -6,11 +6,8 @@
  * exists and is always refused is worse than one that does not, because
  * the model will keep trying it.
  *
- * The plan tools (add_to_plan, remove_from_plan, add_to_list,
- * remove_from_list, edit_list) went with the plan's shopping list: lists
- * replaced it (J18, build step 1), and a tool writing to a plan nobody
- * reads any more would be writing into nothing. Tools for lists come in
- * build step 3 (J18.25).
+ * The plan tools went with the plan's shopping list (J18); the tools that
+ * change a list are in tools-lists.js (J18.25).
  */
 "use strict";
 

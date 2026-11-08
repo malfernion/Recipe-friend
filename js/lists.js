@@ -921,6 +921,32 @@
     return withItems(list, [{ ...item, tally: sanitizeTally(tally) }]);
   }
 
+  /**
+   * Make a counter show `target`, as this device's own + and − (J18.17):
+   * "set it to 3" from a program is the taps that get there from what the
+   * merged counter shows now, never an overwrite of anybody's tallies, so
+   * a phone's tap made meanwhile still counts. Same list back when it is
+   * already there, for a heading, or past what a tally can hold.
+   */
+  function setCount(list, id, target, deviceId) {
+    const want = Math.floor(Number(target));
+    if (list.kind !== "stock" || !DEVICE_RE.test(deviceId || "") || !Number.isFinite(want) || want < 0) return list;
+    const t = tree(list);
+    const item = t.byId.get(id);
+    if (!item || isHeading(list, id, t)) return list;
+    const raw = rawCount(item);
+    if (want === Math.max(0, raw)) return list;
+    // Up from below zero counts from the raw sum, as `bump` does; down is
+    // only ever from a value above zero, so it is the same either way.
+    const plus = want > raw ? want - raw : 0;
+    const minus = want < raw ? raw - want : 0;
+    const tally = item.tally.map((e) => [...e]);
+    const mine = tally.find((e) => e[0] === deviceId) || [deviceId, 0, 0];
+    if (mine[1] + plus > MAX_TALLY || mine[2] + minus > MAX_TALLY) return list;
+    const next = [deviceId, mine[1] + plus, mine[2] + minus];
+    return withItems(list, [{ ...item, tally: sanitizeTally([...tally.filter((e) => e[0] !== deviceId), next]) }]);
+  }
+
   // ---------------------------------------------------------------------
   // A recipe as items (J18.18)
   // ---------------------------------------------------------------------
@@ -1039,6 +1065,7 @@
     restoreItems,
     snapshot,
     bump,
+    setCount,
     recipeItems,
     shoppingListId,
     fromPlan,

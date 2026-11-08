@@ -219,7 +219,7 @@ oauth("J17.15 · an MCP client signs in through the owner's consent and reads th
   assert.equal(auth.searchParams.get("code_challenge_method"), "S256", "PKCE, as OAuth 2.1 requires");
 
   const tools = await mcp.listTools();
-  assert.equal(tools.tools.length, 6);
+  assert.equal(tools.tools.length, 9);
   const listed = await mcp.callTool({ name: "list_recipes", arguments: {} });
   assert.match(listed.content[0].text, /Lentil soup/, "the book the owner chose");
   await mcp.close();

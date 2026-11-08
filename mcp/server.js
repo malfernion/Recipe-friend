@@ -17,7 +17,7 @@
 const { Server } = require("@modelcontextprotocol/sdk/server/index.js");
 const { ListToolsRequestSchema, CallToolRequestSchema } = require("@modelcontextprotocol/sdk/types.js");
 
-const TOOLS = [...require("./tools-read.js"), ...require("./tools-write.js")];
+const TOOLS = [...require("./tools-read.js"), ...require("./tools-lists.js"), ...require("./tools-write.js")];
 
 /**
  * A failure the person running this can do something about.

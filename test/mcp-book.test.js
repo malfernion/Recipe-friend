@@ -46,6 +46,13 @@ function fakeApi({ role = "agent", rows = [] } = {}) {
       pushed.archived.push(plan);
       return true;
     },
+    // A book with no lists: an agent's sync never makes one (J18.25).
+    async fetchLists() {
+      return [];
+    },
+    async insertList() {
+      throw new Error("an agent cannot make a list");
+    },
   };
 }
 

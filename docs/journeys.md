@@ -697,10 +697,10 @@ ages" being the one this journey is named for.
 
 ## J16 · Letting a program help
 
-> Since J18 build step 1 an agent has no plan to work on: the plan tools
-> are switched off, and what it may do to a book's lists is J18.25 (step
-> 3). Criteria below about the plan describe what the database still
-> allows, not a tool anybody can call.
+> Since J18 an agent has no plan to work on: lists replaced it, and what
+> an agent may do to a book's lists is J18.25. Criteria below about the
+> plan describe what the database still allows, not a tool anybody can
+> call.
 
 Someone wants an assistant — a program, running somewhere else — to read
 their book and help with the week's plan. It is not a person and has no
@@ -861,10 +861,11 @@ not somebody.
 
 ## J17 · The program on the other end
 
-> The plan tools — `get_plan`, `add_to_plan`, `remove_from_plan`,
-> `add_to_list`, `edit_list`, `remove_from_list` — are switched off since
-> J18 build step 1; the criteria about them (J17.14, and wherever another names one)
-> wait for the list tools of step 3 (J18.25) to replace them.
+> The plan tools (`get_plan`, `add_to_plan`, `remove_from_plan` and the
+> plan's own list tools) went with the plan in J18. The list tools that
+> replaced them — `get_lists`, `add_to_list`, `edit_list` — are J17.14;
+> where another criterion here speaks of the plan, it describes what came
+> before.
 
 J16 let an owner place something that is not somebody in a book, and hand
 it a key. This is what that key is handed *to*: a service in `mcp/`,
@@ -926,8 +927,8 @@ release.
    them separately.
 6. **There is no tool for anything the key cannot do.** No
    editing or deleting a recipe, no favourite, no Done (J16.3, J16.4).
-   Editing a line on the list is another thing, and an agent may
-   (J17.14). A tool that exists
+   No making, renaming or deleting a list (J18.25). Editing an item on a
+   list is another thing, and an agent may (J17.14). A tool that exists
    and is always refused is worse than one that does not exist: the model
    keeps trying it, and reads each refusal as its own mistake rather than
    as a rule.
@@ -1141,46 +1142,61 @@ release.
     whole listing and fails when it grows past what nine tools can
     justify, and names the phrases that were shipping before this was
     written down — the point being that descriptions grow back.
-14. **The whole of the list, not only the recipes.** Lines added by hand
-    (J13.15) have a pair of tools of their own, to add and to take off,
-    and the plan says what each line is and how it stands, so that
-    anything put on can be taken off again by the id it was given. A
-    night that is not a recipe — frozen pizza — is a line on the list
-    and an entry on the agent's own calendar, not a meal (J12.13).
+14. **The book's lists, through three tools** (J18.25): one reads them,
+    one adds to one, one changes what is on one. A list is named the way a
+    person would name it — "shopping", in any case — or by its id, and a
+    name that is not a list's is answered with the names that are and a
+    sentence saying an agent does not make lists. There is no tool to
+    make, rename or delete one (J17.6), and the database refuses all
+    three in any case (J18.25).
 
     **Deciding that two lines are one need is the agent's job when the
-    agent is adding.** The app never combines a line added by hand with
-    anything (J13.15), and the server is not a second opinion on that:
-    it adds what it is given. So the tool says to read the list first,
-    and where the thing is already on it — added by somebody, or asked
-    for by a recipe — to decide whether this is more of it, the same
-    need, or something else, and to add, replace or leave it. Somebody
-    saying "we need milk" twice in a chat should not become two lines of
-    milk.
+    agent is adding.** The app never combines one item with another
+    (J18.19), and the server is not a second opinion on that: it adds
+    what it is given. So the tool says to read the list first, and where
+    the thing is already on it to decide whether this is more of it, the
+    same need, or something else — and to edit that item, add another,
+    or leave it. Somebody saying "we need milk" twice in a chat should
+    not become two lines of milk.
 
-    **A line is changed where it stands, not taken off and put back.**
-    "Make that 7 eggs", "actually oat milk" and "another bag of rice" are
-    all edits to a line already there: the tool that edits keeps the
-    line's id, its place and its tick, where taking it off and adding it
-    again loses the tick, moves it, and makes the list jump on somebody's
-    phone. So when the thing is already on the list, the choices are to
-    edit it, add another line, or leave it.
+    **An item is changed where it stands, not taken off and put back.**
+    "Make that 7 eggs", "actually oat milk" and "one fewer bolognese" are
+    edits to an item already there: the edit keeps its id, its place and
+    its tick, where deleting it and adding it again loses the tick, moves
+    it, and makes the list jump on somebody's phone.
 
-    **An edit says what it thinks it is changing.** It carries the words
-    the agent read, and where a person has changed the line since — on
-    their phone, a minute ago — it is not written over: the answer is the
-    line as it now reads, to be read again and decided on. An agent
-    working from a snapshot must not put "6 eggs" back over somebody's
-    "7 eggs". An edit that does not say what it read is refused, since it
-    cannot tell itself from an overwrite. Emptying a line is not an edit
-    from here; taking a line off
-    is its own tool, so a blank from a confused model deletes nothing.
+    **An edit to the words says what it read.** It carries the text the
+    agent read, and where a person has changed the item since — on their
+    phone, a minute ago — it is not written over: the answer is the item
+    as it now reads, to be read again and decided on. An edit that does
+    not say what it read is refused, since it cannot tell itself from an
+    overwrite. Emptying an item is not an edit from here; deleting is
+    asked for in so many words, so a blank from a confused model deletes
+    nothing.
 
-    **It is held to what a person is held to.** A line is taken as text
-    and capped as a person's is; the list is full at the same size; a
-    finished week is not one to add to (J17.9). What is reported is what
-    survived the merge, and because the list merges line by line
-    (J12.13), what survives is nearly always what was asked for.
+    **A count is set as taps.** "There are three left" is the agent's own
+    + and − from what the counter shows when it is asked, on a device id
+    of its own that is the same on every request (J18.17) — never a
+    number written over the household's taps. So a phone that took one
+    out in the meantime still counts, and what comes back is what the
+    counter now says.
+
+    **A recipe goes on as a person's does** (J18.18): one item at the top
+    of a checklist, its ingredients under it, at the servings asked — or
+    a multiplier, for a recipe that does not say what it serves (J17.12).
+    It is not recorded as planned. That record is the evidence an agent
+    reads to decide what to suggest (J14.9), and the database keeps an
+    agent out of it (J16.4); the answer says so.
+
+    **It is held to what a person is held to.** An item is a line, capped
+    as a person's is; a list is full at the same size; fifty changes at
+    most to a call. Every change is the app's own operation, merged and
+    written back by the same sync a phone runs — over the row it merged
+    with, and read again and merged again if somebody wrote in between —
+    so a phone and the agent converge (J18.23). What is reported is what
+    the book holds afterwards, read back from it (J17.9): a change that
+    did not get in is said not to have, and is not left behind to go up
+    with the next question's sync.
 15. **An assistant can sign in instead of being given a key.** The
     clients people actually use — Claude.ai and ChatGPT connectors,
     Claude Code — speak MCP's OAuth, and Claude.ai has nowhere to paste
@@ -1222,12 +1238,6 @@ release.
 ---
 
 ## J18 · Lists
-
-> **Being built.** Build steps 1 and 2 have shipped — lists and items,
-> both kinds, with the plan moved into a "Shopping" checklist, and "Add to
-> list" on a recipe in place of plan mode, recording what it adds as
-> planned (J18.18–J18.21). Step 3 (agent tools for lists, J18.25) has not:
-> until it does, an agent has no list tools and its plan tools are off.
 
 Somebody keeps the household's lists in the app: the shopping, what is in
 the freezer, whatever else is worth writing down. The shopping list as
@@ -1340,34 +1350,27 @@ and a recipe drops onto it as a single item.
     add, edit, move, tick and delete items, change counts, and put a
     recipe on a checklist at a chosen size (J18.18). It cannot make,
     rename or delete a list — those belong to the people in the book, the
-    way deleting a recipe does (J16).
+    way deleting a recipe does (J16). A recipe it puts on a list is not
+    recorded as planned (J18.21): that record is what an agent reads to
+    decide what to suggest, and it is a person's to write (J16.4).
 
 ### What goes
 
-26. Removed when this ships: summing across recipes and everything that
+26. Removed by lists: summing across recipes and everything that
     serves it (J13.1–J13.12), part-settled amounts and ✗ "already have"
     (J13.9–J13.14), plan mode and the portions stepper on recipe cards
     (J12.4–J12.7), Done, Clear and the archive of finished plans
     (J14.1–J14.4). "Last planned" and the sort by it stay (J14.5 on,
     J18.21).
 
-### Build order
+### How it arrived
 
-Each step is a pull request of its own, and each removes the criteria it
-replaces from J12–J14 as it lands.
-
-1. **Lists and items, both kinds** (J18.1–J18.17, J18.22–J18.24),
-   replacing the current list. The book's current plan becomes a
-   checklist called "Shopping": its typed lines become items with their
-   ticks, and each planned recipe becomes a recipe item at its planned
-   portions (J18.18). The agent's plan tools (`get_plan`, `add_to_plan`,
-   `remove_from_plan`, `add_to_list`, `remove_from_list`, `edit_list`)
-   are switched off here, so nothing writes to a plan that is no longer
-   read; the agent keeps its recipe tools until step 3.
-2. **"Add to list" on a recipe** (J18.18–J18.21), and plan mode leaves
-   the recipe list.
-3. **Agent tools for lists** (J18.25), replacing the plan tools step 1
-   switched off.
+In three steps, each a pull request, all shipped. First lists and items,
+with each book's plan moved into a checklist called "Shopping" — its
+typed lines became items with their ticks, and each planned recipe a
+recipe item at its planned portions (J18.18) — and the agent's plan
+tools switched off. Then "Add to list" on a recipe, in place of plan
+mode. Then the agent's list tools (J18.25, J17.14).
 
 ---
 
@@ -1771,9 +1774,11 @@ tombstone round-tripping (J9.4), an invite previewed, redeemed and refused
 the second time (J7.4), a photo uploaded and read back through a signed
 URL (J2.8), and an agent made the way the Agents section makes one, adding a
 recipe and refused an edit (J16.3). `db-mcp-http.test.js` does the same for
-the hosted MCP server: no key, a wrong key, a good key listing the twelve
-tools and reading the book, and a revoked key refused within the cache
-bound (J17.1, J17.3, J16.7). They are there for the gap between
+the hosted MCP server: no key, a wrong key, a good key listing the nine
+tools and reading the book, a revoked key refused within the cache
+bound (J17.1, J17.3, J16.7), and a phone and the agent working on one
+list and both keeping what they did, with the agent refused a list of its
+own (J18.23, J18.25). They are there for the gap between
 what the SQL allows and what the client sends, not as a second copy of the
 policy tests.
 
