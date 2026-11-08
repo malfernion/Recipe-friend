@@ -1397,11 +1397,12 @@ and a recipe drops onto it as a single item.
     book with no lists shows a single "Lists" button. A read-only member
     sees it too (J18.4).
 28. **A list says when it was last changed**, in small muted words by its
-    title — "Edited 3 days ago", worded as "Last planned" is (J14.6). It
-    is worked out from the list's own dates, so it is there offline and
-    moves when a change arrives, and it says nothing if the list holds
-    no date. A counter tap carries no date of its own (J18.17), so on a
-    stock list it is not what moves this.
+    title — "Edited just now", "5 minutes ago", "2 hours ago", and from a
+    day on the day wording of "Last planned" (J14.6). It is worked out
+    from the list's own dates, a counter tap's included (each item's
+    counter keeps the date of its latest change, merged by the newest), so
+    it is there offline and moves when a change arrives. It stays current
+    while the list is open, and says nothing if the list holds no date.
 
 ### How it arrived
 

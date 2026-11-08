@@ -15,6 +15,7 @@
  *                                 // is a fractional key among its siblings
  *     text, textAt,               // what it says
  *     ticked, tickAt,             // checklists (J18.11)
+ *     countAt,                    // newest counter change, merged by max (J18.28)
  *     gone: false,
  *     tally: [[device, plus, minus]]  // stock lists: a PN-counter (J18.17)
  *   }
@@ -263,6 +264,7 @@
       textAt: stamp(raw.textAt) ?? addedAt,
       ticked: raw.ticked === true,
       tickAt: stamp(raw.tickAt) ?? 0,
+      countAt: stamp(raw.countAt) ?? 0,
       gone: false,
       tally: sanitizeTally(raw.tally),
     };
@@ -384,6 +386,7 @@
       textAt: words.textAt,
       ticked: tick.ticked,
       tickAt: tick.tickAt,
+      countAt: Math.max(a.countAt || 0, b.countAt || 0),
       gone: false,
       tally: mergeTally(a.tally, b.tally),
     };
@@ -535,6 +538,7 @@
       see(i.posAt);
       see(i.textAt);
       see(i.tickAt);
+      see(i.countAt);
     }
     return at;
   }
@@ -742,6 +746,7 @@
       textAt: at,
       ticked: false,
       tickAt: 0,
+      countAt: 0,
       gone: false,
       tally: [],
     };
@@ -941,7 +946,7 @@
    * there adds what it takes to show 1, so the tap still means "one more".
    * A heading has no counter (J18.16).
    */
-  function bump(list, id, delta, deviceId) {
+  function bump(list, id, delta, deviceId, now = Date.now()) {
     if (list.kind !== "stock" || !DEVICE_RE.test(deviceId || "")) return list;
     const t = tree(list);
     const item = t.byId.get(id);
@@ -960,7 +965,7 @@
     } else {
       tally.push([deviceId, plus, minus]);
     }
-    return withItems(list, [{ ...item, tally: sanitizeTally(tally) }]);
+    return withItems(list, [{ ...item, tally: sanitizeTally(tally), countAt: after(item.countAt, now) }]);
   }
 
   /**
@@ -970,7 +975,7 @@
    * a phone's tap made meanwhile still counts. Same list back when it is
    * already there, for a heading, or past what a tally can hold.
    */
-  function setCount(list, id, target, deviceId) {
+  function setCount(list, id, target, deviceId, now = Date.now()) {
     const want = Math.floor(Number(target));
     if (list.kind !== "stock" || !DEVICE_RE.test(deviceId || "") || !Number.isFinite(want) || want < 0) return list;
     const t = tree(list);
@@ -986,7 +991,7 @@
     const mine = tally.find((e) => e[0] === deviceId) || [deviceId, 0, 0];
     if (mine[1] + plus > MAX_TALLY || mine[2] + minus > MAX_TALLY) return list;
     const next = [deviceId, mine[1] + plus, mine[2] + minus];
-    return withItems(list, [{ ...item, tally: sanitizeTally([...tally.filter((e) => e[0] !== deviceId), next]) }]);
+    return withItems(list, [{ ...item, tally: sanitizeTally([...tally.filter((e) => e[0] !== deviceId), next]), countAt: after(item.countAt, now) }]);
   }
 
   // ---------------------------------------------------------------------

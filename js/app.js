@@ -1730,9 +1730,16 @@
     const el = $("#list-edited");
     if (!el) return;
     const at = RecipeLists.lastEdited(currentList());
-    const when = at && window.RecipePlan ? window.RecipePlan.relativeWhen(at) : "";
+    const when = at && window.RecipePlan ? window.RecipePlan.editedWhen(at) : "";
     el.textContent = when ? `Edited ${when}` : "";
     el.hidden = !when;
+  }
+
+  // Kept current while a list is on screen: only this line, never the items.
+  if (typeof window.setInterval === "function") {
+    window.setInterval(() => {
+      if (listView.open) renderListEdited();
+    }, 60000);
   }
 
   /** The Lists button and the recipe view's Add to list. Called from render(). */

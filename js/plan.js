@@ -625,7 +625,23 @@
     return when ? `Last planned ${when}` : "";
   }
 
+  /**
+   * How long ago a list was edited (J18.28): to the minute within the last
+   * day, since a shopping list is worth knowing the age of in hours, then
+   * the day wording of relativeWhen. Only for that label.
+   */
+  function editedWhen(at, now = Date.now()) {
+    if (!at) return "";
+    const mins = Math.floor((now - at) / 60000);
+    if (mins < 1) return "just now";
+    if (mins < 60) return `${mins} ${mins === 1 ? "minute" : "minutes"} ago`;
+    const hours = Math.floor(mins / 60);
+    if (hours < 24) return `${hours} ${hours === 1 ? "hour" : "hours"} ago`;
+    return relativeWhen(at, now);
+  }
+
   global.RecipePlan = {
+    editedWhen,
     emptyPlan,
     addMeal,
     removeMeal,
