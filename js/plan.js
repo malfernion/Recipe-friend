@@ -339,6 +339,24 @@
     return Boolean(plan && (plan.meals.length > 0 || liveItems(plan).length > 0));
   }
 
+  /**
+   * One recipe, recorded as planned: a finished plan holding that one
+   * meal, at the portions it was added for (J18.21). Adding a recipe to a
+   * list writes one of these to the archive, so "Last planned" and its
+   * sorts read it as they read a finished week (J14.5). `portions` is
+   * servings where the recipe has them, else the J4.2 multiplier.
+   */
+  function plannedMeal(recipe, portions, now = Date.now()) {
+    const plan = addMeal(emptyPlan(now), recipe, now);
+    const meal = plan.meals[0];
+    const wanted = Number(portions) > 0 ? Number(portions) : 0;
+    if (wanted) {
+      if (meal.portions) meal.portions = wanted;
+      else meal.multiplier = wanted;
+    }
+    return complete(plan, now);
+  }
+
   /** Finish a plan: it is archived as it stands, stamped with the date (J14.1, J14.5). */
   function complete(plan, now = Date.now()) {
     if (!plan || plan.meals.length === 0) return plan; // J14.3 — nothing to record
@@ -627,6 +645,7 @@
     touchedAt,
     isPlanned,
     complete,
+    plannedMeal,
     mergePlans,
     generationAfter,
     plannedIndex,

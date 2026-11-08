@@ -84,8 +84,7 @@ body.viewing .app-footer {
   from here. Row-level security is what actually refuses — this is about
   not offering a control that would fail.
 */
-body.read-only .fav-btn,
-body.read-only .plan-card-row {
+body.read-only .fav-btn {
   display: none;
 }
 
@@ -1659,86 +1658,34 @@ button.crumb:hover {
   color: var(--ink-faint);
 }
 
-/* ---------- Plan mode, until "Add to list" (J12.4, J18 step 2) ----------
-   One row added to a card and one bar over the list. The readout and
-   its shopping list went with lists (J18.26). */
-
-/*
-  A ghost button that is currently on, in the same accent cook mode wears
-  when it is holding the screen awake (.cook-on): the app has one way of
-  saying "this is on now" and this is it. The hairline doubles rather than
-  thickening — an inset shadow sits above the border and changes no box's
-  size, and a toggle that reflows the bar it lives in (J4.19) is worse
-  than a quiet one.
-*/
-.btn.is-on {
-  color: var(--accent);
-  border-bottom-color: var(--accent);
-  box-shadow: inset 0 -1px var(--accent);
+/* Add to list (J18.18): a short column of big targets. */
+.addlist-dialog {
+  max-width: 24rem;
 }
 
-/* Which list plan mode adds to, over the recipes you are choosing from. */
-.plan-bar {
+.addlist-lists {
   display: flex;
-  align-items: center;
-  justify-content: space-between;
-  flex-wrap: wrap;
-  gap: 0.5rem 1rem;
-  margin: 0 0 1.9rem;
-  padding: 0.6rem 0.9rem;
-  border: 1px solid var(--rule);
-  background: var(--paper-raised);
+  flex-direction: column;
+  gap: 0.4rem;
+  margin: 0 0 1.1rem;
 }
 
-.plan-bar-text {
-  margin: 0;
-  font-family: var(--serif);
-  font-style: italic;
-  font-size: 0.95rem;
-  color: var(--ink-soft);
-}
-
-/* The card's way on, and the portions it adds at. */
-.plan-card-row {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 0.4rem 0.6rem;
-  /*
-    The card's last line, so it takes the card's slack and lines up across
-    a row of cards whether or not a recipe has tags.
-  */
-  margin-top: auto;
-  padding-top: 0.75rem;
-  border-top: 1px solid var(--rule);
-}
-
-.recipe-card:has(.plan-card-row) .card-tags {
-  margin-top: 0;
-}
-
-.plan-add {
-  border: 1px solid var(--rule-strong);
-  padding: 0.5rem 0.7rem;
+.addlist-pick {
   min-height: 2.75rem;
+  text-align: left;
+  border: 1px solid var(--rule);
 }
 
-.plan-add:hover {
-  border-color: var(--accent);
+.addlist-pick[aria-pressed="true"] {
   color: var(--accent);
+  border-color: var(--accent);
 }
 
-.plan-portions {
-  display: inline-flex;
+.addlist-portions {
+  display: flex;
   align-items: center;
-  gap: 0.3rem;
-}
-
-/* Narrower than the recipe view's: a card is 280px and holds a stepper
-   and a button on one row. */
-.plan-portions .scale-value {
-  min-width: 4.6rem;
-  font-size: 0.95rem;
+  gap: 0.4rem;
+  margin: 0 0 1.1rem;
 }
 
 .plan-empty {
@@ -2444,19 +2391,21 @@ button.crumb:hover {
   }
 
   /*
-    At 320px the one-row bar is about a dozen pixels too wide, and it may
-    not wrap — the spacer would put every control after it on a second
-    line. The tracking and the padding give up those pixels instead; the
-    44px targets and the words on the controls both stay.
+    At 320px the one-row bar is too wide, and it may not wrap — the spacer
+    would put every control after it on a second line. The tracking, the
+    gaps and the padding give up the pixels instead; the 44px targets and
+    the words on the controls both stay. The widest the recipe's bar gets
+    is "+ List", "☀ Staying on", Share, Copy and Move together (an owner
+    of two books, cook mode on), and that has to sit inside the gutter.
   */
   .detail-actions,
   #recipe-form .action-bar {
-    gap: 0.25rem;
+    gap: 0.15rem;
   }
 
   .detail-actions .btn,
   #recipe-form .action-bar .btn {
-    letter-spacing: 0.1em;
+    letter-spacing: 0.04em;
     padding-inline: 0.15rem;
   }
 

@@ -1,11 +1,10 @@
 /**
- * J12 plan mode and J14 "Last planned" — driven through the app.
+ * J18.18-J18.21 "Add to list", and J14 "Last planned" — driven through the app.
  *
- * The plan readout, its summed shopping list, Done and Clear went with
- * lists (J18, build step 1). What is left until step 2 is plan mode over
- * the recipe list, whose add now puts the recipe on the book's first
- * checklist as one item with its ingredients under it (J18.18), and the
- * record of what was planned, which the cards and the sorts read (J14.5
+ * Add to list replaced plan mode (J12.4, J18 build step 2): the recipe
+ * view opens a small chooser — which checklist, how many portions — and an
+ * add puts the recipe on that list as one item with its ingredients under
+ * it, and records one archived plan the cards and the sorts read (J14.5
  * on). The list screen itself is test/app-lists.test.js.
  */
 "use strict";
@@ -61,12 +60,23 @@ function planning(recipes, options = {}) {
     /** Shopping's items as drawn: text and depth, top to bottom. */
     items: () =>
       Lists.rows(ui.listStore.get(shopping.id)).map((r) => `${"  ".repeat(r.depth)}${r.item.text}`),
-    planOn: () => ui.el("plan-btn").fire("click"),
-    /** Press one of a card's plan controls. */
-    card: (action, id) =>
-      ui.el("recipe-list").fire("click", {
-        target: { closest: (sel) => (sel === "[data-plan]" ? { dataset: { plan: action, id } } : null) },
+    /** Press one of the chooser's controls. */
+    choose: (action, id) =>
+      ui.el("addlist-content").fire("click", {
+        target: { closest: (sel) => (sel === "[data-al]" ? { dataset: { al: action, id } } : null) },
       }),
+    /** Open a recipe and press its Add to list. */
+    openChooser: (name) => {
+      api.openRecipe(api.named(name).id);
+      ui.el("detail-addlist-btn").fire("click");
+    },
+    stepper: () => ui.el("addlist-value").textContent,
+    /** Add from the chooser as it stands, then answer to the archive. */
+    addAs: (name) => {
+      api.openChooser(name);
+      api.choose("add");
+    },
+    archived: () => ui.planStore.archive,
     titles: () => {
       const out = [];
       const re = /<h3 class="card-title">([^<]*)<\/h3>/g;
@@ -90,130 +100,244 @@ function planning(recipes, options = {}) {
   return api;
 }
 
-function planMode(recipes, options) {
-  const app = planning(recipes, options);
-  app.planOn();
-  return app;
-}
-
-const stepperOnCard = (app) => {
-  const m = /<span class="scale-value">([^<]*)<\/span>/.exec(app.el("recipe-list").innerHTML);
-  return m ? m[1] : "";
-};
-
 // ---------------------------------------------------------------------
-// J12 · Plan mode, putting recipes on Shopping (J18.18)
+// J18.18 · Add to list
 // ---------------------------------------------------------------------
 
-test("J12.4 · planning is a mode over the list: search, filters and Favourites go on working", () => {
-  const app = planMode([BOLOGNESE, CURRY, PANCAKES]);
-
-  app.el("search-input").value = "curry";
-  app.el("search-input").fire("input");
-  assert.deepEqual(app.titles(), ["Curry"], "search still narrows the list in plan mode");
-
-  app.el("search-input").value = "";
-  app.el("search-input").fire("input");
-  app.tapTag("quick");
-  assert.deepEqual(app.titles().sort(), ["Curry", "Pancakes"], "and so does a tag");
-
-  const curry = app.named("Curry");
-  app.store.toggleFavorite(curry.id);
-  app.el("favorites-filter").fire("click");
-  assert.deepEqual(app.titles(), ["Curry"], "and so does Favourites");
-});
-
-test("J12.4 · outside plan mode the cards are the cards", () => {
+test("J18.18 · the recipe list has no plan mode: no toggle, no card steppers", () => {
   const app = planning([BOLOGNESE]);
-  assert.doesNotMatch(app.el("recipe-list").innerHTML, /data-plan/);
-  assert.equal(app.el("plan-bar").hidden, true);
+  assert.doesNotMatch(app.el("recipe-list").innerHTML, /data-plan|plan-card-row/);
+  const page = require("node:fs").readFileSync(require("node:path").join(__dirname, "..", "index.html"), "utf8");
+  assert.doesNotMatch(page, /id="plan-btn"|id="plan-bar"|id="detail-plan-btn"/, "and the page has neither");
 });
 
-test("J18.18 · + Add puts the recipe on Shopping as one item, its ingredients nested under it", () => {
-  const app = planMode([BOLOGNESE]);
-  assert.match(app.el("recipe-list").innerHTML, /data-plan="add"[^>]*aria-label="Add Bolognese to Shopping"/);
-  assert.match(app.el("plan-bar-text").textContent, /Adding to Shopping/);
+test("J18.18 · Add to list opens a chooser: the first checklist, the recipe's servings", () => {
+  const app = planning([BOLOGNESE]);
+  app.openRecipe(app.named("Bolognese").id);
+  assert.equal(app.el("detail-addlist-btn").hidden, false);
+  app.el("detail-addlist-btn").fire("click");
+  assert.equal(app.el("addlist-dialog").open, true);
+  const html = app.el("addlist-content").innerHTML;
+  assert.match(html, new RegExp(`data-id="${app.shopping.id}"[^>]*>Shopping<`));
+  assert.match(html, /Bolognese/);
+  assert.equal(app.stepper(), "Serves 4");
+  assert.match(html, /aria-live="polite"/, "the number is read out as it changes");
+  assert.match(html, /btn btn-primary" data-al="add"/, "and Add is the primary action");
+});
 
-  app.card("add", app.named("Bolognese").id);
+test("J18.18 · only checklists are offered, and a stock list is not one", () => {
+  const app = planning([BOLOGNESE]);
+  app.listStore.create("Freezer", "stock");
+  app.openChooser("Bolognese");
+  assert.doesNotMatch(app.el("addlist-content").innerHTML, /Freezer/);
+});
+
+test("J18.18 · Add puts the recipe on the list as one item, its ingredients nested under it", () => {
+  const app = planning([BOLOGNESE]);
+  app.addAs("Bolognese");
   assert.deepEqual(app.items(), ["Bolognese", "  2 onions", "  400 g tomatoes"]);
-  assert.equal(app.planStore.plan.meals.length, 0, "and nothing goes into the old plan");
+  assert.equal(app.el("addlist-dialog").open, false, "and the chooser closes");
+  assert.equal(app.planStore.plan.meals.length, 0, "nothing goes into the old plan");
   assert.match(app.el("toast").textContent, /Added “Bolognese” to Shopping/);
 });
 
-test("J18.18 · it goes at the top, and at the portions the stepper shows", () => {
-  const app = planMode([CURRY, BOLOGNESE]);
-  app.card("add", app.named("Curry").id);
-  const id = app.named("Bolognese").id;
-  assert.match(stepperOnCard(app), /Serves 4/, "the stepper is there before anything is added");
-  app.card("up", id);
-  app.card("up", id);
+test("J18.18 · it goes at the top, at the portions the stepper shows, and the recipe is never edited", () => {
+  const app = planning([CURRY, BOLOGNESE]);
+  app.addAs("Curry");
+  app.openChooser("Bolognese");
+  app.choose("up");
+  app.choose("up");
+  assert.equal(app.stepper(), "Serves 6");
   assert.equal(app.items().length, 3, "stepping adds nothing");
-  app.card("add", id);
+  app.choose("add");
   assert.deepEqual(app.items().slice(0, 3), ["Bolognese", "  3 onions", "  600 g tomatoes"],
-    "six servings of a recipe for four, at the top of the list");
-  assert.equal(app.store.getById(id).servings, 4, "and the recipe itself is never edited");
+    "six servings of a recipe for four, above the curry");
+  assert.equal(app.store.getById(app.named("Bolognese").id).servings, 4);
 });
 
-test("J12.5 · a recipe with no servings steps by half a batch", () => {
-  const app = planMode([aRecipe({ name: "Stock", ingredients: [{ amount: 1, unit: "l", item: "water" }] })]);
-  const id = app.named("Stock").id;
-  app.card("up", id);
-  assert.match(stepperOnCard(app), /× 1½/);
-  app.card("add", id);
+test("J18.18 · the stepper steps a serving at a time, and never below one", () => {
+  const app = planning([aRecipe({ name: "Toast", servings: 2 })]);
+  app.openChooser("Toast");
+  app.choose("down");
+  app.choose("down");
+  assert.equal(app.stepper(), "Serves 1");
+});
+
+test("J18.18 · a recipe with no servings steps by half a batch", () => {
+  const app = planning([aRecipe({ name: "Stock", ingredients: [{ amount: 1, unit: "l", item: "water" }] })]);
+  app.openChooser("Stock");
+  assert.equal(app.stepper(), "× 1");
+  app.choose("up");
+  assert.equal(app.stepper(), "× 1½");
+  app.choose("add");
   assert.deepEqual(app.items(), ["Stock", "  1½ l water"]);
 });
 
+test("J18.18 · the chooser starts again from the servings each time: the number is not kept", () => {
+  const app = planning([BOLOGNESE]);
+  app.openChooser("Bolognese");
+  app.choose("up");
+  app.el("addlist-dialog").close();
+  app.el("detail-addlist-btn").fire("click");
+  assert.equal(app.stepper(), "Serves 4");
+});
+
+test("J18.18 · with several checklists the one picked is the one used, and is remembered next time", () => {
+  const app = planning([BOLOGNESE, CURRY]);
+  const party = app.listStore.create("Party", "checklist");
+  app.openChooser("Bolognese");
+  const drawn = app.el("addlist-content").innerHTML;
+  app.choose("pick", party.id);
+  assert.equal(app.el("addlist-content").innerHTML, drawn, "picking changes the controls in place, so focus stays");
+  app.choose("add");
+  assert.equal(app.listStore.get(party.id).items.filter((i) => i.text === "Bolognese").length, 1);
+  assert.equal(app.items().length, 0, "Shopping is untouched");
+
+  app.openChooser("Curry");
+  app.choose("add");
+  assert.equal(app.listStore.get(party.id).items.filter((i) => i.text === "Curry").length, 1,
+    "the last list used is where the next chooser starts");
+});
+
 test("J18.20 · a recipe can go on more than once, each its own item", () => {
-  const app = planMode([CURRY]);
-  app.card("add", app.named("Curry").id);
-  app.card("add", app.named("Curry").id);
+  const app = planning([CURRY]);
+  app.addAs("Curry");
+  app.addAs("Curry");
   assert.equal(app.items().filter((t) => t === "Curry").length, 2);
 });
 
 test("J18.10 · the add says so with an Undo, and Undo takes it all back off", () => {
-  const app = planMode([BOLOGNESE]);
-  app.card("add", app.named("Bolognese").id);
+  const app = planning([BOLOGNESE]);
+  app.addAs("Bolognese");
   app.el("toast-action").fire("click");
   assert.deepEqual(app.items(), []);
 });
 
-test("J12.5 · a number nobody has acted on is not kept — leaving plan mode forgets it", () => {
-  const app = planMode([BOLOGNESE]);
-  app.card("up", app.named("Bolognese").id);
-  assert.match(stepperOnCard(app), /5/);
-  app.planOn();
-  app.planOn();
-  assert.match(stepperOnCard(app), /4/);
+test("J18.18 · with no checklist, the chooser says so and offers to make Shopping", () => {
+  const app = planning([BOLOGNESE], { shopping: false });
+  app.openChooser("Bolognese");
+  const html = app.el("addlist-content").innerHTML;
+  assert.match(html, /no checklist/);
+  assert.match(html, /Make “Shopping”/);
+  assert.doesNotMatch(html, /data-al="add"/);
+
+  app.choose("make");
+  assert.equal(app.listStore.lists[0].name, "Shopping");
+  assert.equal(app.listStore.lists[0].kind, "checklist");
+  assert.match(app.el("addlist-content").innerHTML, /data-al="add"/);
+  app.choose("add");
+  assert.equal(app.listStore.lists[0].items.some((i) => i.text === "Bolognese"), true);
 });
 
-test("J12.7 · the recipe view gains a way to add what is open only in plan mode, at its portions", () => {
-  const app = planning([BOLOGNESE]);
-  app.openRecipe(app.named("Bolognese").id);
-  assert.equal(app.el("detail-plan-btn").hidden, true);
-
-  app.planOn();
-  assert.equal(app.el("detail-plan-btn").hidden, false);
-  const up = { target: { closest: (sel) => (sel === "[data-scale]" ? { dataset: { scale: "up" } } : null) } };
-  app.el("detail-content").fire("click", up);
-  app.el("detail-content").fire("click", up);
-  app.el("detail-plan-btn").fire("click");
-  assert.deepEqual(app.items(), ["Bolognese", "  3 onions", "  600 g tomatoes"]);
-});
-
-test("J18.18 · with no checklist in the book, plan mode says where to make one", () => {
-  const app = planMode([BOLOGNESE], { shopping: false });
-  assert.match(app.el("plan-bar-text").textContent, /make one in Lists/);
-  app.card("add", app.named("Bolognese").id);
-  assert.match(app.el("toast").textContent, /no checklist/);
-});
-
-test("J18.4 · a viewer gets the recipes and no plan mode", () => {
+test("J18.4 · a viewer sees no Add to list, and a tap that got through anyway is refused", () => {
   const app = planning([BOLOGNESE]);
   app.app.setCanEdit(false);
-  assert.equal(app.el("plan-btn").hidden, true);
+  app.openRecipe(app.named("Bolognese").id);
+  assert.equal(app.el("detail-addlist-btn").hidden, true);
   assert.equal(app.el("lists-btn").hidden, false, "but the lists are there to read");
-  app.card("add", app.named("Bolognese").id);
-  assert.equal(app.items().length, 0, "and a tap that got through anyway is refused");
+  app.el("detail-addlist-btn").fire("click");
+  assert.equal(app.el("addlist-dialog").open, false);
+  assert.equal(app.items().length, 0);
+});
+
+// ---------------------------------------------------------------------
+// J18.21 · What an add records
+// ---------------------------------------------------------------------
+
+test("J18.21 · an add writes one archived plan holding that one meal, at its portions", () => {
+  const app = planning([BOLOGNESE]);
+  app.openChooser("Bolognese");
+  app.choose("up");
+  app.choose("add");
+  assert.equal(app.archived().length, 1);
+  const [record] = app.archived();
+  assert.equal(record.meals.length, 1);
+  assert.equal(record.meals[0].name, "Bolognese");
+  assert.equal(record.meals[0].portions, 5);
+  assert.ok(record.completedAt > 0);
+  assert.match(noteOnCard(app), /^Last planned/);
+});
+
+test("J18.21 · each add is its own record, so a recipe added twice is counted twice", () => {
+  const app = planning([CURRY]);
+  app.addAs("Curry");
+  app.addAs("Curry");
+  assert.equal(app.archived().length, 2);
+  const index = app.planStore.plannedIndex();
+  assert.equal(index[app.named("Curry").id].count, 2);
+});
+
+test("J18.21 · Undo takes the record back, and the recipe says nothing again", async () => {
+  const app = planning([BOLOGNESE]);
+  app.addAs("Bolognese");
+  assert.equal(app.archived().length, 1);
+  await app.el("toast-action").fire("click");
+  assert.deepEqual(app.items(), []);
+  assert.equal(app.archived().length, 0);
+  assert.equal(noteOnCard(app), "");
+});
+
+test("J18.21 · Undo with no network still takes the item off, and says the record clears when back online", async () => {
+  const app = planning([BOLOGNESE]);
+  const sync = {
+    recordPlanned: (r, p) => app.planStore.archivePlan(app.win.RecipePlan.plannedMeal(r, p)).id,
+    unrecordPlanned: async (id) => { app.planStore.removeArchived(id); return false; },
+  };
+  app.win.RecipeCloud = { sync };
+  app.addAs("Bolognese");
+  await app.el("toast-action").fire("click");
+  assert.deepEqual(app.items(), [], "the list item Undo works offline");
+  assert.match(app.el("toast").textContent, /back online/);
+});
+
+test("J14.6 · the open recipe's Last planned follows an add and its Undo", async () => {
+  const app = planning([BOLOGNESE]);
+  app.openRecipe(app.named("Bolognese").id);
+  app.el("detail-addlist-btn").fire("click");
+  app.choose("add");
+  assert.match(app.el("detail-content").innerHTML, /Last planned/);
+  await app.el("toast-action").fire("click");
+  assert.doesNotMatch(app.el("detail-content").innerHTML, /Last planned/);
+});
+
+test("J18.18 · a list deleted while the chooser is open says so, and adds nothing", () => {
+  const app = planning([BOLOGNESE]);
+  app.openChooser("Bolognese");
+  app.listStore.remove(app.shopping.id);
+  app.choose("add");
+  assert.match(app.el("toast").textContent, /gone/);
+  assert.equal(app.archived().length, 0);
+});
+
+test("J18.18 · Make Shopping makes a list of its own id, never the derived one a deleted Shopping may have tombstoned", () => {
+  const app = planning([BOLOGNESE], { shopping: false });
+  const bookId = "11111111-1111-4111-8111-111111111111";
+  app.win.RecipeCloud = { sync: { bookId } };
+  app.openChooser("Bolognese");
+  app.choose("make");
+  assert.notEqual(app.listStore.lists[0].id, app.win.RecipeLists.shoppingListId(bookId));
+});
+
+test("J18.18 · a Shopping that appeared while the chooser was open is used, not doubled", () => {
+  const app = planning([BOLOGNESE], { shopping: false });
+  app.openChooser("Bolognese");
+  app.listStore.create("Shopping", "checklist");
+  app.choose("make");
+  assert.equal(app.listStore.lists.length, 1);
+});
+
+test("J18.21 · with a sync layer the record is handed to it, and Undo asks it to take it back", async () => {
+  const app = planning([BOLOGNESE]);
+  const seen = [];
+  app.win.RecipeCloud = {
+    sync: {
+      recordPlanned: (r, p) => { seen.push(["record", r.name, p]); return "rec-1"; },
+      unrecordPlanned: async (id) => { seen.push(["undo", id]); },
+    },
+  };
+  app.addAs("Bolognese");
+  await app.el("toast-action").fire("click");
+  assert.deepEqual(seen, [["record", "Bolognese", 4], ["undo", "rec-1"]]);
 });
 
 test("J18 · the old plan's readout is not reachable: #plan is the Lists screen", () => {
@@ -264,9 +388,8 @@ test("J14.7 · a recipe that has never been planned says nothing at all", () => 
 });
 
 test("J14.8 · the note sits on the line of particulars, and the live plan no longer speaks", () => {
-  const app = planMode([BOLOGNESE]);
+  const app = planning([BOLOGNESE]);
   planned(app, app.named("Bolognese"), 21);
-  app.card("add", app.named("Bolognese").id);
   const html = app.el("recipe-list").innerHTML;
   assert.match(html, /<p class="card-meta">[^<]*·\s*<span class="card-planned/);
   assert.equal(noteOnCard(app), "Last planned 3 weeks ago");
@@ -302,12 +425,12 @@ test("J18 · a page that never loaded the lists still draws its cards, and offer
   const app = planning([BOLOGNESE], { lists: false });
   assert.deepEqual(app.titles(), ["Bolognese"]);
   assert.equal(app.el("lists-btn").hidden, true);
-  assert.equal(app.el("plan-btn").hidden, true);
+  assert.equal(app.el("detail-addlist-btn").hidden, true);
 });
 
 test("S3 · Undo of an add takes the whole recipe off, even after another phone edited an ingredient", () => {
-  const app = planMode([BOLOGNESE]);
-  app.card("add", app.named("Bolognese").id);
+  const app = planning([BOLOGNESE]);
+  app.addAs("Bolognese");
   const Lists = app.win.RecipeLists;
   const onions = Lists.liveItems(app.listStore.get(app.shopping.id)).find((i) => i.text === "2 onions");
   app.listStore.change(app.shopping.id, (l) => Lists.editText(l, onions.id, "3 red onions", Date.now() + 5));

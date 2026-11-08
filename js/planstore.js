@@ -110,10 +110,11 @@
   // The server's own limit, restated here as the thing the sum above has
   // to come in under. Exported for the test that does the sum.
   const SERVER_MAX_BYTES = 200000;
-  // Roughly eight years of weekly shopping. The server keeps every plan
-  // (007); this is only what one device carries around to answer "when was
-  // this last planned" (J14.6) without asking.
-  const MAX_ARCHIVE = 400;
+  // The server's own quota of records per book (013 keeps to it by
+  // letting the oldest go). Every add to a list is one record (J18.21), so
+  // a device that held fewer would drop what the server still has and
+  // fetch it again on every sync.
+  const MAX_ARCHIVE = 2000;
   const MAX_PORTIONS = 9999;
   const MAX_MULTIPLIER = 8;
 
@@ -322,6 +323,34 @@
     return plan;
   }
 
+  /**
+   * Hold a newest-first archive to the cap without ever forgetting that a
+   * recipe was planned (J14.6): what goes first is an older record of a
+   * recipe that has a newer one, then, only if that is not enough, the
+   * oldest of the rest.
+   */
+  function capArchive(sorted) {
+    if (sorted.length <= MAX_ARCHIVE) return sorted;
+    const seen = new Set();
+    const newest = new Set();
+    for (const plan of sorted) {
+      for (const meal of plan.meals) {
+        if (!seen.has(meal.recipeId)) {
+          seen.add(meal.recipeId);
+          newest.add(plan.id);
+        }
+      }
+    }
+    let excess = sorted.length - MAX_ARCHIVE;
+    const kept = [];
+    for (let i = sorted.length - 1; i >= 0; i--) {
+      if (excess > 0 && !newest.has(sorted[i].id)) excess--;
+      else kept.push(sorted[i]);
+    }
+    kept.reverse();
+    return kept.slice(0, MAX_ARCHIVE);
+  }
+
   function load(key) {
     let parsed;
     try {
@@ -332,11 +361,12 @@
       console.warn("Recipe Friend: could not read the saved plan.", err);
       parsed = null;
     }
-    const archive = (Array.isArray(parsed && parsed.archive) ? parsed.archive : [])
-      .map(sanitizeArchived)
-      .filter(Boolean)
-      .sort((a, b) => b.completedAt - a.completedAt)
-      .slice(0, MAX_ARCHIVE);
+    const archive = capArchive(
+      (Array.isArray(parsed && parsed.archive) ? parsed.archive : [])
+        .map(sanitizeArchived)
+        .filter(Boolean)
+        .sort((a, b) => b.completedAt - a.completedAt)
+    );
     const owed = (Array.isArray(parsed && parsed.owed) ? parsed.owed : [])
       .filter(isUuid)
       .slice(0, MAX_ARCHIVE);
@@ -347,6 +377,12 @@
       // does: the plan is recorded here and owed to the book until a sync
       // gets it up (J14.1, J12.12).
       owed,
+      // Records taken back (J18.21's Undo) that the book has not been told
+      // about: the delete is owed, and until it lands a pull must not
+      // bring the record back.
+      deleting: (Array.isArray(parsed && parsed.deleting) ? parsed.deleting : [])
+        .filter(isUuid)
+        .slice(0, MAX_ARCHIVE),
       // A device that has never seen this book's plan holds a placeholder,
       // and a placeholder is stamped zero because it has not begun. Two
       // plan ids are two plans and the later one is the one the book is on
@@ -426,6 +462,25 @@
       });
     }
 
+    /** Has this record been taken back here, with the book still to be told? */
+    owesDelete(id) {
+      return this.state.deleting.includes(id);
+    }
+
+    /** Take a record back here and owe the book the delete. */
+    queueDelete(id) {
+      if (!isUuid(id) || this.state.deleting.includes(id)) return;
+      this.state.deleting = [id, ...this.state.deleting].slice(0, MAX_ARCHIVE);
+      this._persist();
+    }
+
+    settleDelete(id) {
+      if (!this.state.deleting.includes(id)) return;
+      this._quietly(() => {
+        this.state.deleting = this.state.deleting.filter((p) => p !== id);
+      });
+    }
+
     /** The book has it now — by our push, or by somebody else's. */
     settleOwed(id) {
       if (!this.state.owed.includes(id)) return;
@@ -486,9 +541,9 @@
       const clean = sanitizeArchived(plan);
       if (!clean) return null;
       if (this.state.archive.some((p) => p.id === clean.id)) return clean;
-      this.state.archive = [clean, ...this.state.archive]
-        .sort((a, b) => b.completedAt - a.completedAt)
-        .slice(0, MAX_ARCHIVE);
+      this.state.archive = capArchive(
+        [clean, ...this.state.archive].sort((a, b) => b.completedAt - a.completedAt)
+      );
       // Recorded here; the book has not been told yet.
       if (!this.state.owed.includes(clean.id)) {
         this.state.owed = [clean.id, ...this.state.owed].slice(0, MAX_ARCHIVE);
@@ -535,11 +590,12 @@
         // settled items, and it goes into a row with the same size check
         // as the live one (007) — so an archive taken on trust is the
         // hole the paragraph above closes, moved one table across.
-        this.state.archive = archive
-          .map(sanitizeArchived)
-          .filter(Boolean)
-          .sort((a, b) => b.completedAt - a.completedAt)
-          .slice(0, MAX_ARCHIVE);
+        this.state.archive = capArchive(
+          archive
+            .map(sanitizeArchived)
+            .filter(Boolean)
+            .sort((a, b) => b.completedAt - a.completedAt)
+        );
         // A debt on a plan this device no longer holds can never be paid:
         // the push reads the archive, and the slice above is what drops
         // the oldest of them. Owing something unreachable for ever would
@@ -565,6 +621,7 @@
   // coerce a row before it believes a word of it.
   RecipePlanStore.sanitizePlan = sanitizePlan;
   RecipePlanStore.sanitizeArchived = sanitizeArchived;
+  RecipePlanStore.capArchive = capArchive;
   // For anything else that has to cut text to a cap, the MCP server's
   // tools among them.
   RecipePlanStore.clip = clip;
@@ -579,6 +636,7 @@
     MAX_NAME_CHARS,
     MAX_ITEM_CHARS,
     MAX_ARCHIVE,
+
     SERVER_MAX_BYTES,
   };
 

@@ -521,11 +521,11 @@ Covers a share link someone sent, and a recipe an assistant wrote out.
 
 ## J12 · Planning a week
 
-> Mostly replaced by J18. Build step 1 has shipped: the plan's readout
-> and its shopping list are gone, and a book's lists took their place.
-> What is left here is plan mode over the recipe list, until "Add to list"
-> replaces it in step 2 (J18.26). Criteria that have gone keep their
-> numbers, so references to them still land somewhere.
+> Replaced by J18 (build steps 1 and 2 have shipped). The plan's readout,
+> its shopping list and plan mode over the recipe list are gone, and a
+> book's lists took their place; a recipe reaches one by "Add to list" in
+> the recipe view (J18.18). Criteria that have gone keep their numbers,
+> so references to them still land somewhere.
 
 Someone picks several recipes, at the portions they mean to cook them at,
 and puts them on the shopping list.
@@ -534,32 +534,20 @@ and puts them on the shopping list.
    onto a list as an item (J18.18).
 2. *Replaced by J18.1.* Lists belong to the book.
 3. *Replaced by J18.1 and J18.22.*
-4. **Planning is a mode over the list, not a screen of its own.** Turning
-   it on leaves search, tag chips, Favourites and the "chicken, rice"
-   ranking (J3) working as they are, and gives every card a way on and a
-   portions stepper. Its control is a toggle and looks like one —
-   pressed, wearing the same treatment as cook mode (J4.9).
-
-   **Its add puts the recipe on the book's first checklist** — Shopping —
-   at the top, as one item with each ingredient nested under it at the
-   portions the stepper shows and in the reader's own units (J18.18). It
-   says so with an Undo. A book with no checklist says where to make one.
-
-   **The stepper is there before anything is added**, showing what the
-   next add will use, so portions are chosen up front rather than
-   corrected afterwards.
-5. Portions default to the recipe's own servings and step the way the
-   recipe view steps them (J4.2) — one serving at a time where servings
-   are known, half a batch where they are not. **The recipe is never
-   edited** (J4.3). **The number on the stepper is not kept** — it is
-   never stored or synced, and leaving plan mode forgets it. Once added,
-   the items are ordinary items (J18.19) and the stepper has nothing more
-   to do with them.
+4. *Gone* (J18.26). Planning was a mode over the recipe list, with a
+   toggle, a way on and a portions stepper on every card. "Add to list"
+   in the recipe view replaced it (J18.18); the recipe list is only the
+   recipe list.
+5. *Replaced by J18.18.* Portions default to the recipe's own servings and
+   step the way the recipe view steps them (J4.2) — one serving at a
+   time where servings are known, half a batch where they are not. **The
+   recipe is never edited** (J4.3), and the number chosen is not kept.
 6. *Replaced by J18.20.* A recipe can go on a list more than once.
-7. In plan mode the recipe view gains a way to add what is open, at the
-   portions its own stepper shows. Outside plan mode it gains nothing:
-   those controls fit one row on a phone (J4.19), and that is not spent
-   on a control for something you are not doing.
+7. *Replaced by J18.18.* The recipe view's own "Add to list" is the one
+   control that goes with it. It is "+ List", and at 320px the row still
+   fits inside the gutter with everything showing at once — an owner of
+   two books (Copy and Move) with cook mode on ("Staying on") — measured
+   in a browser, with the tracking and gaps tightened to make it so.
 8. *Gone.* Items on a list do not follow the recipe they came from
    (J18.19).
 9. **The lists have addresses** (`#lists`, `#list/<id>`; the old `#plan`
@@ -568,7 +556,7 @@ and puts them on the shopping list.
    same reasons (J4.22) — a list is read one-handed in an aisle. A list's
    breadcrumb is the book, then Lists.
 10. *Replaced by J18.4.* A read-only member reads lists and changes
-    nothing, and gets no plan mode.
+    nothing, and gets no "Add to list".
 11. *Replaced by J18.23.*
 12. *Replaced by J18.22.*
 13. *Replaced by J18.5–J18.7.* Anything can go on a list by typing it.
@@ -587,10 +575,16 @@ and puts them on the shopping list.
 
 ## J14 · What the plan remembers
 
-> Done, Clear and the archive of finished plans are gone with the plan
-> readout (J18, build step 1). "Last planned" and the sorts that read it
-> stay (J14.5 on). Until build step 2 records an add to a list as a plan
-> (J18.21), nothing new is recorded; what was recorded already is kept.
+> Done, Clear and finished plans are gone with the plan readout (J18).
+> What is recorded now is an add to a list (J18.21): each one writes one
+> archived plan holding that meal, and "Last planned" and the sorts that
+> read it stay as they were (J14.5 on). A book keeps its newest 2000
+> records; at that, the oldest go to make room (migration 013) rather
+> than an add being refused, and a device does not drop the newest
+> record of any recipe to stay under its own cap (once the server has
+> rolled a record off, though, the device follows it). Undo takes the record back
+> even offline: it goes from the device at once and the delete is retried
+> on the next sync.
 
 1. *Gone* (J18.26). Done finished a plan and recorded it.
 2. *Gone.*
@@ -1229,12 +1223,11 @@ release.
 
 ## J18 · Lists
 
-> **Being built.** Build step 1 has shipped — lists and items, both
-> kinds, with the plan moved into a "Shopping" checklist and the agent's
-> plan tools switched off. Steps 2 ("Add to list" on a recipe, J18.18–
-> J18.21) and 3 (agent tools for lists, J18.25) have not: until they do,
-> plan mode (J12.4–J12.7) is how a recipe reaches a list, nothing new is
-> recorded as planned, and an agent has no list tools.
+> **Being built.** Build steps 1 and 2 have shipped — lists and items,
+> both kinds, with the plan moved into a "Shopping" checklist, and "Add to
+> list" on a recipe in place of plan mode, recording what it adds as
+> planned (J18.18–J18.21). Step 3 (agent tools for lists, J18.25) has not:
+> until it does, an agent has no list tools and its plan tools are off.
 
 Somebody keeps the household's lists in the app: the shopping, what is in
 the freezer, whatever else is worth writing down. The shopping list as
@@ -1599,8 +1592,10 @@ gap is visible:
   | Desktop 1440×900 | 11 | 2 → **0** |
 
   The other five are unchanged, and no action bar moved: the plan's own
-  control in the recipe view (J12.7) is shown only in plan mode and the
-  bar still holds one row at 320px. Both entries that moved were already
+  control in the recipe view (J12.7) was shown only in plan mode (it is
+  now "+ List", J18.18, which is always there for someone who can write)
+  and the bar held one row at 320px. Adding it took the bar's tracking
+  and gaps down a notch at narrow widths; see J12.7. Both entries that moved were already
   the tightest of the seven, and both lose their last line rather than
   their first — which is the shape of the deferred preamble again, not a
   new problem. The line is not paid for anywhere: shrinking the preamble

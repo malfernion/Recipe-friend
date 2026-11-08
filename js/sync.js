@@ -77,6 +77,16 @@
     return Boolean(a) && Boolean(b) && digest(a) === digest(b);
   }
 
+  /**
+   * An insert the server has answered with a no that waiting will not
+   * change: a check or a quota the row itself fails (P0001, 23514). Not
+   * 42501: that is also what a request with no session gets, and it must
+   * keep the record owed until somebody is signed in again.
+   */
+  function refusedForGood(err) {
+    return Boolean(err) && (err.code === "P0001" || err.code === "23514");
+  }
+
   /** Nothing in it at all — no meal, no line added by hand, nothing settled. */
   function isBlank(plan) {
     return (
@@ -361,6 +371,18 @@
      */
     async syncNow() {
       if (!this.bookId || this.running) return;
+      // Kept so that something which must not overlap a run can wait for it
+      // (an Undo racing the insert it undoes, J18.21).
+      const run = this._syncNow();
+      this.inflight = run;
+      try {
+        return await run;
+      } finally {
+        if (this.inflight === run) this.inflight = null;
+      }
+    }
+
+    async _syncNow() {
       this.running = true;
       this.pending = false;
       this.status("syncing");
@@ -382,10 +404,20 @@
         const pushed = this.readOnly ? 0 : mine.length;
         if (pushed > 0) await this.api.pushRecipes(mine);
 
-        const plans = await this.syncPlans();
+        // The plan record and the lists are separate errands: one that
+        // cannot be done (the archive refusing, say) must not keep the
+        // other's changes from going up (J9.5).
+        let plans = null;
+        let planError = null;
+        try {
+          plans = await this.syncPlans();
+        } catch (err) {
+          planError = err;
+        }
         // The plan has just been pulled, so this is the one run that may
-        // move it into Shopping (build step 1).
-        const lists = await this.syncLists(null, { seed: true });
+        // move it into Shopping (build step 1) — and only if it was.
+        const lists = await this.syncLists(null, { seed: !planError });
+        if (planError) throw planError;
 
         this.status("synced", { pushed, pulled: rows.length, plans, lists });
         return { pushed, pulled: rows.length, plans, lists };
@@ -559,7 +591,19 @@
         this.planStore.owe(archived.id);
       }
 
-      const missingHere = serverIds.filter((id) => !here.has(id));
+      // A record taken back here that the book still holds: the delete is
+      // owed, and it is not to be pulled back meanwhile.
+      for (const id of [...this.planStore.state.deleting]) {
+        if (!onServer.has(id)) {
+          this.planStore.settleDelete(id);
+          continue;
+        }
+        if (this.readOnly || this.addOnly) continue;
+        await this.api.deleteArchivedPlan(this.bookId, id);
+        this.planStore.settleDelete(id);
+        onServer.delete(id);
+      }
+      const missingHere = serverIds.filter((id) => onServer.has(id) && !here.has(id));
       for (const fetched of await this.api.fetchArchivedPlans(this.bookId, missingHere)) {
         const clean = global.RecipePlanStore.sanitizeArchived(fetched.data);
         if (clean) here.set(clean.id, clean);
@@ -636,7 +680,17 @@
           continue;
         }
         if (!this.planStore.owes(mine.id)) continue;
-        if (await this.api.insertArchivedPlan(this.bookId, mine)) pushed++;
+        try {
+          if (await this.api.insertArchivedPlan(this.bookId, mine)) pushed++;
+        } catch (err) {
+          if (!refusedForGood(err)) throw err;
+          // The book will never take this one (a clock far ahead, a full
+          // book): keeping it would fail every sync from here on, and
+          // this record is only a note of when something was planned.
+          console.warn("Recipe Friend: the book refused a record of what was planned; dropping it.", err);
+          this.planStore.removeArchived(mine.id);
+          continue;
+        }
         // Either it went up or the book already had it. A throw leaves
         // the debt standing, so an offline Done is retried (J9.5).
         this.planStore.settleOwed(mine.id);
@@ -649,10 +703,53 @@
       return { pushed, pulled: missingHere.length, live };
     }
 
-    // Done, its Undo, and the Undo of a Done that recorded nothing went
-    // with the plan readout (J18, build step 1). What finished plans the
-    // archive holds still syncs above; build step 2 records an add to a
-    // list there (J18.21).
+    /**
+     * Record that a recipe was planned (J18.21): one archived plan holding
+     * that one meal. Written to this device first and owed to the book, so
+     * it works with no network and goes up on the usual push, retried
+     * until it lands (J9.5). Returns the record's id, for Undo.
+     */
+    recordPlanned(recipe, portions, now = Date.now()) {
+      if (!this.planStore || this.readOnly || this.addOnly) return null;
+      const archived = this.planStore.archivePlan(global.RecipePlan.plannedMeal(recipe, portions, now));
+      return archived ? archived.id : null;
+    }
+
+    /**
+     * Take that record back (J18.21's Undo). It goes from this device at
+     * once and the delete is owed to the book: an archived plan is
+     * reconciled by comparing ids, so a record dropped here and not there
+     * would be pulled straight back — the owed delete is what stops that,
+     * and what makes Undo work offline, retried on the next sync.
+     *
+     * It waits for a run in progress first. That run may be inserting
+     * this very record, and a delete that overtook the insert would
+     * delete nothing and leave the record on the server.
+     *
+     * Returns true when the book has been told, false when that is still
+     * to do.
+     */
+    async unrecordPlanned(planId) {
+      if (!this.planStore || !this.planStore.hasArchived(planId)) return false;
+      if (this.readOnly || this.addOnly) return false;
+      if (this.inflight) await this.inflight.catch(() => {});
+      // Still owed after any run in progress has finished: the book never
+      // got it, so there is nothing there to delete.
+      if (this.planStore.owes(planId)) {
+        this.planStore.removeArchived(planId);
+        return true;
+      }
+      this.planStore.queueDelete(planId);
+      this.planStore.removeArchived(planId);
+      try {
+        await this.api.deleteArchivedPlan(this.bookId, planId);
+        this.planStore.settleDelete(planId);
+        return true;
+      } catch (err) {
+        console.warn("Recipe Friend: could not take the record back yet; will retry.", err);
+        return false;
+      }
+    }
 
     /** Local edit happened: coalesce rapid changes into one round trip. */
     schedulePush() {
