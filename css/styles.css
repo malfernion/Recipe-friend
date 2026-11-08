@@ -1734,6 +1734,71 @@ button.crumb:hover {
    a size that needs no squinting, and nothing shares an item's row but
    its tick box or its counter (J18.5). */
 
+/* The book's lists under the app bar (J18.27): one row, never wrapped or
+   scrolled. app.js hides what does not fit with the hidden attribute. */
+.lists-bar {
+  display: flex;
+  flex-wrap: nowrap;
+  overflow: hidden;
+  gap: 0.4rem;
+  /* Margins, not padding, so clientWidth is the room the buttons have. */
+  width: calc(100% - 2.5rem);
+  max-width: calc(1060px - 2.5rem);
+  margin: 0.6rem auto 0;
+}
+
+body.viewing .lists-bar,
+body.gated .lists-bar,
+.lists-bar[hidden],
+.lists-bar [hidden] {
+  display: none;
+}
+
+.lists-bar-btn {
+  flex: 1 1 auto;
+  min-width: 0;
+  max-width: 11rem;
+  font-family: var(--sans);
+  font-size: 0.8rem;
+  font-weight: 600;
+  min-height: 44px; /* the touch floor */
+  padding: 0.5rem 0.6rem;
+  border: 1px solid var(--rule);
+  background: var(--paper-raised);
+  color: var(--ink-soft);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  cursor: pointer;
+  touch-action: manipulation;
+}
+
+/* Measuring: natural widths, before the buttons are let grow. */
+.lists-bar.measuring .lists-bar-btn {
+  flex: 0 0 auto;
+}
+
+.lists-bar .lists-bar-all {
+  flex-shrink: 0;
+  max-width: none;
+}
+
+.lists-bar-btn:hover {
+  color: var(--ink);
+  border-color: var(--rule-strong);
+}
+
+.lists-bar-btn:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.list-edited {
+  margin: 0.2rem 0 0;
+  font-size: 0.8rem;
+  color: var(--ink-soft);
+}
+
 .lists-index {
   list-style: none;
   margin: 0 0 2.2rem;

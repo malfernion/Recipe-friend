@@ -31,7 +31,9 @@ for accounts and sync.
   Clear ticked and every delete come with an Undo. Lists work offline,
   merge item by item between phones — two people each taking one from
   the freezer both count — and show the other phones' changes within
-  seconds. "+ List" in the recipe view asks which checklist and how many
+  seconds. A row under the app bar on the recipe page has a button for
+  each list (as many as fit, then "All lists"), and a list shows "Edited
+  3 days ago" by its title. "+ List" in the recipe view asks which checklist and how many
   portions, then puts the recipe at the top as one item with its
   ingredients under it, in your own units, with an Undo. That is also
   what "Last planned" records: cards say when a recipe last went on a

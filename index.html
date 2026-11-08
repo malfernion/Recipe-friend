@@ -77,8 +77,6 @@
               class="label-long">New recipe</span><span class="label-short">New</span>
       </button>
       <button id="books-btn" class="btn btn-ghost" title="Recipe books and sharing" hidden>Books</button>
-      <!-- The book's lists (J18): a place to go, read by every member. -->
-      <button id="lists-btn" class="btn btn-ghost" title="Shopping and other lists" hidden>Lists</button>
       <details class="more-menu" id="more-menu">
         <summary class="more-summary" title="More" aria-label="More actions">···</summary>
         <div class="more-panel">
@@ -110,6 +108,9 @@
       </p>
     </div>
   </section>
+
+  <!-- The book's lists, a tap from the recipes (J18.27). Filled by app.js. -->
+  <nav id="lists-row" class="lists-bar" aria-label="Lists" hidden></nav>
 
   <main class="container">
     <section class="toolbar" aria-label="Search, filter and sort">
@@ -322,6 +323,7 @@
     <div class="detail-head">
       <div class="detail-head-text">
         <h2 class="detail-title" id="list-heading" tabindex="-1"></h2>
+        <p class="list-edited" id="list-edited" hidden></p>
       </div>
     </div>
     <div id="list-content"></div>

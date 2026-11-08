@@ -83,6 +83,8 @@ function loadUI(options = {}) {
   // set here rather than after, because app.js reads them on the way in.
   if (options.hash) win.location.hash = options.hash;
   if (options.gated) win.document.body.classList.add("gated");
+  // A stand-in for document.fonts, which app.js watches to refit the lists row.
+  if (options.fonts) win.document.fonts = options.fonts;
   // The planner goes in with the rest: app.js makes a plan store as it
   // loads, and reaches for plan.js and planstore.js as bare globals, the
   // same way a browser hands them over from index.html.
