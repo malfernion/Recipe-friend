@@ -1501,9 +1501,10 @@ makes rather than the whole of PostgREST, so what they hold is which of
 those an agent is allowed to reach for — and `mcp-http.test.js` drives the
 real HTTP handler for what a caller without a good key is told.
 
-**Fifteen of the 183 criteria have no test naming them** — J4.15,
-J4.16, J4.19, J4.25, J5.10, J6.3, J10.4, J11.1 to J11.5, J12.12, J15.9
-and J15.11.
+**Fourteen criteria have no test naming them** — J4.15, J4.16, J4.19,
+J4.25, J5.10, J6.3, J10.4, J11.1 to J11.5, J15.9 and J15.11. (J12.12, that
+the plan worked offline, was the fifteenth; lists replaced it with J18.22,
+which has tests of its own.)
 
 Five of those are a correction rather than a change. J4.19, J6.3, J10.4,
 J11.5 and J15.9 had been counted as covered for a long time and are not:
@@ -1536,11 +1537,6 @@ gap is visible:
 - **Deployment and hosting** (J11) are a static host, a tunnel and a
   pinned commit in another repository. There is no code to exercise, and J5.10 records a reason
   for a decision rather than a behaviour.
-- **That the plan keeps working with no network** (J12.12) is the local
-  cache being the working copy, which J9.1 already holds tests for. There
-  is nothing about the planner that makes it truer or less true; it is
-  written down because the supermarket is where it matters and a future
-  change could break it without breaking anything a test names.
 - **What the recipe view looks like at a given size** (J4.15, J4.16,
   J4.25), and **that an open menu covers the list rather than shoving it
   down the page** (J15.11), are media queries and absolute positioning,

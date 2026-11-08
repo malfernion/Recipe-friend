@@ -784,3 +784,35 @@ test("S3 · a restored parent whose Ticked group was open keeps it open", () => 
   app.el("toast-action").fire("click");
   assert.match(app.el("list-content").innerHTML, /aria-expanded="true"[^>]*>Ticked \(1\)/);
 });
+
+test("re-review · a swipe let go outside the list still ends: the next tick redraws and the next swipe works", () => {
+  const app = checklist("Bolognese", "onions", "milk");
+  const content = app.el("list-content");
+  const row = { dataset: { liRow: app.idOf("onions"), level: "0" }, style: {}, classList: { add() {}, remove() {} } };
+  const target = { closest: (sel) => (sel === "[data-li-row]" ? row : null) };
+  content.fire("pointerdown", { target, clientX: 100, clientY: 100, pointerId: 4, button: 0 });
+  content.fire("pointermove", { target, clientX: 140, clientY: 101, pointerId: 4 });
+  // Released over something else: the list never hears it, the window does.
+  app.win.fire("pointerup", { clientX: 900, clientY: 101, pointerId: 4 });
+
+  // The next tap, as a browser sends it: a pointer goes down on the box.
+  content.fire("pointerdown", { target: { closest: () => null }, pointerId: 6, button: 0 });
+  app.tap({ li: "tick", id: app.idOf("milk") });
+  assert.match(content.innerHTML, /Ticked \(1\)/, "the tick is drawn, not held off for good");
+  app.swipe(app.idOf("onions"), 80);
+  assert.deepEqual(app.rows(), ["Bolognese", "  onions", "Ticked (1)"], "and a later swipe works");
+});
+
+test("re-review · leaving the list ends a gesture whose release never arrived", () => {
+  const app = checklist("eggs", "milk");
+  const id = app.list().id;
+  const content = app.el("list-content");
+  const row = { dataset: { liRow: app.idOf("milk"), level: "0" }, style: {}, classList: { add() {}, remove() {} } };
+  const target = { closest: (sel) => (sel === "[data-li-row]" ? row : null) };
+  content.fire("pointerdown", { target, clientX: 100, clientY: 100, pointerId: 5, button: 0 });
+  content.fire("pointermove", { target, clientX: 140, clientY: 101, pointerId: 5 });
+  app.win.history.back();
+  app.tapList(id);
+  app.tap({ li: "tick", id: app.idOf("eggs") });
+  assert.match(content.innerHTML, /Ticked \(1\)/);
+});

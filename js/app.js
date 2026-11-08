@@ -2293,6 +2293,7 @@
         g.mode = "swipe";
         window.clearTimeout(g.timer);
         g.row.classList.add("li-swiping");
+        capturePointer(g);
       } else if (Math.abs(dx) > SLOP_PX || Math.abs(dy) > SLOP_PX) {
         endGesture(); // a scroll, which is the browser's
         return;
@@ -2324,13 +2325,32 @@
     endGesture();
   }
 
-  listContent.addEventListener("pointerup", finishGesture);
-  listContent.addEventListener("pointercancel", (event) => {
+  /**
+   * The swipe or drag keeps its pointer, wherever it goes: let go outside
+   * the list — easy with a mouse on a wide screen — and the release still
+   * comes here. A gesture left running would hold every redraw off and
+   * refuse the next gesture, so the window listens too, as a backstop.
+   */
+  function capturePointer(g) {
+    if (!listContent.setPointerCapture || g.pointerId === undefined) return;
+    try {
+      listContent.setPointerCapture(g.pointerId);
+    } catch {
+      /* a pointer that has already gone */
+    }
+  }
+
+  function cancelGesture(event) {
     const g = gesture;
-    if (!g || event.pointerId !== g.pointerId) return;
+    if (!g || (event && event.pointerId !== g.pointerId)) return;
     endGesture();
     if (g.mode === "drag") renderList(true);
-  });
+  }
+
+  listContent.addEventListener("pointerup", finishGesture);
+  listContent.addEventListener("pointercancel", cancelGesture);
+  window.addEventListener("pointerup", finishGesture);
+  window.addEventListener("pointercancel", cancelGesture);
 
   // While a finger is swiping or dragging, the page must not scroll under
   // it, and a hold must not become the browser's text selection.
@@ -2373,13 +2393,7 @@
     }
     const sel = typeof window.getSelection === "function" ? window.getSelection() : null;
     if (sel) sel.removeAllRanges();
-    if (listContent.setPointerCapture && g.pointerId !== undefined) {
-      try {
-        listContent.setPointerCapture(g.pointerId);
-      } catch {
-        /* a pointer that has already gone */
-      }
-    }
+    capturePointer(g);
     if (navigator.vibrate) navigator.vibrate(12);
     suppressClick = true;
     g.y = g.y0;
@@ -2534,6 +2548,9 @@
 
   onViewClose(listsView, () => unwind(currentRoute().name === "lists"));
   onViewClose(listView, () => {
+    // Nothing half-done survives the list going: not an edit, and not a
+    // gesture whose release never arrived.
+    if (gesture) endGesture();
     editingItem = null;
     editingName = null;
     unwind(currentRoute().name === "openlist");
