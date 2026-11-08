@@ -29,11 +29,11 @@ const { loadApp } = require("./helpers/load.js");
 const SRC = path.join(__dirname, "..", "js");
 
 /** Nothing a browser provides and Node does not. */
-const PURE = ["plan.js", "shoplist.js", "search.js", "scale.js", "units.js", "html.js"];
+const PURE = ["plan.js", "lists.js", "listdrop.js", "search.js", "scale.js", "units.js", "html.js"];
 /** The same, except that the working copy is a key-value store.
  *  `api.js` is here because `load.js` brings it in with `sync.js`, so it
  *  is part of what the MCP server runs whether it asks for it or not. */
-const CACHED = ["storage.js", "planstore.js", "sync.js", "api.js"];
+const CACHED = ["storage.js", "planstore.js", "liststore.js", "sync.js", "api.js"];
 
 const BROWSER = [
   "document", "navigator", "location", "alert", "confirm", "sessionStorage",
@@ -58,43 +58,28 @@ test("the modules that cache reach no further than localStorage", () => {
   }
 });
 
-test("J17.7 · the whole set an agent loads runs a plan end to end in bare Node", () => {
+test("J17.7 · the whole set runs a list end to end in bare Node", () => {
   // No stub DOM here, unlike the app tests: a fake window with an
   // in-memory localStorage is the whole environment, which is what a
   // program outside this app has.
   const win = loadApp(...CACHED, ...PURE);
-  const sanitize = win.RecipeStore.sanitizeRecipe;
-  const { emptyPlan, addMeal } = win.RecipePlan;
-
-  const chilli = sanitize({
+  const Lists = win.RecipeLists;
+  const chilli = win.RecipeStore.sanitizeRecipe({
     name: "Chilli",
     servings: 4,
     ingredients: [
       { amount: 500, unit: "g", item: "beef mince" },
-      { amount: 1, unit: "", item: "onion" },
       { amount: 1, unit: "tin", item: "kidney beans" },
     ],
     steps: ["Cook it."],
   });
-  const bolognese = sanitize({
-    name: "Bolognese",
-    servings: 4,
-    ingredients: [
-      { amount: 500, unit: "g", item: "beef mince" },
-      { amount: 2, unit: "", item: "onions" },
-      { amount: 400, unit: "g", item: "tomatoes" },
-    ],
-    steps: ["Cook it."],
-  });
-
-  let plan = addMeal(emptyPlan(1000), chilli, 1001);
-  plan = addMeal(plan, bolognese, 1002);
-  const list = win.RecipeShopList.build(plan, [chilli, bolognese], { mass: "metric", volume: "metric" });
-
-  assert.deepEqual(list.lines.map((l) => l.text).sort(), [
-    "1 kg beef mince",   // two half-kilos, promoted once at the end
-    "1 tin kidney beans", // left alone, because nothing knows how big a tin is
-    "3 onions",           // "onion" and "onions" are one line
-    "400 g tomatoes",
+  let a = Lists.createList({ name: "Shopping", kind: "checklist", now: 1000 });
+  a = Lists.addTree(a, Lists.recipeItems(chilli, 8, { mass: "metric", volume: "metric" }), { now: 1001 });
+  let b = Lists.addItem(a, { text: "milk", now: 1002 });
+  a = Lists.setTicked(a, Lists.children(a)[0].id, true, 1003);
+  const met = Lists.mergeLists(a, b);
+  assert.deepEqual(Lists.rows(met, new Set([""])).map((r) => r.type === "item" ? r.item.text : "Ticked"), [
+    "milk", "Ticked", "Chilli", "1000 g beef mince", "2 tin kidney beans",
   ]);
+  assert.equal(win.RecipeSearch.stemWord("Tomatoes"), win.RecipeSearch.stemWord("tomato"));
 });

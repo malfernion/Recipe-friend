@@ -38,15 +38,15 @@ async function connect({ openBook, recipes = [SOUP] } = {}) {
   return client;
 }
 
-test("a host is offered twelve tools, each saying what kind of thing it is", async () => {
+test("a host is offered six tools, each saying what kind of thing it is", async () => {
   const client = await connect();
 
   const { tools } = await client.listTools();
 
+  // The plan tools went with the plan's shopping list (J18, build step 1).
   assert.deepEqual(tools.map((t) => t.name).sort(), [
-    "add_recipe", "add_to_list", "add_to_plan", "edit_list", "find_recipes", "get_plan",
-    "get_recipe", "list_recipes", "planning_history", "recipes_sharing_ingredients",
-    "remove_from_list", "remove_from_plan",
+    "add_recipe", "find_recipes", "get_recipe", "list_recipes", "planning_history",
+    "recipes_sharing_ingredients",
   ]);
   for (const tool of tools) {
     assert.ok(tool.description, `${tool.name} says what it is for`);
@@ -56,7 +56,7 @@ test("a host is offered twelve tools, each saying what kind of thing it is", asy
   }
   const filing = tools.find((t) => t.name === "add_recipe");
   assert.equal(filing.annotations.destructiveHint, true, "the one-way tool tells the host so");
-  assert.equal(tools.find((t) => t.name === "get_plan").annotations.readOnlyHint, true);
+  assert.equal(tools.find((t) => t.name === "planning_history").annotations.readOnlyHint, true);
 });
 
 /**
@@ -118,7 +118,7 @@ test("J17.4 · listing the tools opens no book, so saying hello costs no pull", 
   assert.equal(opened, 0, "no book pulled");
 
   await client.callTool({ name: "list_recipes", arguments: {} });
-  await client.callTool({ name: "get_plan", arguments: {} });
+  await client.callTool({ name: "planning_history", arguments: {} });
   assert.equal(opened, 1, "and once opened, it is shared");
 });
 

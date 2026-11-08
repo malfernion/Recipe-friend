@@ -77,39 +77,6 @@
     return Boolean(a) && Boolean(b) && digest(a) === digest(b);
   }
 
-  /**
-   * A plan brought back by Undo, with what was put in the plan that
-   * replaced it since. Undo restores the old plan as a newer generation,
-   * and a newer generation wins whole (see mergePlans) — so without this,
-   * milk added on the other phone in the seconds after Done, or typed on
-   * this one before tapping Undo, would go with nobody saying so. Undo
-   * means "put back what I finished", not "and forget everything since".
-   */
-  function withWhatCameSince(restored, since) {
-    if (!since) return restored;
-    const meals = new Set(restored.meals.map((m) => m.id));
-    const items = new Set((restored.items || []).map((i) => i.id));
-    // Per line and per field, the later word wins, as it does in any
-    // merge (J12.11): "we have four onions" said after Done is not undone
-    // by "we have one" said before it.
-    const settled = Object.assign(Object.create(null), restored.settled);
-    for (const [key, entry] of Object.entries(since.settled || {})) {
-      const mine = settled[key] || {};
-      const next = { ...mine };
-      for (const field of ["have", "got"]) {
-        const theirs = entry && entry[field];
-        if (theirs && (!mine[field] || Number(theirs.at) > Number(mine[field].at))) next[field] = theirs;
-      }
-      settled[key] = next;
-    }
-    return {
-      ...restored,
-      meals: [...restored.meals, ...since.meals.filter((m) => !meals.has(m.id))],
-      items: [...(restored.items || []), ...(since.items || []).filter((i) => !items.has(i.id))],
-      settled,
-    };
-  }
-
   /** Nothing in it at all — no meal, no line added by hand, nothing settled. */
   function isBlank(plan) {
     return (
@@ -682,133 +649,10 @@
       return { pushed, pulled: missingHere.length, live };
     }
 
-    /**
-     * Done: the plan is recorded and an empty one takes its place (J14.1).
-     *
-     * Two writes, and they happen the way every other local change here
-     * does — the device's own copy first, the server on the usual
-     * debounce — because the plan has to work with no network at all
-     * (J12.12), and the supermarket is where a plan is most likely to be
-     * finished and least likely to have signal.
-     *
-     * That is safe rather than optimistic, and it is worth saying why,
-     * because J7.11 says a move that did not reach the server must leave
-     * the recipe exactly where it was. A move can lose a recipe: it takes
-     * one book's row away on the strength of another book's arriving.
-     * Finishing a plan takes nothing away. The plan moves from one local
-     * list to another, both of them saved, both of them pushed by the
-     * ordinary retry — so there is no state here where the thing is gone
-     * from one place and not yet in the other. What could go wrong twice
-     * is recording the same plan twice, and the archive row is keyed by
-     * the plan's own id so that it cannot.
-     */
-    async completePlan(now = Date.now()) {
-      if (!this.planStore) return null;
-      const live = this.planStore.plan;
-      // An empty plan has nothing to finish and offers no Done (J14.3).
-      if (!global.RecipePlan.hasSomething(live)) return null;
-      if (this.readOnly) throw new Error("this is a book you read, not one you plan");
-      // Done is what records a week as planned (J14.1), and that record
-      // is what an agent reads to decide what to suggest next (J14.9).
-      // An agent does not write its own evidence (J16.4).
-      if (this.addOnly) throw new Error("an agent does not finish a plan");
-
-      // A shop with no recipe in it is finished the same way and records
-      // nothing (J14.3): what is recorded is only ever recipes (J14.5).
-      // The list goes and a later generation takes its place, exactly as
-      // Clear does it, and the plan that was is handed back for Undo.
-      if (live.meals.length === 0) {
-        const fresh = global.RecipePlan.emptyPlan(global.RecipePlan.generationAfter(live, now));
-        this.planStore.setPlan(fresh);
-        await this.syncNow();
-        return { archived: null, previous: live, plan: fresh, items: live.items || [] };
-      }
-      const finished = global.RecipePlan.complete(live, now);
-
-      // Strictly later than the plan it replaces, so the two are ordered
-      // as generations on every device that meets them (see mergePlans).
-      const fresh = global.RecipePlan.emptyPlan(global.RecipePlan.generationAfter(finished, now));
-      this.planStore.archivePlan(finished);
-      this.planStore.setPlan(fresh);
-      await this.syncNow();
-      // The record does not keep the lines added by hand (J14.13), so the
-      // one moment they can come back — Undo, seconds from now — is handed
-      // them here, and they go no further than the caller's memory.
-      return { archived: finished, plan: fresh, items: finished.items || [] };
-    }
-
-    /**
-     * Undo, offered in the moment after Done (J14.2): the record goes,
-     * and the plan comes back.
-     *
-     * The server first, and only then this device — the one place in the
-     * plan that does not work offline, and the J7.11 rule is why. An
-     * archived plan is reconciled by comparing ids, so a record dropped
-     * here and not there is one the next sync pulls straight back in;
-     * dropping it locally on the strength of a delete that did not happen
-     * would undo the undo a few seconds later. Refusing is honest, and it
-     * costs a gesture that is always seconds old and always beside a
-     * network that just carried the completion up.
-     *
-     * The plan comes back as a new generation rather than the one that was
-     * archived: the empty plan that replaced it may already be on another
-     * phone, and a restored plan that is older than it would lose the
-     * merge and vanish again.
-     */
-    async undoComplete(planId, now = Date.now(), items = []) {
-      if (!this.planStore) return null;
-      const archived = this.planStore.archive.find((p) => p.id === planId);
-      if (!archived) return null;
-      if (this.readOnly) throw new Error("this is a book you read, not one you plan");
-      if (this.addOnly) throw new Error("an agent does not finish a plan");
-
-      await this.api.deleteArchivedPlan(this.bookId, planId);
-      this.planStore.removeArchived(planId);
-      const createdAt = global.RecipePlan.generationAfter(this.planStore.plan, now);
-      const restored = {
-        ...archived,
-        id: global.RecipeStore.newId(),
-        createdAt,
-        // Never before the plan began: a clock behind the one that
-        // finished this week would otherwise date the restored plan's
-        // last edit before its own birthday, and `touchedAt` reads it.
-        updatedAt: Math.max(now, createdAt),
-        completedAt: null,
-        // What was on the list by hand when the week was finished. The
-        // record never had it (J14.13); the caller kept it for this.
-        items: Array.isArray(items) ? items : [],
-      };
-      this.planStore.setPlan(withWhatCameSince(restored, this.planStore.plan));
-      await this.syncNow();
-      return restored;
-    }
-
-    /**
-     * Undo after a Done that recorded nothing (J14.3): the plan comes back
-     * as a new generation, for the reason `undoComplete` gives — the empty
-     * plan that replaced it may already be on another phone.
-     *
-     * No network: there is no record to take back, so this is an ordinary
-     * local edit, pushed on the usual debounce like any other (J12.12).
-     */
-    restoreUnrecorded(previous, now = Date.now()) {
-      if (!this.planStore || !previous) return null;
-      if (this.readOnly) throw new Error("this is a book you read, not one you plan");
-      if (this.addOnly) throw new Error("an agent does not finish a plan");
-      const createdAt = global.RecipePlan.generationAfter(this.planStore.plan, now);
-      return this.planStore.setPlan(
-        withWhatCameSince(
-          {
-            ...previous,
-            id: global.RecipeStore.newId(),
-            createdAt,
-            updatedAt: Math.max(now, createdAt),
-            completedAt: null,
-          },
-          this.planStore.plan
-        )
-      );
-    }
+    // Done, its Undo, and the Undo of a Done that recorded nothing went
+    // with the plan readout (J18, build step 1). What finished plans the
+    // archive holds still syncs above; build step 2 records an add to a
+    // list there (J18.21).
 
     /** Local edit happened: coalesce rapid changes into one round trip. */
     schedulePush() {

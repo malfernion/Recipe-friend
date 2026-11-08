@@ -4,7 +4,7 @@
  *
  * MCP's Streamable HTTP transport, stateless: every POST to /mcp carries
  * its own bearer token, is answered on its own, and leaves nothing
- * behind. The twelve tools are the ones `server.js` has always served;
+ * behind. The tools are the ones `server.js` has always served;
  * only the way in changed.
  *
  * Two kinds of bearer are accepted, and both end at an agent in one book:

@@ -1,22 +1,18 @@
 /**
- * J12 planning, J13 shopping, J14 finishing — driven through the app.
+ * J12 plan mode and J14 "Last planned" — driven through the app.
  *
- * In the front door, like the rest of the app tests: turn on Plan, press
- * the + on a card, open the plan, tap ✗ and ✓, press Done. The arithmetic
- * has its own tests in plan.test.js and shoplist.test.js; what is checked
- * here is the screen — which control exists, what it says, and what a tap
- * on it actually does to the plan underneath.
- *
- * Finishing a plan is the one thing that goes through the sync layer, so
- * the two calls it makes are stood up here rather than the whole of
- * sync.js: a fake that does what completePlan and undoComplete do to the
- * plan store, so the app is talking to a real plan either way.
+ * The plan readout, its summed shopping list, Done and Clear went with
+ * lists (J18, build step 1). What is left until step 2 is plan mode over
+ * the recipe list, whose add now puts the recipe on the book's first
+ * checklist as one item with its ingredients under it (J18.18), and the
+ * record of what was planned, which the cards and the sorts read (J14.5
+ * on). The list screen itself is test/app-lists.test.js.
  */
 "use strict";
 
 const { test } = require("node:test");
 const assert = require("node:assert/strict");
-const { loadUI, aRecipe, clickCrumb } = require("./helpers/load.js");
+const { loadUI, aRecipe } = require("./helpers/load.js");
 
 const BOLOGNESE = aRecipe({
   name: "Bolognese",
@@ -48,144 +44,29 @@ const PANCAKES = aRecipe({
   tags: ["quick"],
 });
 
-/** Let every queued promise callback run. setTimeout is a no-op in the stub. */
-const flush = () => new Promise((resolve) => setImmediate(resolve));
-
-/**
- * The two things the sync layer does for a plan, done to the same store
- * the screen is reading. Deliberately the same steps as sync.js's:
- * archive the finished plan, put a later generation in its place, and —
- * for Undo — reach the server first, because that is the one call in the
- * plan that needs a network (J14.2).
- */
-function fakeCloud(ui, { undoFails = false } = {}) {
-  const plan = ui.win.RecipePlan;
-  const calls = { completed: [], undone: [], finishedUnrecorded: [], restored: [] };
-  ui.win.RecipeCloud = {
-    sync: {
-      async completePlan(now = Date.now()) {
-        const live = ui.planStore.plan;
-        if (!plan.hasSomething(live)) return null;
-        // As sync.js does: a shop with no recipe in it records nothing
-        // (J14.3), and hands back the plan that was for a local Undo.
-        if (live.meals.length === 0) {
-          ui.planStore.setPlan(plan.emptyPlan(plan.generationAfter(live, now)));
-          calls.finishedUnrecorded.push(live);
-          return { archived: null, previous: live, plan: ui.planStore.plan, items: live.items || [] };
-        }
-        const finished = plan.complete(live, now);
-        if (!finished || finished === live) return null;
-        ui.planStore.archivePlan(finished);
-        ui.planStore.setPlan(plan.emptyPlan(plan.generationAfter(finished, now)));
-        calls.completed.push(finished);
-        // As sync.js does: the record keeps no lines added by hand
-        // (J14.13), so they are handed back for Undo and nowhere else.
-        return { archived: finished, plan: ui.planStore.plan, items: finished.items || [] };
-      },
-      restoreUnrecorded(previous, now = Date.now()) {
-        calls.restored.push(previous.id);
-        return ui.planStore.setPlan({
-          ...previous,
-          id: ui.win.RecipeStore.newId(),
-          createdAt: plan.generationAfter(ui.planStore.plan, now),
-          completedAt: null,
-        });
-      },
-      async undoComplete(planId, now = Date.now(), items = []) {
-        if (undoFails) throw new Error("offline");
-        const archived = ui.planStore.archive.find((p) => p.id === planId);
-        if (!archived) return null;
-        ui.planStore.removeArchived(planId);
-        ui.planStore.setPlan({
-          ...archived,
-          items,
-          completedAt: null,
-          createdAt: plan.generationAfter(ui.planStore.plan, now),
-        });
-        calls.undone.push(planId);
-        return ui.planStore.plan;
-      },
-    },
-  };
-  return calls;
-}
-
-/** A loaded app holding the given recipes, with the planner to hand. */
+/** A loaded app holding the given recipes, and a Shopping checklist. */
 function planning(recipes, options = {}) {
   const ui = loadUI(options);
   const saved = recipes.map((r) => ui.store.add(r));
+  const shopping =
+    ui.listStore && options.shopping !== false ? ui.listStore.create("Shopping", "checklist") : null;
   ui.app.render();
+  const Lists = ui.win.RecipeLists;
 
   const api = {
     ...ui,
     saved,
+    shopping,
     named: (name) => saved.find((r) => r.name === name),
-    /** The plan as it stands. */
-    plan: () => ui.planStore.plan,
-    /** The shop as the screen builds it. */
-    list: () =>
-      ui.win.RecipeShopList.build(ui.planStore.plan, ui.store.recipes, ui.store.prefs),
-    /** The key a line is settled under, found the way the screen finds it. */
-    keyFor: (item) => {
-      const line = api.list().lines.find((l) => l.item.includes(item));
-      return line && line.key;
-    },
+    /** Shopping's items as drawn: text and depth, top to bottom. */
+    items: () =>
+      Lists.rows(ui.listStore.get(shopping.id)).map((r) => `${"  ".repeat(r.depth)}${r.item.text}`),
     planOn: () => ui.el("plan-btn").fire("click"),
     /** Press one of a card's plan controls. */
     card: (action, id) =>
       ui.el("recipe-list").fire("click", {
         target: { closest: (sel) => (sel === "[data-plan]" ? { dataset: { plan: action, id } } : null) },
       }),
-    /** Press something in the plan readout. */
-    tap: (dataset) =>
-      ui.el("plan-content").fire("click", {
-        target: { closest: (sel) => (sel === "[data-plan]" ? { dataset } : null) },
-      }),
-    open: () => ui.el("plan-open-btn").fire("click"),
-    /** Type into the list's box and press Add (J12.13). */
-    add: (text) => {
-      const input = { value: text };
-      ui.el("plan-content").fire("submit", {
-        target: {
-          closest: (sel) =>
-            sel === "[data-plan-add]" ? { dataset: { planAdd: "item" }, elements: { text: input } } : null,
-        },
-      });
-      return input;
-    },
-    /**
-     * Put the caret in a line added by hand (J13.16), the way a tap does,
-     * and hand back what a person can then do to it: type, press a key,
-     * or leave. Leaving is focusout, which is what the app listens for.
-     */
-    editLine: (itemId) => {
-      const content = ui.el("plan-content");
-      const el = {
-        dataset: { editItem: itemId },
-        textContent: (ui.planStore.plan.items.find((i) => i.id === itemId) || {}).text,
-        blur: () => content.fire("focusout", { target: at }),
-      };
-      const at = { closest: (sel) => (sel === "[data-edit-item]" ? el : null) };
-      content.fire("focusin", { target: at });
-      return {
-        el,
-        type: (text) => { el.textContent = text; },
-        press: (key, extra = {}) => {
-          let prevented = false;
-          content.fire("keydown", { target: at, key, preventDefault: () => { prevented = true; }, ...extra });
-          return prevented;
-        },
-        leave: () => el.blur(),
-      };
-    },
-    readout: () => ui.el("plan-content").innerHTML,
-    /** The readout as it reads, with the markup taken out of the way. */
-    words: () =>
-      ui
-        .el("plan-content")
-        .innerHTML.replace(/<[^>]*>/g, " ")
-        .replace(/\s+/g, " ")
-        .trim(),
     titles: () => {
       const out = [];
       const re = /<h3 class="card-title">([^<]*)<\/h3>/g;
@@ -197,12 +78,10 @@ function planning(recipes, options = {}) {
       ui.el("recipe-list").fire("click", {
         target: { closest: (sel) => (sel === ".recipe-card" ? { dataset: { id } } : null) },
       }),
-    /** Pick a tag out of the Filter menu (J15.1). */
     tapTag: (tag) =>
       ui.el("tag-menu").fire("click", {
         target: { closest: (sel) => (sel === "[data-tag]" ? { dataset: { tag } } : null) },
       }),
-    /** Pick an order out of the Sort menu (J15.6). */
     chooseSort: (sort) =>
       ui.el("sort-options").fire("click", {
         target: { closest: (sel) => (sel === "[data-sort]" ? { dataset: { sort } } : null) },
@@ -211,15 +90,19 @@ function planning(recipes, options = {}) {
   return api;
 }
 
-/** Plan mode on, with everything already in the box. */
 function planMode(recipes, options) {
   const app = planning(recipes, options);
   app.planOn();
   return app;
 }
 
+const stepperOnCard = (app) => {
+  const m = /<span class="scale-value">([^<]*)<\/span>/.exec(app.el("recipe-list").innerHTML);
+  return m ? m[1] : "";
+};
+
 // ---------------------------------------------------------------------
-// J12 · Planning a week
+// J12 · Plan mode, putting recipes on Shopping (J18.18)
 // ---------------------------------------------------------------------
 
 test("J12.4 · planning is a mode over the list: search, filters and Favourites go on working", () => {
@@ -240,557 +123,112 @@ test("J12.4 · planning is a mode over the list: search, filters and Favourites 
   assert.deepEqual(app.titles(), ["Curry"], "and so does Favourites");
 });
 
-test("J12.4 · a card in plan mode gains a way in, and the toggle carries a count", () => {
-  const app = planMode([BOLOGNESE]);
-  assert.match(app.el("recipe-list").innerHTML, /data-plan="add"/,
-    "every card offers a way into the plan");
-  assert.equal(app.el("plan-count").hidden, true, "an empty plan is not a count");
-
-  app.card("add", app.named("Bolognese").id);
-  assert.equal(app.el("plan-count").textContent, "1");
-  assert.equal(app.el("plan-count").hidden, false);
-});
-
 test("J12.4 · outside plan mode the cards are the cards", () => {
   const app = planning([BOLOGNESE]);
-  assert.doesNotMatch(app.el("recipe-list").innerHTML, /data-plan/,
-    "nothing is added to a list somebody is only reading");
+  assert.doesNotMatch(app.el("recipe-list").innerHTML, /data-plan/);
   assert.equal(app.el("plan-bar").hidden, true);
 });
 
-test("J12.5 · portions default to the recipe's servings and step as the recipe view steps them", () => {
+test("J18.18 · + Add puts the recipe on Shopping as one item, its ingredients nested under it", () => {
   const app = planMode([BOLOGNESE]);
-  const id = app.named("Bolognese").id;
-  app.card("add", id);
-  assert.equal(app.plan().meals[0].portions, 4, "the recipe's own servings");
-  assert.match(app.el("recipe-list").innerHTML, /Serves 4/);
+  assert.match(app.el("recipe-list").innerHTML, /data-plan="add"[^>]*aria-label="Add Bolognese to Shopping"/);
+  assert.match(app.el("plan-bar-text").textContent, /Adding to Shopping/);
 
+  app.card("add", app.named("Bolognese").id);
+  assert.deepEqual(app.items(), ["Bolognese", "  2 onions", "  400 g tomatoes"]);
+  assert.equal(app.planStore.plan.meals.length, 0, "and nothing goes into the old plan");
+  assert.match(app.el("toast").textContent, /Added “Bolognese” to Shopping/);
+});
+
+test("J18.18 · it goes at the top, and at the portions the stepper shows", () => {
+  const app = planMode([CURRY, BOLOGNESE]);
+  app.card("add", app.named("Curry").id);
+  const id = app.named("Bolognese").id;
+  assert.match(stepperOnCard(app), /Serves 4/, "the stepper is there before anything is added");
   app.card("up", id);
-  assert.equal(app.plan().meals[0].portions, 5, "one serving at a time");
-  app.card("down", id);
-  app.card("down", id);
-  assert.equal(app.plan().meals[0].portions, 3);
+  app.card("up", id);
+  assert.equal(app.items().length, 3, "stepping adds nothing");
+  app.card("add", id);
+  assert.deepEqual(app.items().slice(0, 3), ["Bolognese", "  3 onions", "  600 g tomatoes"],
+    "six servings of a recipe for four, at the top of the list");
   assert.equal(app.store.getById(id).servings, 4, "and the recipe itself is never edited");
 });
 
 test("J12.5 · a recipe with no servings steps by half a batch", () => {
-  const app = planMode([aRecipe({ name: "Stock", steps: ["Boil."] })]);
+  const app = planMode([aRecipe({ name: "Stock", ingredients: [{ amount: 1, unit: "l", item: "water" }] })]);
   const id = app.named("Stock").id;
-  app.card("add", id);
-  assert.equal(app.plan().meals[0].multiplier, 1);
   app.card("up", id);
-  assert.equal(app.plan().meals[0].multiplier, 1.5);
-  assert.match(app.el("recipe-list").innerHTML, /× 1½/);
+  assert.match(stepperOnCard(app), /× 1½/);
+  app.card("add", id);
+  assert.deepEqual(app.items(), ["Stock", "  1½ l water"]);
 });
 
-test("J12.6 · a recipe can be planned more than once, its own portions each", () => {
+test("J18.20 · a recipe can go on more than once, each its own item", () => {
+  const app = planMode([CURRY]);
+  app.card("add", app.named("Curry").id);
+  app.card("add", app.named("Curry").id);
+  assert.equal(app.items().filter((t) => t === "Curry").length, 2);
+});
+
+test("J18.10 · the add says so with an Undo, and Undo takes it all back off", () => {
   const app = planMode([BOLOGNESE]);
-  const id = app.named("Bolognese").id;
-  app.card("add", id);
-  app.card("up", id); // the first entry, at five
-  app.card("add", id);
-
-  const meals = app.plan().meals;
-  assert.equal(meals.length, 2, "two nights, two entries");
-  assert.deepEqual(meals.map((m) => m.portions), [5, 5],
-    "and the second goes in at the portions the stepper is showing (J12.4)");
-  assert.match(app.el("recipe-list").innerHTML, /×2/, "the card says it is in twice");
+  app.card("add", app.named("Bolognese").id);
+  app.el("toast-action").fire("click");
+  assert.deepEqual(app.items(), []);
 });
 
-test("J12.6 · the shopping list sums the entries without caring", () => {
+test("J12.5 · a number nobody has acted on is not kept — leaving plan mode forgets it", () => {
   const app = planMode([BOLOGNESE]);
-  const id = app.named("Bolognese").id;
-  app.card("add", id);
-  app.card("add", id);
-  const onions = app.list().lines.find((l) => l.item.includes("onion"));
-  assert.equal(onions.required, 4, "two lots of two onions");
+  app.card("up", app.named("Bolognese").id);
+  assert.match(stepperOnCard(app), /5/);
+  app.planOn();
+  app.planOn();
+  assert.match(stepperOnCard(app), /4/);
 });
 
-test("J12.7 · outside plan mode the recipe view gains nothing", () => {
+test("J12.7 · the recipe view gains a way to add what is open only in plan mode, at its portions", () => {
   const app = planning([BOLOGNESE]);
   app.openRecipe(app.named("Bolognese").id);
-  assert.equal(app.el("detail-view").open, true);
-  assert.equal(app.el("detail-plan-btn").hidden, true,
-    "the row J4.19 fought for is not spent on something you are not doing");
-});
+  assert.equal(app.el("detail-plan-btn").hidden, true);
 
-test("J12.7 · in plan mode the recipe view gains a way to add what is open", () => {
-  const app = planMode([BOLOGNESE]);
-  app.openRecipe(app.named("Bolognese").id);
-  assert.equal(app.el("detail-plan-btn").hidden, false);
-
-  app.el("detail-plan-btn").fire("click");
-  assert.deepEqual(app.plan().meals.map((m) => m.name), ["Bolognese"]);
-});
-
-test("J12.7 · what is open goes in at the portions on screen", () => {
-  const app = planMode([BOLOGNESE]);
-  app.openRecipe(app.named("Bolognese").id);
-  // The recipe view's own stepper, twice: six servings on screen.
-  app.el("detail-content").fire("click", {
-    target: { closest: (sel) => (sel === "[data-scale]" ? { dataset: { scale: "up" } } : null) },
-  });
-  app.el("detail-content").fire("click", {
-    target: { closest: (sel) => (sel === "[data-scale]" ? { dataset: { scale: "up" } } : null) },
-  });
-  app.el("detail-plan-btn").fire("click");
-  assert.equal(app.plan().meals[0].portions, 6,
-    "what the stepper says is what goes in the plan");
-});
-
-test("J12.8 · a recipe that leaves the book leaves the plan", () => {
-  const app = planMode([BOLOGNESE, CURRY]);
-  app.card("add", app.named("Bolognese").id);
-  app.card("add", app.named("Curry").id);
-  assert.equal(app.plan().meals.length, 2);
-
-  app.store.remove(app.named("Bolognese").id);
-  app.app.render();
-
-  assert.deepEqual(app.plan().meals.map((m) => m.name), ["Curry"],
-    "a plan is a list of things to cook, and that is no longer one of them");
-});
-
-test("J12.8 · a plan with nothing to prune is not rewritten", () => {
-  const app = planMode([BOLOGNESE]);
-  app.card("add", app.named("Bolognese").id);
-  const before = app.plan();
-  app.app.render();
-  assert.equal(app.plan(), before,
-    "an ordinary redraw must not restamp the plan and start winning merges");
-});
-
-test("J12.9 · the plan has an address, and Back closes it", () => {
-  const app = planMode([BOLOGNESE]);
-  app.card("add", app.named("Bolognese").id);
-  app.open();
-
-  assert.equal(app.el("plan-view").open, true);
-  assert.equal(app.win.location.hash, "#plan");
-
-  app.win.history.back();
-  assert.equal(app.el("plan-view").open, false, "Back closed the plan");
-  assert.notEqual(app.win.leftTheApp, true, "rather than walking out of the app");
-  assert.equal(app.win.location.hash, "");
-});
-
-test("J12.9 · closing the plan takes its history entry with it", () => {
-  const app = planMode([BOLOGNESE]);
-  app.open();
-  const before = app.win.history.length;
-  clickCrumb(app, "plan");
-
-  assert.equal(app.el("plan-view").open, false);
-  assert.equal(app.win.history.length, before - 1);
-  assert.equal(app.win.location.hash, "");
-});
-
-test("J12.9, J4.21 · the plan reopens from its address, with focus on the heading", () => {
-  const app = planning([BOLOGNESE], { hash: "#plan" });
-  assert.equal(app.el("plan-view").open, true, "a reload comes back to it");
-  assert.equal(app.el("plan-heading").focused, true,
-    "focus names what has filled the screen, not the first control in the markup");
-});
-
-test("J12.9 · a recipe restored from its address does not open over the readout", () => {
-  const app = planMode([BOLOGNESE]);
-  app.card("add", app.named("Bolognese").id);
-  const id = app.named("Bolognese").id;
-  app.openRecipe(id);
-  assert.equal(app.el("detail-view").open, true);
-
-  // An address arriving over an open recipe — a bookmark, or a step
-  // through history — puts the plan up and takes the recipe down.
-  app.win.history.pushState({}, "", "#plan");
-  app.win.fire("popstate", {});
-  assert.equal(app.el("plan-view").open, true);
-  assert.equal(app.el("detail-view").open, false);
-
-  app.win.history.back();
-
-  assert.equal(app.el("detail-view").open, true, "Back brings the recipe back");
-  assert.equal(app.el("plan-view").open, false,
-    "and does not leave the readout open underneath it, holding the page still");
-});
-
-test("J4.22 · the plan takes the screen, rather than covering a page held still", () => {
-  const app = planMode([BOLOGNESE]);
-  app.open();
-  assert.equal(app.win.document.body.classList.contains("viewing"), true);
-  clickCrumb(app, "plan");
-  assert.equal(app.win.document.body.classList.contains("viewing"), false);
-});
-
-test("J12.10 · a viewer gets the recipes and no planner", () => {
-  const app = planMode([BOLOGNESE]);
-  app.card("add", app.named("Bolognese").id);
-  app.app.setCanEdit(false);
-  app.app.render();
-
-  assert.equal(app.el("plan-btn").hidden, true, "no way into plan mode");
-  assert.equal(app.el("plan-bar").hidden, true);
-  assert.doesNotMatch(app.el("recipe-list").innerHTML, /data-plan/,
-    "and no way in on the cards");
-  assert.deepEqual(app.titles(), ["Bolognese"], "the recipes are still theirs to read");
-});
-
-test("J12.10 · a viewer sees what is in the book's plan, having none of their own", () => {
-  const app = planMode([BOLOGNESE, CURRY]);
-  app.card("add", app.named("Bolognese").id);
-  app.app.setCanEdit(false);
-  app.app.render();
-
-  // "In the plan" is read off the live plan, not off whether this reader
-  // may add to it: the plan is the book's (J12.2, J14.8).
-  assert.match(app.el("recipe-list").innerHTML, /class="card-planned card-planned-live">In the plan</);
-  app.openRecipe(app.named("Bolognese").id);
-  assert.match(app.el("detail-content").innerHTML, /class="card-planned card-planned-live">In the plan</);
-});
-
-test("J12.10 · a viewer's tap on the planner is refused, not merely hidden", () => {
-  const app = planMode([BOLOGNESE]);
-  app.app.setCanEdit(false);
-  // The app hiding a button is a courtesy; the answer has to hold anyway.
   app.planOn();
-  app.card("add", app.named("Bolognese").id);
-  app.open();
+  assert.equal(app.el("detail-plan-btn").hidden, false);
+  const up = { target: { closest: (sel) => (sel === "[data-scale]" ? { dataset: { scale: "up" } } : null) } };
+  app.el("detail-content").fire("click", up);
+  app.el("detail-content").fire("click", up);
+  app.el("detail-plan-btn").fire("click");
+  assert.deepEqual(app.items(), ["Bolognese", "  3 onions", "  600 g tomatoes"]);
+});
 
-  assert.deepEqual(app.plan().meals, [], "nothing went into the book's plan");
+test("J18.18 · with no checklist in the book, plan mode says where to make one", () => {
+  const app = planMode([BOLOGNESE], { shopping: false });
+  assert.match(app.el("plan-bar-text").textContent, /make one in Lists/);
+  app.card("add", app.named("Bolognese").id);
+  assert.match(app.el("toast").textContent, /no checklist/);
+});
+
+test("J18.4 · a viewer gets the recipes and no plan mode", () => {
+  const app = planning([BOLOGNESE]);
+  app.app.setCanEdit(false);
+  assert.equal(app.el("plan-btn").hidden, true);
+  assert.equal(app.el("lists-btn").hidden, false, "but the lists are there to read");
+  app.card("add", app.named("Bolognese").id);
+  assert.equal(app.items().length, 0, "and a tap that got through anyway is refused");
+});
+
+test("J18 · the old plan's readout is not reachable: #plan is the Lists screen", () => {
+  const app = planning([BOLOGNESE], { hash: "#plan" });
+  assert.equal(app.el("lists-view").open, true);
   assert.equal(app.el("plan-view").open, false);
-  assert.equal(app.app.openFromHash(), false, "and its address opens nothing either");
 });
 
 // ---------------------------------------------------------------------
-// J13 · Shopping from a plan
-// ---------------------------------------------------------------------
-
-test("J13.7 · every line says what it is made of, and names what each recipe wrote", () => {
-  const app = planMode([BOLOGNESE, CURRY]);
-  app.card("add", app.named("Bolognese").id);
-  app.card("add", app.named("Curry").id);
-  app.open();
-
-  const html = app.words();
-  assert.match(html, /3 onions/, "two recipes' onions come to one line");
-  assert.match(html, /Bolognese 2 \(onions\)/);
-  assert.match(html, /Curry 1 \(onion\)/,
-    "where the recipes wrote it differently, the line says what each of them wrote");
-});
-
-test("J13.7 · where the recipes wrote the same thing, the parenthetical is not there", () => {
-  const app = planMode([BOLOGNESE]);
-  app.card("add", app.named("Bolognese").id);
-  app.card("add", app.named("Bolognese").id);
-  app.open();
-
-  assert.match(app.words(), /Bolognese 2 · Bolognese 2/);
-  assert.doesNotMatch(app.words(), /\(onions\)/, "on the common case it is noise");
-});
-
-test("J13.9 · ✓ records the amount that was on the line, not that it is done", () => {
-  const app = planMode([BOLOGNESE, CURRY]);
-  app.card("add", app.named("Bolognese").id);
-  app.card("add", app.named("Curry").id);
-  app.open();
-  const key = app.keyFor("onion");
-
-  app.tap({ plan: "got", key });
-  assert.equal(app.plan().settled[key].got.amount, 3, "three onions are in the basket");
-  assert.equal(app.list().toBuy.some((l) => l.key === key), false, "so nothing is outstanding");
-
-  // Planning another curry wants one more onion, and brings one back —
-  // without disturbing the three already settled.
-  app.card("add", app.named("Curry").id);
-  const onions = app.list().lines.find((l) => l.key === key);
-  assert.equal(onions.outstanding, 1);
-  assert.equal(app.plan().settled[key].got.amount, 3, "what was settled was never forgotten");
-});
-
-test("J13.9 · ✗ settles an amount too — the line is a quantity, not a tick", () => {
-  const app = planMode([BOLOGNESE]);
-  app.card("add", app.named("Bolognese").id);
-  app.open();
-  const key = app.keyFor("onion");
-
-  app.tap({ plan: "have", key });
-  assert.equal(app.plan().settled[key].have.amount, 2);
-  assert.equal(app.list().alreadyHave.length, 1);
-});
-
-test("J13.14 · removed lines collapse into a group that says how many", () => {
-  const app = planMode([BOLOGNESE]);
-  app.card("add", app.named("Bolognese").id);
-  app.open();
-
-  app.tap({ plan: "have", key: app.keyFor("onion") });
-  assert.match(app.words(), /1 thing you already have/);
-
-  app.tap({ plan: "have", key: app.keyFor("tomato") });
-  assert.match(app.words(), /2 things you already have/);
-});
-
-test("J13.14 · one tap puts a removed line back, and retracts the settlement whole", () => {
-  const app = planMode([BOLOGNESE]);
-  app.card("add", app.named("Bolognese").id);
-  app.open();
-  const key = app.keyFor("onion");
-
-  app.tap({ plan: "have", key });
-  app.tap({ plan: "unhave", key });
-
-  assert.equal(app.plan().settled[key].have.amount, 0,
-    "the whole settlement goes, not some part of it — the gesture that made it was one tap");
-  assert.equal(app.list().toBuy.some((l) => l.key === key), true, "and it is back on the list");
-});
-
-test("J13.14 · a line in the basket can be taken back out of it", () => {
-  const app = planMode([BOLOGNESE]);
-  app.card("add", app.named("Bolognese").id);
-  app.open();
-  const key = app.keyFor("onion");
-
-  app.tap({ plan: "got", key });
-  assert.equal(app.list().inBasket.length, 1);
-  app.tap({ plan: "unget", key });
-  assert.equal(app.list().toBuy.some((l) => l.key === key), true);
-});
-
-test("J13.13 · Copy gives what is left, neither removed nor settled", async () => {
-  const app = planMode([BOLOGNESE, CURRY]);
-  app.card("add", app.named("Bolognese").id);
-  app.card("add", app.named("Curry").id);
-  app.open();
-
-  let copied = null;
-  app.win.navigator.clipboard.writeText = async (text) => {
-    copied = text;
-  };
-  app.tap({ plan: "have", key: app.keyFor("onion") }); // we have these
-  app.tap({ plan: "got", key: app.keyFor("tomato") }); // these are in the basket
-
-  await app.el("plan-copy-btn").fire("click");
-  await flush();
-
-  assert.equal(copied, "2 tbsp curry paste",
-    "what is removed and what is settled are both off the list");
-});
-
-test("J13.10 · a part-settled line shows both numbers on screen", () => {
-  const app = planMode([BOLOGNESE, CURRY]);
-  app.card("add", app.named("Bolognese").id); // two onions
-  app.open();
-  app.tap({ plan: "got", key: app.keyFor("onion") }); // both in the basket
-  app.card("add", app.named("Curry").id); // and now one more is wanted
-
-  assert.match(app.words(), /3 onions · 2 sorted, 1 to get/,
-    "the total belongs on screen beside what it is made of; the shortfall is what a shop is for");
-});
-
-test("J13.10 · what Copy gives is the shortfall, not the total", async () => {
-  const app = planMode([BOLOGNESE, CURRY]);
-  app.card("add", app.named("Bolognese").id);
-  app.open();
-  app.tap({ plan: "got", key: app.keyFor("onion") });
-  app.card("add", app.named("Curry").id);
-
-  let copied = null;
-  app.win.navigator.clipboard.writeText = async (text) => {
-    copied = text;
-  };
-  await app.el("plan-copy-btn").fire("click");
-  await flush();
-
-  // The number is the one onion missing rather than the three the plan
-  // asks for, and it is named as one of them: the singular is a word one
-  // of these recipes typed, not grammar the app invented (J13.4).
-  assert.match(copied, /^1 onion$/m);
-  assert.doesNotMatch(copied, /3 onions/,
-    "copying the total would buy three onions to get one");
-});
-
-test("J13.10 · a line nothing has been settled against reads exactly as it did", async () => {
-  const app = planMode([BOLOGNESE]);
-  app.card("add", app.named("Bolognese").id);
-  app.open();
-
-  assert.match(app.words(), /2 onions/);
-  assert.doesNotMatch(app.words(), /sorted|to get/, "there is no second number to show");
-
-  let copied = null;
-  app.win.navigator.clipboard.writeText = async (text) => {
-    copied = text;
-  };
-  await app.el("plan-copy-btn").fire("click");
-  await flush();
-  assert.equal(copied, "2 onions\n400 g tomatoes");
-});
-
-test("J13.13 · sharing is offered only where the browser can do it", () => {
-  const app = planMode([BOLOGNESE]);
-  app.card("add", app.named("Bolognese").id);
-  app.open();
-  assert.equal(app.el("plan-share-btn").hidden, true,
-    "a control that would do nothing is not offered at all");
-
-  app.win.navigator.share = async () => {};
-  app.app.render();
-  assert.equal(app.el("plan-share-btn").hidden, false);
-});
-
-// ---------------------------------------------------------------------
-// J14 · What the plan remembers
-// ---------------------------------------------------------------------
-
-test("J14.2 · Done happens by itself when the last outstanding line is settled", async () => {
-  const app = planMode([BOLOGNESE]);
-  const calls = fakeCloud(app);
-  app.card("add", app.named("Bolognese").id);
-  app.open();
-
-  await app.tap({ plan: "have", key: app.keyFor("onion") });
-  assert.equal(calls.completed.length, 0, "there is still something outstanding");
-
-  await app.tap({ plan: "got", key: app.keyFor("tomato") });
-  await flush();
-
-  assert.equal(calls.completed.length, 1, "settling the last line is saying you have finished");
-  assert.deepEqual(calls.completed[0].meals.map((m) => m.name), ["Bolognese"]);
-  assert.deepEqual(app.plan().meals, [], "and an empty plan takes its place");
-});
-
-test("J14.2 · settling the last line with ✗ counts — a week you had everything for was still planned", async () => {
-  const app = planMode([BOLOGNESE]);
-  const calls = fakeCloud(app);
-  app.card("add", app.named("Bolognese").id);
-  app.open();
-
-  await app.tap({ plan: "have", key: app.keyFor("onion") });
-  await app.tap({ plan: "have", key: app.keyFor("tomato") });
-  await flush();
-
-  assert.equal(calls.completed.length, 1);
-});
-
-test("J14.2 · a plan edited down to nothing outstanding does not archive itself", async () => {
-  const app = planMode([BOLOGNESE, PANCAKES]);
-  const calls = fakeCloud(app);
-  app.card("add", app.named("Bolognese").id);
-  app.card("add", app.named("Pancakes").id);
-  app.open();
-
-  await app.tap({ plan: "have", key: app.keyFor("onion") });
-  await app.tap({ plan: "got", key: app.keyFor("tomato") });
-  assert.equal(calls.completed.length, 0, "the flour is still outstanding");
-
-  // Dropping the meal that wanted the flour leaves nothing outstanding —
-  // which is a state, not somebody saying they have finished.
-  const pancakes = app.plan().meals.find((m) => m.name === "Pancakes");
-  await app.tap({ plan: "meal-remove", meal: pancakes.id });
-  await flush();
-
-  assert.equal(calls.completed.length, 0,
-    "archiving here would record a shop nobody said they had done");
-  assert.equal(app.plan().meals.length, 1, "and the plan is still the book's live one");
-});
-
-test("J14.2 · finishing says what it did and offers Undo", async () => {
-  const app = planMode([BOLOGNESE]);
-  const calls = fakeCloud(app);
-  app.card("add", app.named("Bolognese").id);
-  app.open();
-  await app.el("plan-done-btn").fire("click");
-  await flush();
-
-  assert.equal(app.el("toast").textContent, "Planned 1 meal.");
-  assert.equal(app.el("toast-action").hidden, false, "and it is offered, not asked about");
-  assert.equal(app.el("confirm-dialog").open, false, "nobody is interrogated about it");
-
-  await app.el("toast-action").fire("click");
-  await flush();
-
-  assert.deepEqual(calls.undone, [calls.completed[0].id]);
-  assert.deepEqual(app.plan().meals.map((m) => m.name), ["Bolognese"], "the plan came back");
-});
-
-test("J14.2 · an Undo that cannot reach the server says so rather than appearing to work", async () => {
-  const app = planMode([BOLOGNESE]);
-  const calls = fakeCloud(app, { undoFails: true });
-  app.card("add", app.named("Bolognese").id);
-  app.open();
-  await app.el("plan-done-btn").fire("click");
-  await flush();
-
-  await app.el("toast-action").fire("click");
-  await flush();
-
-  assert.match(app.el("toast").textContent, /needs a connection/);
-  assert.equal(app.planStore.hasArchived(calls.completed[0].id), true,
-    "the record is still there, because taking it back never happened");
-});
-
-test("J14.3 · finishing needs at least one recipe: an empty plan offers no Done", async () => {
-  const app = planMode([BOLOGNESE]);
-  const calls = fakeCloud(app);
-  app.open();
-
-  assert.equal(app.el("plan-done-btn").hidden, true, "an empty plan has nothing to record");
-  await app.el("plan-done-btn").fire("click");
-  await flush();
-  assert.deepEqual(calls.completed, [], "and pressing it anyway records nothing");
-
-  app.card("add", app.named("Bolognese").id);
-  app.open();
-  assert.equal(app.el("plan-done-btn").hidden, false);
-});
-
-test("J14.4 · Clear asks first, and discards without recording", async () => {
-  const app = planMode([BOLOGNESE]);
-  fakeCloud(app);
-  app.card("add", app.named("Bolognese").id);
-  app.open();
-
-  app.el("confirm-dialog").answer = ""; // "no"
-  await app.el("plan-clear-btn").fire("click");
-  assert.deepEqual(app.plan().meals.map((m) => m.name), ["Bolognese"],
-    "answering no leaves the plan exactly where it was");
-
-  app.el("confirm-dialog").answer = "yes";
-  await app.el("plan-clear-btn").fire("click");
-  await flush();
-
-  assert.deepEqual(app.plan().meals, [], "the plan is discarded");
-  assert.deepEqual(app.planStore.archive, [],
-    "and a week that never happened does not claim to have been planned");
-});
-
-test("J14.4 · a cleared plan is a new generation, so an older device cannot hand it back", async () => {
-  const app = planMode([BOLOGNESE]);
-  app.card("add", app.named("Bolognese").id);
-  const before = app.plan();
-  app.open();
-  await app.el("plan-clear-btn").fire("click");
-  await flush();
-
-  assert.notEqual(app.plan().id, before.id);
-  assert.ok(app.plan().createdAt > before.createdAt);
-  assert.equal(
-    app.win.RecipePlan.mergePlans(before, app.plan()).id,
-    app.plan().id,
-    "the cleared plan wins the merge against the one it replaced"
-  );
-});
-
-// ---------------------------------------------------------------------
-// J14.6-J14.9 · what the list says about what was planned
+// J14 · What was planned, and the sorts that read it
 // ---------------------------------------------------------------------
 
 const DAY = 24 * 60 * 60 * 1000;
 
-/**
- * A week that was planned and finished, `daysAgo` days back. Recorded the
- * way Done records one — a plan with the recipe in it, stamped completed —
- * because the archive is the only record there is (J14.11).
- */
+/** A plan recorded `daysAgo` days back, the way the archive holds one. */
 function planned(app, recipe, daysAgo) {
   const plan = app.win.RecipePlan;
   const at = Date.now() - daysAgo * DAY;
@@ -799,7 +237,6 @@ function planned(app, recipe, daysAgo) {
   app.app.render();
 }
 
-/** What a card says about planning, if anything. */
 const noteOnCard = (app) => {
   const m = /<span class="card-planned[^"]*">([^<]*)<\/span>/.exec(app.el("recipe-list").innerHTML);
   return m ? m[1] : "";
@@ -808,79 +245,40 @@ const noteOnCard = (app) => {
 test("J14.6 · a recipe's card and its recipe view say when it was last planned", () => {
   const app = planning([BOLOGNESE]);
   planned(app, app.named("Bolognese"), 21);
-
-  assert.equal(noteOnCard(app), "Last planned 3 weeks ago",
-    "the ordinary way of saying it, not which Tuesday it was");
-
+  assert.equal(noteOnCard(app), "Last planned 3 weeks ago");
   app.openRecipe(app.named("Bolognese").id);
   assert.match(app.el("detail-content").innerHTML, /Last planned 3 weeks ago/);
-});
-
-test("J14.6 · the word is always planned, and the date is the date the plan was finished", () => {
-  const app = planning([BOLOGNESE]);
-  planned(app, app.named("Bolognese"), 1);
-
-  assert.equal(noteOnCard(app), "Last planned yesterday");
-  assert.doesNotMatch(app.el("recipe-list").innerHTML, /cook/i,
-    "this is a planner, not an oven: nothing here knows whether a pan was used");
 });
 
 test("J14.6 · the newest of several plans is the one a recipe reports", () => {
   const app = planning([BOLOGNESE]);
   planned(app, app.named("Bolognese"), 40);
   planned(app, app.named("Bolognese"), 3);
-
   assert.equal(noteOnCard(app), "Last planned 3 days ago");
 });
 
 test("J14.7 · a recipe that has never been planned says nothing at all", () => {
   const app = planning([BOLOGNESE]);
-
-  assert.equal(noteOnCard(app), "", "no line at all, rather than an empty one");
-  assert.doesNotMatch(app.el("recipe-list").innerHTML, /never/i,
-    "“Never planned” reads as a reproach on a recipe typed five minutes ago");
-  app.openRecipe(app.named("Bolognese").id);
-  assert.doesNotMatch(app.el("detail-content").innerHTML, /planned/i);
+  assert.equal(noteOnCard(app), "");
+  assert.doesNotMatch(app.el("recipe-list").innerHTML, /never/i);
 });
 
-test("J14.4 · a plan that was cleared rather than finished says nothing either", () => {
-  const app = planning([BOLOGNESE]);
-  const plan = app.win.RecipePlan;
-  // Archived without ever being completed is not a record of anything.
-  app.planStore.archivePlan(plan.addMeal(plan.emptyPlan(1000), app.named("Bolognese"), 1001));
-  app.app.render();
-
-  assert.equal(noteOnCard(app), "", "a week that never happened should not claim to have been planned");
-});
-
-test("J14.8 · a recipe in the live plan says so instead", () => {
+test("J14.8 · the note sits on the line of particulars, and the live plan no longer speaks", () => {
   const app = planMode([BOLOGNESE]);
   planned(app, app.named("Bolognese"), 21);
   app.card("add", app.named("Bolognese").id);
-
-  assert.equal(noteOnCard(app), "In the plan",
-    "more use than a date while you are deciding, and it stops it going in twice by accident");
-  app.openRecipe(app.named("Bolognese").id);
-  assert.match(app.el("detail-content").innerHTML, /In the plan/);
-  assert.doesNotMatch(app.el("detail-content").innerHTML, /Last planned 3 weeks ago/);
+  const html = app.el("recipe-list").innerHTML;
+  assert.match(html, /<p class="card-meta">[^<]*·\s*<span class="card-planned/);
+  assert.equal(noteOnCard(app), "Last planned 3 weeks ago");
+  assert.doesNotMatch(html, /In the plan/);
 });
 
 test("J14.9, J15.6 · least recently planned sorts them first, never-planned before them", () => {
   const app = planning([BOLOGNESE, CURRY, PANCAKES]);
   planned(app, app.named("Curry"), 2);
   planned(app, app.named("Bolognese"), 30);
-
-  assert.deepEqual(app.titles(), ["Pancakes", "Curry", "Bolognese"],
-    "the box as it stands, newest first");
-
   app.chooseSort("least-planned");
-  assert.deepEqual(app.titles(), ["Pancakes", "Bolognese", "Curry"],
-    "the one nobody has ever planned, then the oldest, then the newest");
-  assert.equal(app.el("sort-summary").textContent, "Sort · Not lately",
-    "and the menu says which order the list is in");
-
-  app.chooseSort("added");
-  assert.deepEqual(app.titles(), ["Pancakes", "Curry", "Bolognese"], "and back again");
+  assert.deepEqual(app.titles(), ["Pancakes", "Bolognese", "Curry"]);
 });
 
 test("J14.10, J15.6 · most often planned counts every appearance", () => {
@@ -888,566 +286,31 @@ test("J14.10, J15.6 · most often planned counts every appearance", () => {
   planned(app, app.named("Curry"), 2);
   planned(app, app.named("Curry"), 9);
   planned(app, app.named("Bolognese"), 30);
-
   app.chooseSort("most-planned");
-  assert.deepEqual(app.titles(), ["Curry", "Bolognese", "Pancakes"],
-    "twice, once, and never — and the never-planned one is last rather than first");
-});
-
-test("J15.6 · quickest first, from what the recipe says it takes", () => {
-  const app = planning([
-    { ...BOLOGNESE, prepMinutes: 15, cookMinutes: 90 },
-    { ...CURRY, prepMinutes: 10, cookMinutes: 20 },
-    PANCAKES,
-  ]);
-  app.chooseSort("quickest");
-  assert.deepEqual(app.titles(), ["Curry", "Bolognese", "Pancakes"],
-    "and the one that does not say goes last, not first");
-});
-
-test("J15.6, J3.2 · a sort orders what the filters have left, and narrows nothing itself", () => {
-  const app = planning([BOLOGNESE, CURRY, PANCAKES]);
-  planned(app, app.named("Curry"), 2);
-  planned(app, app.named("Pancakes"), 30);
-  app.chooseSort("least-planned");
-
-  app.tapTag("quick");
-  assert.deepEqual(app.titles(), ["Pancakes", "Curry"],
-    "the tag narrows, the sort orders what is left");
-
-  app.tapTag("quick");
-  app.el("search-input").value = "onion";
-  app.el("search-input").fire("input");
-  assert.deepEqual(app.titles(), ["Bolognese", "Curry"],
-    "and so does a search: never planned first, then the least recent of the rest");
-});
-
-test("J15.6 · Favourites narrows and the sort orders, together", () => {
-  const app = planning([BOLOGNESE, CURRY, PANCAKES]);
-  planned(app, app.named("Curry"), 2);
-  app.store.toggleFavorite(app.named("Curry").id);
-  app.store.toggleFavorite(app.named("Pancakes").id);
-  app.app.render();
-
-  app.el("favorites-filter").fire("click");
-  app.chooseSort("least-planned");
-  assert.deepEqual(app.titles(), ["Pancakes", "Curry"]);
+  assert.deepEqual(app.titles(), ["Curry", "Bolognese", "Pancakes"]);
 });
 
 test("J15.6 · a page without the planner is offered neither of the sorts that read it", () => {
   const app = planning([BOLOGNESE, CURRY], { planner: false });
   const menu = app.el("sort-options").innerHTML;
-  assert.match(menu, /data-sort="added"/);
-  assert.match(menu, /data-sort="quickest"/);
-  assert.doesNotMatch(menu, /data-sort="least-planned"/,
-    "an order it cannot make is not offered rather than offered and doing nothing");
-  assert.doesNotMatch(menu, /data-sort="most-planned"/);
+  assert.doesNotMatch(menu, /data-sort="least-planned"/);
+  assert.doesNotMatch(menu, /card-planned/);
   assert.deepEqual(app.titles(), ["Curry", "Bolognese"], "and the list still draws");
 });
 
-test("J13.1 · the readout is the meals, and under them everything they ask for", () => {
+test("J18 · a page that never loaded the lists still draws its cards, and offers no lists", () => {
+  const app = planning([BOLOGNESE], { lists: false });
+  assert.deepEqual(app.titles(), ["Bolognese"]);
+  assert.equal(app.el("lists-btn").hidden, true);
+  assert.equal(app.el("plan-btn").hidden, true);
+});
+
+test("S3 · Undo of an add takes the whole recipe off, even after another phone edited an ingredient", () => {
   const app = planMode([BOLOGNESE]);
   app.card("add", app.named("Bolognese").id);
-  app.open();
-  const html = app.readout();
-  assert.ok(html.indexOf("<h3>Meals</h3>") < html.indexOf("<h3>Shopping list</h3>"),
-    "one thread to follow, and one scroll to follow it with");
-});
-
-test("J12.1 · a plan is a bag of meals, and one can be taken back out of it", async () => {
-  const app = planMode([BOLOGNESE, CURRY]);
-  app.card("add", app.named("Bolognese").id);
-  app.card("add", app.named("Curry").id);
-  app.open();
-
-  const bolognese = app.plan().meals[0];
-  await app.tap({ plan: "meal-remove", meal: bolognese.id });
-  assert.deepEqual(app.plan().meals.map((m) => m.name), ["Curry"]);
-  assert.doesNotMatch(app.words(), /Bolognese/);
-});
-
-test("J12.5 · portions step from the readout the way the recipe view steps them", async () => {
-  const app = planMode([BOLOGNESE]);
-  app.card("add", app.named("Bolognese").id);
-  app.open();
-
-  const meal = app.plan().meals[0];
-  await app.tap({ plan: "meal-up", meal: meal.id });
-  assert.equal(app.plan().meals[0].portions, 5);
-  assert.match(app.words(), /Serves 5/);
-  assert.equal(app.list().lines.find((l) => l.item.includes("onion")).required, 2.5,
-    "and the shopping list follows the portions");
-});
-
-test("J14.6 · a page that never loaded the planner still draws its cards", () => {
-  // index.html asks for plan.js, planstore.js and shoplist.js, but a
-  // script that does not arrive leaves a page that has the rest of the
-  // app and no planner. Saying nothing about planning is the whole of
-  // what that should cost — a card that cannot be drawn costs the list.
-  const app = planning([BOLOGNESE, CURRY], { planner: false });
-
-  assert.deepEqual(app.titles(), ["Curry", "Bolognese"], "the list is still a list");
-  assert.doesNotMatch(app.el("recipe-list").innerHTML, /card-planned/,
-    "with nothing to say about planning");
-  assert.equal(app.el("plan-btn").hidden, true, "and no planner offered");
-  app.openRecipe(app.named("Curry").id);
-  assert.equal(app.el("detail-view").open, true, "and a recipe still opens");
-});
-
-test("J13.7 · a recipe name off a share link reaches the readout as text", () => {
-  const hostile = '"><img src=x onerror=alert(1)>';
-  const app = planMode([
-    aRecipe({
-      name: hostile,
-      servings: 2,
-      ingredients: [{ amount: 2, unit: hostile, item: hostile }],
-      steps: ["Cook it."],
-    }),
-  ]);
-  app.card("add", app.saved[0].id);
-  app.open();
-  // Part-settle it so the second number, the one J13.10 added, is on
-  // screen carrying the same untrusted words.
-  const line = app.list().lines[0];
-  app.planStore.setPlan(app.win.RecipePlan.settle(app.plan(), line.key, "have", 1, Date.now()));
-  app.app.render();
-
-  for (const html of [app.readout(), app.el("recipe-list").innerHTML]) {
-    assert.doesNotMatch(html, /<img/, "a name is text wherever it is printed");
-    assert.match(html, /&lt;img src=x onerror=alert\(1\)&gt;/);
-    assert.doesNotMatch(html, /aria-label="[^"]*"><img/, "including inside a quoted attribute");
-  }
-});
-
-/** What a card's portions stepper is showing. */
-const stepperOnCard = (app) => {
-  const m = /<span class="scale-value">([^<]*)<\/span>/.exec(app.el("recipe-list").innerHTML);
-  return m ? m[1] : "";
-};
-
-test("J12.4 · the stepper is there before anything is planned, so portions are chosen up front", () => {
-  const app = planMode([BOLOGNESE]);
-  assert.equal(app.plan().meals.length, 0, "nothing planned yet");
-  assert.match(stepperOnCard(app), /4/, "and the stepper is already showing the recipe's own servings");
-
-  const id = app.named("Bolognese").id;
-  app.card("up", id);
-  app.card("up", id);
-  assert.equal(app.plan().meals.length, 0, "stepping before adding puts nothing in the plan");
-  assert.match(stepperOnCard(app), /6/);
-
-  app.card("add", id);
-  assert.deepEqual(app.plan().meals.map((m) => m.portions), [6],
-    "the meal arrives at the portions that were chosen, not at the recipe's own");
-});
-
-test("J12.5 · once a meal exists the stepper edits it, and the plan is the only place portions live", () => {
-  const app = planMode([BOLOGNESE]);
-  const id = app.named("Bolognese").id;
-  app.card("add", id);
-  app.card("up", id);
-
-  assert.deepEqual(app.plan().meals.map((m) => m.portions), [5],
-    "the stepper is steering the meal now, not a number beside it");
-  assert.match(stepperOnCard(app), /5/);
-});
-
-test("J12.5 · a number nobody has acted on is not kept — leaving plan mode forgets it", () => {
-  const app = planMode([BOLOGNESE]);
-  const id = app.named("Bolognese").id;
-  app.card("up", id);
-  assert.match(stepperOnCard(app), /5/);
-
-  app.planOn(); // off
-  app.planOn(); // and back
-  assert.match(stepperOnCard(app), /4/,
-    "a pending number is not a fact about the book, so it does not outlive the mode");
-  assert.equal(app.plan().meals.length, 0);
-});
-
-test("J12.4 · an empty plan says what to do about it rather than counting nothing", () => {
-  const app = planMode([BOLOGNESE]);
-  const bar = app.el("plan-bar-text").textContent;
-  assert.match(bar, /Nothing in the plan yet/);
-  assert.match(bar, /add recipes below/i, "it says where to go next, in the app's own nouns");
-  assert.doesNotMatch(bar, /\b0\b/, "counting nothing is not the same as saying there is nothing");
-});
-
-test("J14.8 · the note sits on the line of particulars, not in a row of its own", () => {
-  const app = planMode([BOLOGNESE]);
-  planned(app, app.named("Bolognese"), 21);
-  app.app.render();
-
-  const html = app.el("recipe-list").innerHTML;
-  assert.doesNotMatch(html, /<p class="card-planned/,
-    "a card's rows are the scarcest thing it has, and this was spending one on three words");
-  assert.match(html, /<p class="card-meta">[^<]*·\s*<span class="card-planned/,
-    "it reads as one more particular, after the ones already there");
-});
-
-// ---------------------------------------------------------------------
-// Lines added by hand
-// ---------------------------------------------------------------------
-
-test("J12.13 · a line goes on the list with no recipe and no meal", () => {
-  const app = planMode([]);
-  app.open();
-  assert.match(app.readout(), /id="plan-add-item"/, "an empty plan still takes a line");
-
-  app.add("2 l milk");
-  app.add("   ");
-
-  assert.deepEqual(app.list().toBuy.map((l) => l.text), ["2 l milk"], "as typed, and nothing for nothing");
-  assert.equal(app.el("plan-add-item").focused, true, "focus goes back to the box");
-  assert.equal(app.el("plan-done-btn").hidden, false, "a list with no recipe on it is still a shop to finish (J14.3)");
-  assert.equal(app.el("plan-clear-btn").hidden, false, "but it can be cleared");
-  assert.equal(app.el("plan-copy-btn").hidden, false, "and copied");
-});
-
-test("J13.15 · a line added by hand sits first, settles with ✗ and ✓, and Copy takes it as typed", async () => {
-  const app = planMode([BOLOGNESE]);
-  app.card("add", app.named("Bolognese").id);
-  app.open();
-  app.add("milk");
-  app.add("milk");
-
-  const lines = app.list().toBuy;
-  assert.deepEqual(lines.slice(0, 2).map((l) => l.text), ["milk", "milk"], "twice is two lines, and first");
-
-  await app.tap({ plan: "got", key: lines[0].key });
-  assert.equal(app.list().inBasket.length, 1);
-  await app.tap({ plan: "unget", key: lines[0].key });
-  assert.equal(app.list().inBasket.length, 0, "and it can be taken back out of the basket");
-
-  await app.tap({ plan: "have", key: lines[1].key });
-  assert.match(app.readout(), /1 thing you already have/);
-
-  let copied = "";
-  app.win.navigator.clipboard.writeText = async (text) => { copied = text; };
-  await app.el("plan-copy-btn").fire("click");
-  assert.equal(copied.split("\n")[0], "milk", "what is left, as typed, first");
-});
-
-test("J14.2 · the shop finishes itself only once the lines added by hand are settled too", async () => {
-  const app = planMode([BOLOGNESE]);
-  const calls = fakeCloud(app);
-  app.card("add", app.named("Bolognese").id);
-  app.open();
-  app.add("milk");
-
-  await app.tap({ plan: "have", key: app.keyFor("onion") });
-  await app.tap({ plan: "got", key: app.keyFor("tomato") });
-  await flush();
-  assert.equal(calls.completed.length, 0, "the milk is still to get");
-
-  await app.tap({ plan: "got", key: app.list().toBuy[0].key });
-  await flush();
-  assert.equal(calls.completed.length, 1);
-});
-
-test("J14.13 · Done keeps no list, and Undo puts it back", async () => {
-  const app = planMode([BOLOGNESE]);
-  const calls = fakeCloud(app);
-  app.card("add", app.named("Bolognese").id);
-  app.open();
-  app.add("batteries");
-
-  await app.el("plan-done-btn").fire("click");
-  await flush();
-  assert.equal("items" in app.planStore.archive[0], false, "the record is what was planned");
-  assert.deepEqual(app.plan().items, [], "and nothing carries into the next plan");
-
-  await app.el("toast-action").fire("click");
-  await flush();
-  assert.equal(calls.undone.length, 1);
-  assert.deepEqual(app.list().toBuy.map((l) => l.text).slice(0, 1), ["batteries"], "Undo brings the list back");
-});
-
-test("J14.4 · Clear takes lines added by hand with it, and says so", async () => {
-  const app = planMode([]);
-  app.open();
-  app.add("milk");
-  await app.el("plan-clear-btn").fire("click");
-  await flush();
-  assert.match(app.el("confirm-message").textContent, /Clear the plan\? 1 thing added to the list goes from it/);
-  assert.deepEqual(app.win.RecipePlan.liveItems(app.plan()), [], "the list is gone");
-});
-
-test("J12.13 · a full list says so rather than dropping the line", () => {
-  const app = planMode([]);
-  app.open();
-  const limit = app.win.RecipePlanStore.limits.MAX_LIST_LINES;
-  for (let i = 0; i < limit; i++) app.add(`thing ${i}`);
-  const box = app.add("one too many");
-  assert.equal(app.win.RecipePlan.liveItems(app.plan()).length, limit);
-  assert.match(app.el("toast").textContent, /The list is full/);
-  assert.equal(box.value, "one too many", "and what was typed is still there, not thrown away too");
-});
-
-test("J12.10 · a viewer's add is refused, not merely hidden", () => {
-  const app = planMode([]);
-  app.open();
-  // A viewer never reaches the plan view (J12.10), so the boxes are never
-  // drawn for one; the answer still has to hold if a submit arrives.
-  app.app.setCanEdit(false);
-  app.add("milk");
-  assert.deepEqual(app.plan().items, []);
-});
-
-test("J14.3 · a shop of only lines added by hand finishes itself when the last is settled", async () => {
-  const app = planMode([]);
-  const calls = fakeCloud(app);
-  app.open();
-  app.add("milk");
-  app.add("bin bags");
-
-  await app.tap({ plan: "got", key: app.list().toBuy[0].key });
-  await flush();
-  assert.equal(calls.finishedUnrecorded.length, 0, "the bin bags are still to get");
-
-  await app.tap({ plan: "have", key: app.list().toBuy[0].key });
-  await flush();
-  assert.equal(calls.finishedUnrecorded.length, 1, "settling the last line is saying you have finished");
-  assert.equal(calls.completed.length, 0, "and nothing is recorded as planned");
-  assert.equal(app.el("toast").textContent, "Shopping done.", "said in its own words, not 'Planned 0 meals'");
-  assert.deepEqual(app.win.RecipePlan.liveItems(app.plan()), []);
-});
-
-test("J14.2 · Undo after a list-only Done brings the list back, with no network", async () => {
-  const app = planMode([]);
-  const calls = fakeCloud(app);
-  app.open();
-  app.add("milk");
-
-  await app.el("plan-done-btn").fire("click");
-  await flush();
-  assert.equal(app.el("toast").textContent, "Shopping done.");
-
-  await app.el("toast-action").fire("click");
-  await flush();
-  assert.equal(calls.restored.length, 1);
-  assert.equal(calls.undone.length, 0, "no record to take back, so the network Undo is never asked");
-  assert.deepEqual(app.win.RecipePlan.liveItems(app.plan()).map((i) => i.text), ["milk"]);
-  assert.equal(app.el("toast").textContent, "The list is back.");
-});
-
-test("J14.3 · an empty plan offers no Done and no Clear", () => {
-  const app = planMode([]);
-  app.open();
-  assert.equal(app.el("plan-done-btn").hidden, true);
-  assert.equal(app.el("plan-clear-btn").hidden, true);
-});
-
-// ---------------------------------------------------------------------
-// Changing a line added by hand where it stands (J13.16)
-// ---------------------------------------------------------------------
-
-/**
- * The plan open, with these lines added by hand. `later()` runs what the
- * app put off with window.setTimeout — the redraw owed after leaving a
- * line — which the stub otherwise never runs.
- */
-function withLines(...texts) {
-  const app = planMode([BOLOGNESE]);
-  const owed = [];
-  app.win.setTimeout = (fn) => { owed.push(fn); return owed.length; };
-  app.open();
-  for (const t of texts) app.add(t);
-  const idOf = (text) => app.plan().items.find((i) => i.text === text).id;
-  const later = () => { while (owed.length) owed.shift()(); };
-  return { app, idOf, later };
-}
-
-test("J13.16 · the words of a line added by hand are its editor, and a recipe's line has none", () => {
-  const { app, idOf } = withLines("6 eggs");
-  app.card("add", app.named("Bolognese").id);
-  app.el("plan-content").innerHTML = "";
-  app.open();
-  const html = app.readout();
-  assert.match(html, new RegExp(`contenteditable="plaintext-only"[^>]*data-edit-item="${idOf("6 eggs")}"`));
-  assert.doesNotMatch(html, /aria-label="Edit /, "its label is not its words, which would go stale");
-  assert.equal((html.match(/data-edit-item=/g) || []).length, 1, "only the line typed in is editable");
-  assert.match(html, /class="shop-edit"/, "and it wears the dotted underline");
-  assert.doesNotMatch(html, /data-plan="edit"/, "there is no edit button");
-});
-
-test("J13.16 · leaving the line saves it, and it keeps its place and its tick", async () => {
-  const { app, idOf } = withLines("milk", "6 eggs", "bread");
-  const eggs = idOf("6 eggs");
-  await app.tap({ plan: "got", key: `hand:${eggs}` });
-
-  const line = app.editLine(eggs);
-  line.type("7 eggs");
-  assert.equal(app.plan().items.find((i) => i.id === eggs).text, "6 eggs", "nothing is written while typing");
-  line.leave();
-
-  const items = app.plan().items;
-  assert.deepEqual(items.map((i) => i.text), ["milk", "7 eggs", "bread"], "same place");
-  assert.equal(items[1].id, eggs, "same line");
-  assert.equal(items[1].state, "got", "still ticked");
-});
-
-test("J13.16 · Enter is Done, not a new line, and Escape puts back what was there", () => {
-  const { app, idOf } = withLines("piza");
-  const id = idOf("piza");
-
-  let line = app.editLine(id);
-  line.type("pizza");
-  assert.equal(line.press("Enter"), true, "Enter does not make a second line");
-  assert.equal(app.plan().items[0].text, "pizza");
-
-  line = app.editLine(id);
-  line.type("pizzzzza");
-  assert.equal(line.press("Escape"), true);
-  assert.equal(app.plan().items[0].text, "pizza", "abandoned, not saved");
-  assert.equal(line.el.textContent, "pizza", "and the words on screen are put back too");
-});
-
-test("J13.16 · Enter while a word is still being composed is left to the keyboard", () => {
-  const { app, idOf } = withLines("tofu");
-  const line = app.editLine(idOf("tofu"));
-  assert.equal(line.press("Enter", { isComposing: true }), false);
-});
-
-test("J13.16 · emptying a line takes it off the list, and Undo puts it back as it was", async () => {
-  const { app, idOf } = withLines("milk", "bin bags");
-  const bags = idOf("bin bags");
-  await app.tap({ plan: "have", key: `hand:${bags}` });
-
-  const line = app.editLine(bags);
-  line.type("   ");
-  line.leave();
-
-  assert.deepEqual(app.win.RecipePlan.liveItems(app.plan()).map((i) => i.text), ["milk"]);
-  assert.match(app.el("toast").textContent, /Took “bin bags” off the list/);
-  assert.equal(app.el("toast-action").hidden, false);
-
-  await app.el("toast-action").fire("click");
-  const back = app.plan().items.find((i) => i.id === bags);
-  assert.equal(back.state, "have", "back as it was, tick and all");
-  assert.equal(back.text, "bin bags");
-});
-
-test("J13.16 · the list does not redraw under a line being edited, and catches up after", () => {
-  const { app, idOf, later } = withLines("milk");
-  const line = app.editLine(idOf("milk"));
-  line.type("oat mi");
-  const drawn = app.readout();
-
-  // A sync lands mid-word: another phone added eggs.
-  app.planStore.setPlan(app.win.RecipePlan.addItem(app.plan(), "eggs", Date.now()));
-  app.app.render();
-  assert.equal(app.readout(), drawn, "the words and the caret are left alone");
-
-  line.type("oat milk");
-  line.leave();
-  assert.equal(app.readout(), drawn, "not on the way out of the line, where the next tap is landing");
-  later();
-  assert.match(app.words(), /eggs/, "but a moment later, once the tap has landed");
-  assert.match(app.words(), /oat milk/);
-});
-
-test("J13.16 · a tap in the list pays a redraw owed from leaving a line, after the tap lands", async () => {
-  const { app, idOf } = withLines("milk", "bread");
-  const line = app.editLine(idOf("milk"));
-  app.planStore.setPlan(app.win.RecipePlan.addItem(app.plan(), "eggs", Date.now()));
-  app.app.render();
-  line.leave();
-  await app.tap({ plan: "got", key: `hand:${idOf("bread")}` });
-  assert.equal(app.plan().items.find((i) => i.text === "bread").state, "got", "the tap landed");
-  assert.match(app.words(), /eggs/, "and the screen caught up");
-});
-
-test("J13.16 · leaving a line untouched does not write its old words over the other phone's", () => {
-  const { app, idOf } = withLines("6 eggs");
-  const id = idOf("6 eggs");
-  const line = app.editLine(id);
-  // The other phone makes it 7 while the caret sits in the line here.
-  app.planStore.setPlan(app.win.RecipePlan.editItem(app.plan(), id, "7 eggs", Date.now() + 5));
-  app.app.render();
-  line.leave();
-  assert.equal(app.plan().items[0].text, "7 eggs");
-});
-
-test("J13.16 · Escape does not write the old words over the other phone's either", () => {
-  const { app, idOf } = withLines("6 eggs");
-  const id = idOf("6 eggs");
-  const line = app.editLine(id);
-  line.type("8 eggs");
-  app.planStore.setPlan(app.win.RecipePlan.editItem(app.plan(), id, "7 eggs", Date.now() + 5));
-  app.app.render();
-  line.press("Escape");
-  assert.equal(app.plan().items[0].text, "7 eggs");
-});
-
-test("J13.16 · the space a keyboard leaves after a word is tidied in place, not by a redraw", () => {
-  const { app, idOf } = withLines("milk");
-  const line = app.editLine(idOf("milk"));
-  line.type("2 l milk\u00a0");
-  const drawn = app.readout();
-  line.leave();
-  assert.equal(app.plan().items[0].text, "2 l milk");
-  assert.equal(line.el.textContent, "2 l milk", "the words on screen are what was saved");
-  assert.equal(app.readout(), drawn, "and nothing was redrawn under the next tap");
-});
-
-test("J13.16 · a line typed past what a line holds is cut, and says so", () => {
-  const { app, idOf } = withLines("milk");
-  const max = app.win.RecipePlanStore.limits.MAX_ITEM_CHARS;
-  const line = app.editLine(idOf("milk"));
-  line.type("m".repeat(max + 10));
-  line.leave();
-  assert.equal(app.plan().items[0].text.length, max);
-  assert.match(app.el("toast").textContent, new RegExp(`${max} characters at most`));
-});
-
-test("J13.16 · two lines' worth pasted in reads as one line, not two words run together", () => {
-  const { app, idOf } = withLines("milk");
-  const line = app.editLine(idOf("milk"));
-  // What a browser's innerText gives for a <br> that got in.
-  line.el.innerText = "oat\nmilk";
-  line.el.textContent = "oatmilk";
-  line.leave();
-  assert.equal(app.plan().items[0].text, "oat milk");
-});
-
-test("J13.16 · a plan closed with a line still being edited is drawn afresh when it is opened again", () => {
-  const { app, idOf } = withLines("milk");
-  app.editLine(idOf("milk"));
-  // Closed with the caret in the line, and no word from the line that it
-  // lost focus — which not every browser sends for an element hidden.
-  app.el("plan-view").open = false;
-  app.planStore.setPlan(app.win.RecipePlan.addItem(app.plan(), "eggs", Date.now()));
-  app.open();
-  assert.match(app.words(), /eggs/, "not frozen on what it showed when it closed");
-});
-
-test("J13.16 · an edit does not redraw the list on its way out, so the tap that left it lands", () => {
-  const { app, idOf } = withLines("milk");
-  const line = app.editLine(idOf("milk"));
-  line.type("2 l milk");
-  const drawn = app.readout();
-  line.leave();
-  assert.equal(app.readout(), drawn, "the ✓ tapped to leave the line is still the ✓ it was");
-  assert.equal(app.plan().items[0].text, "2 l milk");
-});
-
-test("J13.16 · a line taken off on the other phone while it was being edited is not brought back", () => {
-  const { app, idOf } = withLines("milk");
-  const id = idOf("milk");
-  const line = app.editLine(id);
-  line.type("2 l milk");
-  app.planStore.setPlan(app.win.RecipePlan.setItemState(app.plan(), id, "removed", Date.now()));
-  line.leave();
-  assert.deepEqual(app.win.RecipePlan.liveItems(app.plan()), []);
-});
-
-test("J12.10 · a viewer's edit is refused", () => {
-  const { app, idOf } = withLines("milk");
-  const id = idOf("milk");
-  app.app.setCanEdit(false);
-  const line = app.editLine(id);
-  line.type("gin");
-  line.leave();
-  assert.equal(app.plan().items[0].text, "milk");
+  const Lists = app.win.RecipeLists;
+  const onions = Lists.liveItems(app.listStore.get(app.shopping.id)).find((i) => i.text === "2 onions");
+  app.listStore.change(app.shopping.id, (l) => Lists.editText(l, onions.id, "3 red onions", Date.now() + 5));
+  app.el("toast-action").fire("click");
+  assert.deepEqual(app.items(), []);
 });

@@ -77,19 +77,18 @@
               class="label-long">New recipe</span><span class="label-short">New</span>
       </button>
       <button id="books-btn" class="btn btn-ghost" title="Recipe books and sharing" hidden>Books</button>
+      <!-- The book's lists (J18): a place to go, read by every member. -->
+      <button id="lists-btn" class="btn btn-ghost" title="Shopping and other lists" hidden>Lists</button>
       <!--
         Planning is a mode over the list, not a screen of its own (J12.4),
         so its control sits with the other things you can be doing rather
         than in the overflow menu. It is a toggle and says so — pressed,
-        and wearing the same "on" treatment as cook mode — because
-        entering and leaving a mode is the thing it does, and "Plan" on
-        its own read as a place to go. The count is an element of its own:
-        the button's own text is never rewritten, so nothing here has to
-        know what the label says to keep the number up to date.
+        and wearing the same "on" treatment as cook mode. Until "Add to
+        list" replaces it (J18, build step 2), its add puts a recipe on the
+        book's first checklist.
       -->
       <button id="plan-btn" class="btn btn-ghost plan-toggle" aria-pressed="false"
-              title="Plan the week and build a shopping list" hidden>Meal plan<span
-              id="plan-count" class="plan-count" hidden></span></button>
+              title="Put recipes on the shopping list" hidden>Meal plan</button>
       <details class="more-menu" id="more-menu">
         <summary class="more-summary" title="More" aria-label="More actions">···</summary>
         <div class="more-panel">
@@ -166,14 +165,13 @@
     </section>
 
     <!--
-      In plan mode, what the plan holds so far and the way into it. It
-      sits here rather than in the app bar because it is about the list
-      below it: a way into the plan belongs beside the recipes you are
-      choosing between.
+      In plan mode, which list the recipes go on and the way into it. It
+      sits here rather than in the app bar because it is about the recipes
+      below it.
     -->
     <div id="plan-bar" class="plan-bar" hidden>
       <p id="plan-bar-text" class="plan-bar-text"></p>
-      <button type="button" class="btn btn-ghost" id="plan-open-btn">Open the plan</button>
+      <button type="button" class="btn btn-ghost" id="plan-open-btn">Open the list</button>
     </div>
 
     <!--
@@ -312,7 +310,7 @@
       <span class="action-bar-spacer"></span>
       <!-- In plan mode only: outside it the row is not spent on it (J12.7). -->
       <button type="button" class="btn btn-ghost" id="detail-plan-btn"
-              aria-label="Add to the plan" hidden>+ Plan</button>
+              aria-label="Add to the shopping list" hidden>+ Add</button>
       <button type="button" class="btn btn-ghost" id="detail-cook-btn" aria-pressed="false" hidden>☾ Screen on</button>
       <button type="button" class="btn btn-ghost" id="detail-share-btn">Share</button>
       <button type="button" class="btn btn-ghost" id="detail-copy-btn" hidden>Copy</button>
@@ -321,30 +319,37 @@
   </section>
 
   <!--
-    The plan and the shop it comes to (J12.9, J13). Meals sit above the
-    shopping list and the two share one scroll, for the reason J4.16 gives
-    for ingredients above steps: one thread to follow. It takes the whole
-    screen on a phone like the recipe view does, and for the same reason —
-    this is read one-handed in an aisle.
+    The book's lists (J18), and one list. Views rather than dialogs, for
+    the reason J4.22 gives: a list is read one-handed in an aisle, which is
+    no place for a box that will not scroll. Each has an address (#lists,
+    #list/<id>), so Back closes it (J12.9).
   -->
-  <section id="plan-view" class="view detail-view plan-view" hidden>
-    <nav class="crumbs" id="plan-crumbs" aria-label="Breadcrumb"></nav>
+  <section id="lists-view" class="view detail-view lists-view" hidden>
+    <nav class="crumbs" id="lists-crumbs" aria-label="Breadcrumb"></nav>
     <div class="detail-head">
       <div class="detail-head-text">
-        <h2 class="detail-title" id="plan-heading" tabindex="-1">The plan</h2>
+        <h2 class="detail-title" id="lists-heading" tabindex="-1">Lists</h2>
       </div>
     </div>
-    <div id="plan-content"></div>
-    <!--
-      Done is the filled one and sits at the end of the row, where the
-      thumb is. Clear is destructive and keeps its distance from it.
-    -->
-    <div class="action-bar detail-actions plan-actions">
-      <button type="button" class="btn btn-danger" id="plan-clear-btn">Clear</button>
+    <div id="lists-content">
+      <div id="lists-index"></div>
+      <div id="lists-make"></div>
+    </div>
+  </section>
+
+  <section id="list-view" class="view detail-view lists-view" hidden>
+    <nav class="crumbs" id="list-crumbs" aria-label="Breadcrumb"></nav>
+    <div class="detail-head">
+      <div class="detail-head-text">
+        <h2 class="detail-title" id="list-heading" tabindex="-1"></h2>
+      </div>
+    </div>
+    <div id="list-content"></div>
+    <!-- Delete asks first and keeps its distance from Clear ticked, which has an Undo. -->
+    <div class="action-bar detail-actions list-actions">
+      <button type="button" class="btn btn-danger" id="list-delete-btn" hidden>Delete list</button>
       <span class="action-bar-spacer"></span>
-      <button type="button" class="btn btn-ghost" id="plan-copy-btn">Copy</button>
-      <button type="button" class="btn btn-ghost" id="plan-share-btn" hidden>Share</button>
-      <button type="button" class="btn btn-primary" id="plan-done-btn" hidden>Done</button>
+      <button type="button" class="btn btn-ghost" id="list-clear-btn" hidden>Clear ticked</button>
     </div>
   </section>
 
@@ -418,7 +423,7 @@
       -->
       <ul id="agent-list" class="member-list agent-list"></ul>
       <p id="agent-empty" class="books-hint" hidden>No agents can reach this book.</p>
-      <p class="books-hint">Agents can read this book, add recipes and plan. They can't edit or delete.</p>
+      <p class="books-hint">Agents can read this book and add recipes. They can't edit or delete.</p>
       <div class="agent-doors">
         <button type="button" class="btn btn-ghost" id="agent-connect-btn">Connect an app</button>
         <button type="button" class="btn btn-ghost" id="agent-add-btn">Add an agent with a key</button>
@@ -623,9 +628,9 @@ https://recipes.dave-ernsting.com/#paste</pre>
         <span class="invite-role-label">The book it may use</span>
         <select id="connect-book"></select>
       </label>
-      <p class="books-hint">It joins that book as an agent. It can read the book, add recipes
-         and work on the plan; it cannot edit or delete a recipe, see the photos, or finish a
-         plan, and it never acts as you. Only books you own are listed. Remove it any time
+      <p class="books-hint">It joins that book as an agent. It can read the book and add
+         recipes; it cannot edit or delete a recipe or see the photos, and it never acts as
+         you. Only books you own are listed. Remove it any time
          under Books → Agents.</p>
     </div>
     <p id="connect-owners" class="books-hint" hidden>Only a book's owner can connect an app to
@@ -652,10 +657,9 @@ https://recipes.dave-ernsting.com/#paste</pre>
 
   <!--
     Undo rides beside the toast rather than inside it: the toast's text is
-    written by assignment, which would take any child with it. Finishing a
-    plan is the one thing here that offers a way back (J14.2), and it is
-    offered rather than asked about — somebody who has just said they are
-    finished is not interrogated about it.
+    written by assignment, which would take any child with it. Taking
+    something off a list offers a way back here (J18.10, J18.13) rather
+    than asking first.
   -->
   <div class="toast-tray">
     <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
@@ -668,14 +672,16 @@ https://recipes.dave-ernsting.com/#paste</pre>
   <script src="js/units.js"></script>
   <script src="js/storage.js"></script>
   <!--
-    The planner. plan.js is the arithmetic, planstore.js the cache it is
-    kept in and shoplist.js the shop it turns into; each reaches for the
-    one above it, and app.js reaches for all three, so they go in here
-    rather than after it.
+    plan.js and planstore.js keep what has been planned ("Last planned",
+    J14.5); lists.js is a book's lists, liststore.js the cache they are
+    kept in and listdrop.js where a dragged item lands. app.js reaches
+    for all of them, so they go in before it.
   -->
   <script src="js/plan.js"></script>
   <script src="js/planstore.js"></script>
-  <script src="js/shoplist.js"></script>
+  <script src="js/lists.js"></script>
+  <script src="js/liststore.js"></script>
+  <script src="js/listdrop.js"></script>
   <script src="js/share.js"></script>
   <script src="js/cookmode.js"></script>
   <script src="js/search.js"></script>

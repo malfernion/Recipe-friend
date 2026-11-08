@@ -892,8 +892,7 @@ body {
 }
 
 /*
-  When this was last planned, or that it is in the plan now (J14.6,
-  J14.8). It sits on the end of the meta line rather than taking a row of
+  When this was last planned (J14.6, J14.8). It sits on the end of the meta line rather than taking a row of
   its own: three words were costing a card a whole line, and this answers
   the same kind of question the line is already answering. Italic, in the
   serif the app writes its asides in, so it reads as an aside among the
@@ -909,14 +908,6 @@ body {
   letter-spacing: 0;
   text-transform: none;
   white-space: nowrap;
-}
-
-/* "In the plan" is the live half of that line, and takes the accent the
-   Meal plan count wears in the header — the same fact, said in two
-   places. A date is history and stays in the meta's own colour, which is
-   what it inherits by sitting inside it. */
-.card-planned-live {
-  color: var(--accent);
 }
 
 .card-tags {
@@ -1014,7 +1005,7 @@ body {
 }
 
 /* ---------- Views ----------
-   The recipe, the plan and the editor. A view has no box of its own to
+   The recipe, the lists and the editor. A view has no box of its own to
    scroll inside: it is laid out in the page and the page scrolls, so
    pinch, pan and rotate are the browser's again. Its measure is capped
    the way prose has to be — past about 70 characters a line is hard to
@@ -1668,21 +1659,9 @@ button.crumb:hover {
   color: var(--ink-faint);
 }
 
-/* ---------- Planning a week, and shopping for it ----------
-   J12 is a mode over the list rather than a screen of its own, so almost
-   nothing here is a layout: it is one row added to a card, one bar over
-   the list, and the readout the two lead to. The readout borrows the
-   recipe view's dialog wholesale — full screen on a phone, one scroll,
-   the same headings — because it is read the same way and in worse
-   conditions: one hand, in an aisle. */
-
-/* The count on the header toggle. A number, not a badge: the app has no
-   other pill, and one here would be the loudest thing in the bar. */
-.plan-count {
-  margin-left: 0.4rem;
-  font-variant-numeric: tabular-nums;
-  color: var(--accent);
-}
+/* ---------- Plan mode, until "Add to list" (J12.4, J18 step 2) ----------
+   One row added to a card and one bar over the list. The readout and
+   its shopping list went with lists (J18.26). */
 
 /*
   A ghost button that is currently on, in the same accent cook mode wears
@@ -1698,7 +1677,7 @@ button.crumb:hover {
   box-shadow: inset 0 -1px var(--accent);
 }
 
-/* What the plan holds so far, over the list you are choosing from. */
+/* Which list plan mode adds to, over the recipes you are choosing from. */
 .plan-bar {
   display: flex;
   align-items: center;
@@ -1719,20 +1698,15 @@ button.crumb:hover {
   color: var(--ink-soft);
 }
 
-/* The card's way in, and the portions of what it has already put in. */
+/* The card's way on, and the portions it adds at. */
 .plan-card-row {
   display: flex;
   align-items: center;
   flex-wrap: wrap;
   gap: 0.4rem 0.6rem;
   /*
-    The card's last line, so it is what takes the card's slack and lines
-    up across a row of cards. The auto margin used to sit on .card-tags,
-    which is the bottom of a card only until a recipe has no tags —
-    nothing says one must — and then its buttons sat 30px above its
-    neighbours' (measured at 1440px, three cards across, one untagged).
-    The hairline is the giveaway: it is a rule across the foot of every
-    card, and one of them was drawn short of the foot.
+    The card's last line, so it takes the card's slack and lines up across
+    a row of cards whether or not a recipe has tags.
   */
   margin-top: auto;
   padding-top: 0.75rem;
@@ -1760,41 +1734,11 @@ button.crumb:hover {
   gap: 0.3rem;
 }
 
-/* Narrower than the recipe view's, which has a dialog's width to spend;
-   a card is 280px and holds a stepper and a button on one row. */
+/* Narrower than the recipe view's: a card is 280px and holds a stepper
+   and a button on one row. */
 .plan-portions .scale-value {
   min-width: 4.6rem;
   font-size: 0.95rem;
-}
-
-.plan-times {
-  font-size: 0.7rem;
-  font-weight: 600;
-  letter-spacing: 0.14em;
-  color: var(--ink-faint);
-}
-
-/*
-  The plan's bar carries four controls where the recipe's carries three,
-  and Done is a filled button among them. Down to 400px the spacer is
-  what holds Clear away from it; below that the spacer is what would
-  push Done onto a second row, so it goes and the ends of the row do the
-  same job. Neither bar wraps: in this view a wrapped bar is a row of
-  the list nobody can see.
-*/
-@media (max-width: 400px) {
-  .detail-actions.plan-actions {
-    justify-content: space-between;
-  }
-
-  .detail-actions.plan-actions .action-bar-spacer {
-    display: none;
-  }
-}
-
-/* ---------- The plan readout ---------- */
-.plan-section {
-  margin-bottom: 2.2rem;
 }
 
 .plan-empty {
@@ -1804,89 +1748,14 @@ button.crumb:hover {
   color: var(--ink-faint);
 }
 
-.plan-meals,
-.shop-lines {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-}
-
-.plan-meal,
-.shop-line {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  padding: 0.4rem 0;
-  border-bottom: 1px solid var(--rule);
-}
-
-.plan-meal:last-child,
-.shop-line:last-child {
-  border-bottom: none;
-}
-
-/* Both lists hold names somebody typed, so both have to be able to break
-   one: a long ingredient must widen nothing and scroll nothing sideways. */
-.plan-meal-name,
-.shop-line-text {
-  flex: 1;
-  min-width: 0;
-  overflow-wrap: anywhere;
-}
-
-.plan-meal-name {
-  font-family: var(--serif);
-  font-size: 1.02rem;
-}
-
-.plan-meal-remove {
-  flex: none;
-}
-
 /*
-  A name and its controls on one line is more than a phone has. The
-  stepper and the × come to 215px whatever the screen is, so at 375px the
-  name was left 104px and "Slow-roasted shoulder of lamb…" came down the
-  side of the stepper seven lines deep; at 320px there was not room for
-  its words either and it broke inside them — "Bolog / nese".
-
-  So on a phone a meal reads the way a card does in plan mode: the name
-  across the row, its controls under it, against the edge the thumb is
-  already at. It costs a line on the short names and saves six on the
-  long ones, and it is the same shape twice rather than two shapes.
+  A one-line box: the new list's name. 16px, because anything smaller
+  makes iOS zoom the page in on focus.
 */
-@media (max-width: 480px) {
-  .plan-meal {
-    flex-wrap: wrap;
-    row-gap: 0.35rem;
-  }
-
-  .plan-meal-name {
-    flex: 1 0 100%;
-  }
-
-  .plan-meal .plan-portions {
-    margin-left: auto;
-  }
-}
-
-/*
-  Adding by hand (J12.13): one box and its button. The box takes
-  the row, because what is typed is the line, and a line cut off while
-  it is being written is a line written wrong. 16px, because anything
-  smaller makes iOS zoom the page in on focus, which is the last thing
-  wanted one-handed in an aisle.
-*/
-.plan-add-form {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  margin: 0.4rem 0 0.6rem;
-}
-
 .plan-add-input {
   flex: 1;
   min-width: 0;
+  width: 100%;
   font-family: var(--serif);
   font-size: 16px;
   padding: 0.55rem 0.1rem;
@@ -1912,110 +1781,314 @@ button.crumb:hover {
   outline-offset: 2px;
 }
 
-.plan-add-submit {
-  flex: none;
+/* ---------- Lists (J18) ----------
+   Built for a phone in one hand, in an aisle: every row is at least the
+   44px touch floor, the words are the serif the recipes are read in at
+   a size that needs no squinting, and nothing shares an item's row but
+   its tick box or its counter (J18.5). */
+
+.lists-index {
+  list-style: none;
+  margin: 0 0 2.2rem;
+  padding: 0;
 }
 
-/* ---------- The shopping list ---------- */
-/*
-  A line added by hand is its own editor (J13.16). The faint dotted
-  underline is the whole affordance — no pencil, no edit mode — and it is
-  also what tells such a line from a recipe's at a glance. Focused, it
-  becomes a plain outlined box, so it is plain which line the keyboard is
-  typing into.
-*/
-.shop-edit {
-  text-decoration: underline dotted var(--ink-faint);
-  text-decoration-thickness: 1px;
-  text-underline-offset: 0.22em;
-  cursor: text;
-  border-radius: 2px;
-  -webkit-user-modify: read-write-plaintext-only;
+.lists-index li {
+  border-bottom: 1px solid var(--rule);
 }
 
-.shop-edit:focus {
+/* The whole row is the way in: a name is a small target, a row is not. */
+.lists-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 0.2rem 1rem;
+  width: 100%;
+  min-height: 3.25rem;
+  padding: 0.7rem 0.1rem;
+  border: none;
+  background: none;
+  color: var(--ink);
+  text-align: left;
+  cursor: pointer;
+  touch-action: manipulation;
+}
+
+.lists-row:hover .lists-name {
+  color: var(--accent);
+}
+
+.lists-row:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
-  text-decoration: none;
 }
 
-.shop-line {
-  align-items: flex-start;
-}
-
-.shop-what {
-  margin: 0;
+.lists-name {
   font-family: var(--serif);
-  font-size: 1.02rem;
-  line-height: 1.45;
-  padding-top: 0.5rem;
+  font-size: 1.15rem;
+  overflow-wrap: anywhere;
 }
 
-.shop-amount {
+.lists-meta {
+  font-size: 0.72rem;
   font-weight: 600;
-}
-
-.shop-taste {
-  font-family: var(--sans);
-  font-size: 0.66rem;
-  font-weight: 600;
-  letter-spacing: 0.16em;
+  letter-spacing: 0.12em;
   text-transform: uppercase;
   color: var(--ink-faint);
 }
 
-/*
-  Both numbers on a part-settled line (J13.10) — "4 onions · 3 sorted, 1
-  to get". Quieter than the total it follows: the total is the line, and
-  this says how far through it you are.
-*/
-.shop-part {
+.lists-new {
+  display: grid;
+  gap: 0.8rem;
+  max-width: 30rem;
+}
+
+.lists-new h3 {
+  margin-bottom: 0;
+}
+
+.lists-kind {
+  display: grid;
+  gap: 0.3rem;
+}
+
+.lists-kind-opt {
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
+  min-height: 2.75rem;
+  cursor: pointer;
+  color: var(--ink-soft);
+}
+
+.lists-kind-opt input {
+  width: 1.2rem;
+  height: 1.2rem;
+  accent-color: var(--accent);
+}
+
+.lists-kind-opt strong {
+  color: var(--ink);
+  font-weight: 600;
+}
+
+.lists-hint {
+  margin: 0;
   font-size: 0.8rem;
   color: var(--ink-faint);
 }
 
-/* What the line is made of (J13.7). Quiet, and under the thing it
-   explains — it is read when a total looks wrong, not before. */
-.shop-from {
-  margin: 0.1rem 0 0.35rem;
-  font-size: 0.76rem;
-  color: var(--ink-faint);
+.lists-make {
+  justify-self: start;
 }
 
-.shop-line-btns {
+/* The name of an open list is its own editor (J18.3), like an item. */
+.li-name {
+  border-radius: 2px;
+  cursor: text;
+  -webkit-user-modify: read-write-plaintext-only;
+}
+
+.li-name:focus {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+}
+
+/* --- The list itself --- */
+
+.li-rows {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.li-row,
+.li-fold {
+  --indent: 1.75rem;
   display: flex;
   align-items: center;
-  gap: 0.15rem;
+  gap: 0.35rem;
+  min-height: 3rem;
+  border-bottom: 1px solid var(--rule);
+  background: var(--paper);
+}
+
+/* Depth, as an attribute: the page's CSP allows no inline style. */
+.li-row[data-depth="1"], .li-fold[data-depth="1"] { padding-left: calc(var(--indent) * 1); }
+.li-row[data-depth="2"], .li-fold[data-depth="2"] { padding-left: calc(var(--indent) * 2); }
+.li-row[data-depth="3"], .li-fold[data-depth="3"] { padding-left: calc(var(--indent) * 3); }
+.li-row[data-depth="4"], .li-fold[data-depth="4"] { padding-left: calc(var(--indent) * 4); }
+.li-row[data-depth="5"], .li-fold[data-depth="5"] { padding-left: calc(var(--indent) * 5); }
+.li-row[data-depth="6"], .li-fold[data-depth="6"] { padding-left: calc(var(--indent) * 6); }
+.li-row[data-depth="7"], .li-fold[data-depth="7"] { padding-left: calc(var(--indent) * 7); }
+.li-row[data-depth="8"], .li-fold[data-depth="8"] { padding-left: calc(var(--indent) * 8); }
+
+/*
+  A phone's width is not spent on indentation. At 320px a stock row is
+  two 44px buttons and a count beside the words; with a 0.65rem step the
+  words still have about 100px at depth 6, where 1.25rem left 40px and
+  broke every word letter by letter.
+*/
+@media (max-width: 480px) {
+  .li-row,
+  .li-fold {
+    --indent: 0.9rem;
+  }
+}
+
+@media (max-width: 380px) {
+  .li-row,
+  .li-fold {
+    --indent: 0.65rem;
+  }
+}
+
+/*
+  Rows take horizontal gestures for themselves — a swipe nests (J18.8) —
+  and leave vertical ones to the page, which scrolls.
+*/
+.li-rows .li-row {
+  touch-action: pan-y;
+  -webkit-touch-callout: none;
+}
+
+/* The words fill the row, so the row is the target for "tap to edit". */
+.li-text {
+  flex: 1;
+  min-width: 0;
+  align-self: stretch;
+  display: flex;
+  align-items: center;
+  padding: 0.55rem 0.15rem;
+  font-family: var(--serif);
+  font-size: 1.08rem;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+  border-radius: 2px;
+  cursor: text;
+  -webkit-user-modify: read-write-plaintext-only;
+}
+
+.li-text[contenteditable]:focus {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+/* An item with things nested under it reads as what holds them. */
+.li-parent > .li-text {
+  font-weight: 600;
+}
+
+.li-tick {
   flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.75rem;
+  height: 2.75rem;
+  padding: 0;
+  border: none;
+  background: none;
+  cursor: pointer;
+  touch-action: manipulation;
 }
 
-.shop-btn {
-  font-size: 1.05rem;
+/* The box drawn inside the 44px target: the target is the thumb's, the box the eye's. */
+.li-tick > span {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.45rem;
+  height: 1.45rem;
+  border: 1.5px solid var(--rule-strong);
+  border-radius: 3px;
+  font-size: 1rem;
+  line-height: 1;
+  color: var(--paper);
 }
 
-.shop-btn.is-on {
+.li-tick[aria-pressed="true"] > span {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
+.li-tick:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -4px;
+}
+
+.li-tick:disabled {
+  cursor: default;
+}
+
+.li-ticked > .li-text {
+  color: var(--ink-faint);
+  text-decoration: line-through;
+}
+
+/* --- Stock counters (J18.14 – J18.16) --- */
+
+.li-count {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+}
+
+.li-step {
+  width: 2.75rem;
+  height: 2.75rem;
+  padding: 0;
+  font: inherit;
+  font-size: 1.3rem;
+  line-height: 1;
+  border: none;
+  background: none;
+  color: var(--ink-soft);
+  cursor: pointer;
+  touch-action: manipulation;
+}
+
+.li-step:hover {
   color: var(--accent);
 }
 
-.shop-line-got .shop-what {
-  text-decoration: line-through;
-  color: var(--ink-faint);
+.li-step:disabled {
+  opacity: 0.35;
+  cursor: default;
 }
 
-/* Removed lines are not gone: they collapse into a group that says how
-   many, and one tap puts one back (J13.13). */
-.shop-have {
-  margin-top: 1rem;
-  border-top: 1px solid var(--rule);
+.li-step:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -4px;
 }
 
-.shop-have > summary {
+.li-n {
+  min-width: 1.6rem;
+  text-align: center;
+  font-family: var(--serif);
+  font-size: 1.1rem;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Run out: still on the list, faded, so the list shows what has gone (J18.15). */
+.li-faded > .li-text,
+.li-faded .li-n {
+  opacity: 0.45;
+}
+
+/* --- Ticked (n) --- */
+
+.li-fold-btn {
   display: flex;
   align-items: center;
   gap: 0.5rem;
-  list-style: none;
   min-height: 2.75rem;
-  font-size: 0.7rem;
+  padding: 0 0.15rem;
+  border: none;
+  background: none;
+  font-family: var(--sans);
+  font-size: 0.72rem;
   font-weight: 600;
   letter-spacing: 0.16em;
   text-transform: uppercase;
@@ -2024,41 +2097,75 @@ button.crumb:hover {
   touch-action: manipulation;
 }
 
-/*
-  A mark saying it opens. `display: flex` takes the browser's own
-  disclosure triangle away, which left "3 THINGS YOU ALREADY HAVE" set
-  exactly like the section labels above it and reading as one — a
-  heading, not a way back. J13.14 is the whole reason this group exists:
-  ✗ is a fast gesture and fast gestures are mistyped, and a way back
-  nobody can see is not one. The caret is the ▸ the current book already
-  uses, and it turns rather than being swapped for a second glyph.
-*/
-.shop-have > summary::-webkit-details-marker {
-  display: none;
-}
-
-.shop-have > summary::before {
+.li-fold-btn::before {
   content: "▸";
-  flex: none;
   color: var(--accent);
   transition: transform 0.15s ease;
 }
 
-.shop-have[open] > summary::before {
+.li-fold-btn[aria-expanded="true"]::before {
   transform: rotate(90deg);
 }
 
-.shop-have > summary:hover {
+.li-fold-btn:hover {
   color: var(--ink);
 }
 
-.shop-lines-have .shop-what {
+/* --- Adding, swiping, dragging --- */
+
+.li-add {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  width: 100%;
+  min-height: 3rem;
+  padding: 0 0.15rem;
+  border: none;
+  background: none;
+  font-family: var(--serif);
+  font-style: italic;
+  font-size: 1.05rem;
   color: var(--ink-faint);
+  text-align: left;
+  cursor: pointer;
+  touch-action: manipulation;
 }
 
-.shop-restore {
-  min-height: 2.75rem;
-  white-space: nowrap;
+.li-add span {
+  width: 2.75rem;
+  text-align: center;
+  font-style: normal;
+  font-size: 1.3rem;
+  color: var(--accent);
+}
+
+.li-add:hover {
+  color: var(--ink);
+}
+
+.li-swiping {
+  transition: none;
+}
+
+.li-rows .li-row:not(.li-swiping) {
+  transition: transform 0.15s ease;
+}
+
+.li-dragging {
+  position: relative;
+  z-index: 2;
+  background: var(--paper-raised);
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.18);
+  border-bottom-color: var(--accent);
+}
+
+/* What is nested under a dragged item travels with it, out of sight. */
+.li-carried {
+  display: none;
+}
+
+.list-actions {
+  justify-content: space-between;
 }
 
 /* ---------- Toast ----------
@@ -2408,7 +2515,8 @@ button.crumb:hover {
   /* Full width is not full measure: prose past ~70 characters is harder
      to find your place in, which is the one thing a recipe must not be. */
   .detail-view > #detail-content,
-  .plan-view > #plan-content {
+  .lists-view > #lists-content,
+  .lists-view > #list-content {
     max-width: 46rem;
     margin-inline: auto;
   }
@@ -2432,16 +2540,13 @@ button.crumb:hover {
   }
 
   /*
-    The plan is narrower than the recipe. A recipe earns 1100px by
-    spending it on two columns (J4.16); the plan is one list and has
-    nothing to spend it on, so at 1440px it ran a shopping line the whole
-    width and left a thousand pixels of paper between "6 onions" and the
-    ✓ that settles it. Narrowing the view rather than the list inside it
-    is what keeps the heading, the list and the action bar on one left
-    edge: capping the content alone moved the list into a column and left
-    the title and Done outside it.
+    A list is narrower than the recipe. A recipe earns 1100px by spending
+    it on two columns (J4.16); a list is one column and has nothing to
+    spend it on, and a thousand pixels between "milk" and its counter is
+    paper to cross. Narrowing the view rather than the list inside it keeps
+    the heading, the list and the action bar on one left edge.
   */
-  .plan-view {
+  .lists-view {
     max-width: min(51rem, 100vw);
   }
 }
@@ -2461,7 +2566,8 @@ button.crumb:hover {
 */
 @media (min-width: 820px) {
   .detail-view > #detail-content,
-  .plan-view > #plan-content {
+  .lists-view > #lists-content,
+  .lists-view > #list-content {
     max-width: none;
   }
 
