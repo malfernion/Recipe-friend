@@ -111,6 +111,9 @@
     </div>
   </section>
 
+  <!-- The book's lists, a tap from the recipes (J18.27). Filled by app.js. -->
+  <nav id="lists-row" class="lists-bar" aria-label="Lists" hidden></nav>
+
   <main class="container">
     <section class="toolbar" aria-label="Search, filter and sort">
       <input type="search" id="search-input" class="search-input"
@@ -322,6 +325,7 @@
     <div class="detail-head">
       <div class="detail-head-text">
         <h2 class="detail-title" id="list-heading" tabindex="-1"></h2>
+        <p class="list-edited" id="list-edited" hidden></p>
       </div>
     </div>
     <div id="list-content"></div>

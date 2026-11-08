@@ -1387,6 +1387,22 @@ and a recipe drops onto it as a single item.
     (J14.1–J14.4). "Last planned" and the sort by it stay (J14.5 on,
     J18.21).
 
+### Getting to a list
+
+27. **The recipe page has the book's lists in one row under the app
+    bar**, one button to a list, in the order of the Lists screen and
+    showing only its name. Tap one and that list opens. The buttons fill
+    the row; any that do not fit are hidden, never wrapped or scrolled,
+    and the row always ends with "All lists", which is never hidden. A
+    book with no lists shows a single "Lists" button. A read-only member
+    sees it too (J18.4).
+28. **A list says when it was last changed**, in small muted words by its
+    title — "Edited 3 days ago", worded as "Last planned" is (J14.6). It
+    is worked out from the list's own dates, so it is there offline and
+    moves when a change arrives, and it says nothing if the list holds
+    no date. A counter tap carries no date of its own (J18.17), so on a
+    stock list it is not what moves this.
+
 ### How it arrived
 
 In three steps, each a pull request, all shipped. First lists and items,

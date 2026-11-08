@@ -515,6 +515,48 @@
     return out;
   }
 
+  /**
+   * The newest stamp the list holds — when it was last changed, worked out
+   * from the list itself so it is known offline (J18.28). A counter tap
+   * carries no stamp of its own (tallies merge as changes, J18.17), so it
+   * does not move this. 0 when nothing is stamped.
+   */
+  function lastEdited(list) {
+    let at = 0;
+    if (!list) return at;
+    const see = (n) => {
+      if (typeof n === "number" && n > at) at = n;
+    };
+    see(list.nameAt);
+    see(list.createdAt);
+    for (const i of list.items || []) {
+      see(i.addedAt);
+      see(i.goneAt);
+      see(i.posAt);
+      see(i.textAt);
+      see(i.tickAt);
+    }
+    return at;
+  }
+
+  /**
+   * How many of the lists' buttons fit in a row of `avail` pixels, always
+   * leaving room for the closing "All lists" button (J18.27). A prefix, in
+   * order: a short name is not allowed to jump the queue past one that did
+   * not fit. `gap` is the space between buttons.
+   */
+  function fitCount(widths, allWidth, avail, gap = 0) {
+    let used = Math.max(0, allWidth || 0);
+    let n = 0;
+    for (const w of widths) {
+      const next = used + gap + w;
+      if (next > avail) break;
+      used = next;
+      n += 1;
+    }
+    return n;
+  }
+
   /** A counter's raw value: 1, plus every +, less every − (J18.14). */
   function rawCount(item) {
     let n = 1;
@@ -1046,6 +1088,8 @@
     sameItems,
     prune,
     liveItems,
+    lastEdited,
+    fitCount,
     children,
     subtree,
     tickedIds,

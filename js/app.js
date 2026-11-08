@@ -124,6 +124,8 @@
     document.body.classList.toggle("viewing", open);
     // A list on screen is polled for what the others did (J18.24).
     syncListPolling();
+    // The row of lists is measured, and measures nothing while hidden.
+    if (!open) renderListsRow();
   }
 
   function showView(el) {
@@ -1658,8 +1660,84 @@
     adding = null;
   });
 
+  /**
+   * The book's lists as one row of buttons under the app bar (J18.27): in
+   * the Lists screen's order, names only, as many as fit. The rest are
+   * hidden (the attribute, not a style: CSP) and "All lists" never is.
+   */
+  const listsRow = $("#lists-row");
+
+  function renderListsRow() {
+    if (!listsRow) return;
+    if (!listStore) {
+      listsRow.hidden = true;
+      return;
+    }
+    const lists = listStore.lists;
+    listsRow.hidden = false;
+    listsRow.innerHTML =
+      lists
+        .map(
+          (l) => `<button type="button" class="lists-bar-btn" data-home-list="${escapeHTML(l.id)}"
+            title="${escapeHTML(l.name)}">${escapeHTML(l.name)}</button>`
+        )
+        .join("") +
+      `<button type="button" class="lists-bar-btn lists-bar-all" data-home-lists>${lists.length ? "All lists" : "Lists"}</button>`;
+    fitListsRow();
+  }
+
+  /** Hide the lists that do not fit; the row never wraps or scrolls. */
+  function fitListsRow() {
+    if (!listsRow || listsRow.hidden) return;
+    const buttons = Array.from(listsRow.querySelectorAll("[data-home-list]"));
+    const all = listsRow.querySelector("[data-home-lists]");
+    const avail = listsRow.clientWidth;
+    // Not on screen (a view is over it): nothing to measure; the view
+    // closing draws the row again.
+    if (!all || !avail) return;
+    for (const b of buttons) b.hidden = false;
+    // Measured at their natural widths, before they are let grow to fill.
+    listsRow.classList.add("measuring");
+    const widths = buttons.map((b) => b.offsetWidth || 0);
+    const allWidth = all.offsetWidth || 0;
+    listsRow.classList.remove("measuring");
+    let gap = 0;
+    if (typeof window.getComputedStyle === "function") {
+      gap = parseFloat(window.getComputedStyle(listsRow).columnGap) || 0;
+    }
+    const n = RecipeLists.fitCount(widths, allWidth, avail, gap);
+    buttons.forEach((b, i) => {
+      b.hidden = i >= n;
+    });
+  }
+
+  if (listsRow) {
+    listsRow.addEventListener("click", (event) => {
+      const t = event.target && event.target.closest;
+      const one = t ? event.target.closest("[data-home-list]") : null;
+      if (one) return void openList(one.dataset.homeList);
+      if (t && event.target.closest("[data-home-lists]")) openListsView();
+    });
+    if (typeof window.ResizeObserver === "function") {
+      new window.ResizeObserver(() => fitListsRow()).observe(listsRow);
+    } else {
+      window.addEventListener("resize", () => fitListsRow());
+    }
+  }
+
+  /** "Edited 2 days ago" by the open list's title, from its own stamps (J18.28). */
+  function renderListEdited() {
+    const el = $("#list-edited");
+    if (!el) return;
+    const at = RecipeLists.lastEdited(currentList());
+    const when = at && window.RecipePlan ? window.RecipePlan.relativeWhen(at) : "";
+    el.textContent = when ? `Edited ${when}` : "";
+    el.hidden = !when;
+  }
+
   /** The Lists button and the recipe view's Add to list. Called from render(). */
   function syncListControls() {
+    renderListsRow();
     // Lists are read by everyone in the book (J18.4), so the way in is
     // there for a viewer too; adding to one is not (J18.18).
     const listsBtn = $("#lists-btn");
@@ -1847,6 +1925,9 @@
    */
   function renderList(force = false) {
     if (!listStore || !openListId) return;
+    // A line apart from the items and the name, so it can be redrawn while
+    // one is being typed in without touching the caret.
+    renderListEdited();
     // Nor under a finger that is holding or dragging a row: a redraw would
     // take the row out from under it, and the drop would land at the end
     // of the list. The gesture's end pays what is owed.
