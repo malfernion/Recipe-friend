@@ -2093,21 +2093,32 @@ button.crumb:hover {
   -webkit-user-modify: read-write-plaintext-only;
 }
 
+/*
+  A block that does its own clipping, always: one line ending in an
+  ellipsis, and while it is being renamed the whole name, wrapping, so
+  the caret is never out of sight. Being a block either way, a wrapped
+  name gets one rectangle of outline rather than one per line, and
+  nothing changes display on focus (Chrome dropped the ellipsis after
+  a block-to-inline switch).
+*/
+.list-head .li-name {
+  display: block;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 /* Inside, because the title clips what overflows it. */
 .li-name:focus {
   outline: 2px solid var(--accent);
   outline-offset: -2px;
 }
 
-/* Being renamed, the whole name shows, wrapping, so the caret is never
-   out of sight; the ellipsis comes back when the name is left. Not
-   :focus-within: the heading itself takes focus when a list opens. */
-.list-head .list-title:has(.li-name:focus) {
+.list-head .li-name:focus {
   white-space: normal;
   overflow: visible;
   text-overflow: clip;
   overflow-wrap: break-word;
-  flex-shrink: 1;
 }
 
 /* --- The list itself --- */
