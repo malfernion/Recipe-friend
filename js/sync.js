@@ -649,10 +649,37 @@
       return { pushed, pulled: missingHere.length, live };
     }
 
-    // Done, its Undo, and the Undo of a Done that recorded nothing went
-    // with the plan readout (J18, build step 1). What finished plans the
-    // archive holds still syncs above; build step 2 records an add to a
-    // list there (J18.21).
+    /**
+     * Record that a recipe was planned (J18.21): one archived plan holding
+     * that one meal. Written to this device first and owed to the book, so
+     * it works with no network and goes up on the usual push, retried
+     * until it lands (J9.5). Returns the record's id, for Undo.
+     */
+    recordPlanned(recipe, portions, now = Date.now()) {
+      if (!this.planStore || this.readOnly || this.addOnly) return null;
+      const archived = this.planStore.archivePlan(global.RecipePlan.plannedMeal(recipe, portions, now));
+      return archived ? archived.id : null;
+    }
+
+    /**
+     * Take that record back (J18.21's Undo). The server first, then this
+     * device, for the reason J7.11 gives: an archived plan is reconciled
+     * by comparing ids, so one dropped here and not there is pulled
+     * straight back. Offline this throws and leaves the record where it
+     * is — except one the book was never told about, which has nothing to
+     * delete there and just goes.
+     */
+    async unrecordPlanned(planId) {
+      if (!this.planStore || !this.planStore.hasArchived(planId)) return false;
+      if (this.readOnly || this.addOnly) return false;
+      try {
+        await this.api.deleteArchivedPlan(this.bookId, planId);
+      } catch (err) {
+        if (!this.planStore.owes(planId)) throw err;
+      }
+      this.planStore.removeArchived(planId);
+      return true;
+    }
 
     /** Local edit happened: coalesce rapid changes into one round trip. */
     schedulePush() {

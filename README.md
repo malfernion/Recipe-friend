@@ -31,10 +31,11 @@ for accounts and sync.
   Clear ticked and every delete come with an Undo. Lists work offline,
   merge item by item between phones — two people each taking one from
   the freezer both count — and show the other phones' changes within
-  seconds. In Meal plan mode a recipe goes onto the first checklist as
-  one item with its ingredients under it, at the portions you chose and
-  in your own units. Cards say when a recipe was "Last planned", and a
-  sort puts what you have not had lately under your thumb.
+  seconds. "+ List" in the recipe view asks which checklist and how many
+  portions, then puts the recipe at the top as one item with its
+  ingredients under it, in your own units, with an Undo. That is also
+  what "Last planned" records: cards say when a recipe last went on a
+  list, and a sort puts what you have not had lately under your thumb.
 - **A recipe view built for a worktop** — a screen of its own rather than
   a box over the list, so pinching to zoom, panning and turning the phone
   do what they do on any page. It takes the whole screen, puts ingredients

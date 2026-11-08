@@ -1182,3 +1182,74 @@ test("J13.16 · a phone whose clock is days slow still has its edit and its tick
     assert.deepEqual(d.planStore.plan.items.map((i) => [i.text, i.state]), [["8 eggs", ""]]);
   }
 });
+
+// ---------------------------------------------------------------------
+// J18.21 · Adding a recipe to a list records it as planned
+// ---------------------------------------------------------------------
+
+test("J18.21 · recordPlanned is kept on the device and goes up on sync, even after being offline", async () => {
+  const cloud = fakeCloud();
+  joinBook(cloud);
+  const d = device(cloud);
+  const recipe = shareRecipe(cloud);
+
+  cloud.breakWrite("plans.insert");
+  const id = d.sync.recordPlanned(recipe, 6, 2000);
+  assert.equal(d.planStore.archive.length, 1, "recorded here at once");
+  await d.sync.syncNow().catch(() => {});
+  assert.equal(cloud.db.plans.length, 0, "offline, the book has not been told");
+  assert.equal(d.planStore.owes(id), true, "but it is owed");
+
+  cloud.mend("plans.insert");
+  await d.sync.syncNow();
+  assert.deepEqual(cloud.db.plans.map((r) => r.id), [id]);
+  assert.equal(cloud.db.plans[0].data.meals[0].portions, 6);
+  assert.equal(d.planStore.owes(id), false);
+});
+
+test("J18.21 · unrecordPlanned deletes the row and the local copy", async () => {
+  const cloud = fakeCloud();
+  joinBook(cloud);
+  const d = device(cloud);
+  const recipe = shareRecipe(cloud);
+  const id = d.sync.recordPlanned(recipe, 4, 2000);
+  await d.sync.syncNow();
+  assert.equal(cloud.db.plans.length, 1);
+
+  assert.equal(await d.sync.unrecordPlanned(id), true);
+  assert.equal(cloud.db.plans.length, 0);
+  assert.equal(d.planStore.archive.length, 0);
+  await d.sync.syncNow();
+  assert.equal(d.planStore.archive.length, 0, "and the next sync does not bring it back");
+});
+
+test("J18.21 · unrecordPlanned needs the network for a record the book holds", async () => {
+  const cloud = fakeCloud();
+  joinBook(cloud);
+  const d = device(cloud);
+  const id = d.sync.recordPlanned(shareRecipe(cloud), 4, 2000);
+  await d.sync.syncNow();
+
+  cloud.breakWrite("plans.delete");
+  await assert.rejects(() => d.sync.unrecordPlanned(id));
+  assert.equal(d.planStore.archive.length, 1, "left where it was");
+  assert.equal(cloud.db.plans.length, 1);
+});
+
+test("J18.21 · a record the book never heard of just goes, offline or not", async () => {
+  const cloud = fakeCloud();
+  joinBook(cloud);
+  const d = device(cloud);
+  const id = d.sync.recordPlanned(shareRecipe(cloud), 4, 2000);
+  cloud.breakWrite("plans.delete");
+  assert.equal(await d.sync.unrecordPlanned(id), true);
+  assert.equal(d.planStore.archive.length, 0);
+  assert.equal(d.planStore.owes(id), false, "and nothing is owed on it");
+});
+
+test("J18.21 · a viewer records nothing", () => {
+  const cloud = fakeCloud();
+  const d = device(cloud, { readOnly: true });
+  assert.equal(d.sync.recordPlanned(shareRecipe(cloud), 4), null);
+  assert.equal(d.planStore.archive.length, 0);
+});

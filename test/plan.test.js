@@ -652,3 +652,27 @@ test("J13.16 · three copies of one line merge to the same line in any order", (
   for (const r of results) assert.deepEqual(r, results[0]);
   assert.deepEqual([results[0].text, results[0].state, results[0].addedAt], ["soya milk", "got", 1]);
 });
+
+test("J18.21 · plannedMeal is a finished plan of one meal, at the portions it was added for", () => {
+  const record = win.RecipePlan.plannedMeal(BOLOGNESE, 6, 5000);
+  assert.equal(record.completedAt, 5000);
+  assert.equal(record.meals.length, 1);
+  assert.equal(record.meals[0].portions, 6);
+  assert.equal(record.meals[0].multiplier, null);
+  const index = plannedIndex([record]);
+  assert.deepEqual(index[BOLOGNESE.id], { lastPlannedAt: 5000, count: 1 }, "the history readers see it as before");
+});
+
+test("J18.21 · a recipe with no servings is recorded by its multiplier", () => {
+  const bread = sanitize({ name: "Bread", ingredients: [{ amount: 500, unit: "g", item: "flour" }], steps: ["Bake."] });
+  const record = win.RecipePlan.plannedMeal(bread, 1.5, 9000);
+  assert.equal(record.meals[0].portions, null);
+  assert.equal(record.meals[0].multiplier, 1.5);
+});
+
+test("J18.21 · each call is its own plan, so two adds are two records", () => {
+  const a = win.RecipePlan.plannedMeal(CURRY, 2, 1000);
+  const b = win.RecipePlan.plannedMeal(CURRY, 2, 1000);
+  assert.notEqual(a.id, b.id);
+  assert.equal(plannedIndex([a, b])[CURRY.id].count, 2);
+});

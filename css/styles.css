@@ -84,8 +84,7 @@ body.viewing .app-footer {
   from here. Row-level security is what actually refuses — this is about
   not offering a control that would fail.
 */
-body.read-only .fav-btn,
-body.read-only .plan-card-row {
+body.read-only .fav-btn {
   display: none;
 }
 
@@ -1677,68 +1676,34 @@ button.crumb:hover {
   box-shadow: inset 0 -1px var(--accent);
 }
 
-/* Which list plan mode adds to, over the recipes you are choosing from. */
-.plan-bar {
+/* Add to list (J18.18): a short column of big targets. */
+.addlist-dialog {
+  max-width: 24rem;
+}
+
+.addlist-lists {
   display: flex;
-  align-items: center;
-  justify-content: space-between;
-  flex-wrap: wrap;
-  gap: 0.5rem 1rem;
-  margin: 0 0 1.9rem;
-  padding: 0.6rem 0.9rem;
-  border: 1px solid var(--rule);
-  background: var(--paper-raised);
+  flex-direction: column;
+  gap: 0.4rem;
+  margin: 0 0 1.1rem;
 }
 
-.plan-bar-text {
-  margin: 0;
-  font-family: var(--serif);
-  font-style: italic;
-  font-size: 0.95rem;
-  color: var(--ink-soft);
-}
-
-/* The card's way on, and the portions it adds at. */
-.plan-card-row {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 0.4rem 0.6rem;
-  /*
-    The card's last line, so it takes the card's slack and lines up across
-    a row of cards whether or not a recipe has tags.
-  */
-  margin-top: auto;
-  padding-top: 0.75rem;
-  border-top: 1px solid var(--rule);
-}
-
-.recipe-card:has(.plan-card-row) .card-tags {
-  margin-top: 0;
-}
-
-.plan-add {
-  border: 1px solid var(--rule-strong);
-  padding: 0.5rem 0.7rem;
+.addlist-pick {
   min-height: 2.75rem;
+  text-align: left;
+  border: 1px solid var(--rule);
 }
 
-.plan-add:hover {
-  border-color: var(--accent);
+.addlist-pick[aria-pressed="true"] {
   color: var(--accent);
+  border-color: var(--accent);
 }
 
-.plan-portions {
-  display: inline-flex;
+.addlist-portions {
+  display: flex;
   align-items: center;
-  gap: 0.3rem;
-}
-
-/* Narrower than the recipe view's: a card is 280px and holds a stepper
-   and a button on one row. */
-.plan-portions .scale-value {
-  min-width: 4.6rem;
-  font-size: 0.95rem;
+  gap: 0.4rem;
+  margin: 0 0 1.1rem;
 }
 
 .plan-empty {

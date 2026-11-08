@@ -26,7 +26,6 @@
   // Planning is a mode over the list, not a screen of its own (J12.4).
   // Nothing about it is stored: turning it off changes nothing but what
   // the cards offer.
-  let planMode = false;
 
   // --- Elements ---
   const $ = (sel) => document.querySelector(sel);
@@ -309,7 +308,8 @@
       const action = toastAction;
       clearTimeout(toastTimer);
       hideToast();
-      if (action) action.run();
+      // Returned so an async Undo can be awaited by whoever drives the click.
+      if (action) return action.run();
     });
   }
 
@@ -573,7 +573,6 @@
                 .join("")}</div>`
             : ""
         }
-        ${planCardRow(recipe)}
       </article>`;
   }
 
@@ -1149,12 +1148,8 @@
     document.body.classList.toggle("read-only", !canEditBook);
     syncTransferButtons();
     // A viewer reads the lists and changes nothing (J18.4, J7.17): the
-    // controls that write go, and plan mode with them. Hiding them is a
+    // controls that write go, Add to list with them. Hiding them is a
     // courtesy — the gate is row-level security.
-    if (!canPlan()) {
-      planMode = false;
-      forgetPendingPortions();
-    }
     syncPlanUI();
     if (listsView.open) renderLists();
     // Not forced: this runs on every refresh, and must not take an item
@@ -1441,13 +1436,11 @@
   }
 
   /**
-   * --- Plan mode, until "Add to list" replaces it (J12.4, J18 step 2) --
+   * --- Add to list (J18.18–J18.21) --------------------------------------
    *
-   * The plan readout and its summed shopping list are gone (J18.26): the
-   * book's lists are where the shopping lives now. What stays until step
-   * 2 is the mode over the recipe list, and its add puts the recipe on the
-   * book's first checklist as one item with its ingredients nested under
-   * it, at the portions the card's stepper shows (J18.18).
+   * The recipe view's way onto a list: a small dialog asking which
+   * checklist and how many portions, then one item with its ingredients
+   * nested under it, at the top. It replaces plan mode (J12.4).
    */
 
   /** May this reader put things on the book's lists? (J18.4, J7.17) */
@@ -1455,36 +1448,44 @@
     return Boolean(listStore) && canEditBook;
   }
 
-  /** The list plan mode adds to: the book's first checklist, Shopping. */
-  function firstChecklist() {
-    return listStore ? listStore.lists.find((l) => l.kind === "checklist") || null : null;
+  const checklists = () => (listStore ? listStore.lists.filter((l) => l.kind === "checklist") : []);
+
+  // Which checklist an add used last on this device: a convenience, never
+  // synced, so it falls back to the first when that list is gone.
+  const LAST_LIST_KEY = "recipe-friend:add-list";
+  function rememberList(id) {
+    try {
+      window.localStorage.setItem(LAST_LIST_KEY, id);
+    } catch {
+      /* a default is all it is */
+    }
+  }
+  function defaultList() {
+    const all = checklists();
+    let last = null;
+    try {
+      last = window.localStorage.getItem(LAST_LIST_KEY);
+    } catch {
+      /* no storage: the first */
+    }
+    return all.find((l) => l.id === last) || all[0] || null;
   }
 
-  /**
-   * The portions a card's stepper is showing — what the next add will
-   * use. UI state like which tag is on, and like it never stored or
-   * synced: leaving plan mode forgets it (J12.5).
-   */
-  let pendingPortions = Object.create(null);
-
-  function forgetPendingPortions() {
-    pendingPortions = Object.create(null);
-  }
+  /** The chooser's state while it is open: not kept, not synced. */
+  let adding = null;
+  const addDialog = $("#addlist-dialog");
+  const addContent = $("#addlist-content");
 
   /** Servings where the recipe says them, else the J4.2 multiplier. */
-  function portionsFor(recipe) {
-    const held = pendingPortions[recipe.id];
-    if (held) return held;
+  function startingPortions(recipe) {
     return Number(recipe.servings) > 0 ? Number(recipe.servings) : 1;
   }
 
   /** Step the way the recipe view steps (J4.2): a serving, or half a batch. */
-  function stepPending(recipe, direction) {
-    const now = portionsFor(recipe);
-    pendingPortions[recipe.id] =
-      Number(recipe.servings) > 0
-        ? direction === "up" ? now + 1 : Math.max(1, now - 1)
-        : Math.min(8, Math.max(0.5, now + (direction === "up" ? 0.5 : -0.5)));
+  function stepPortions(recipe, now, up) {
+    return Number(recipe.servings) > 0
+      ? up ? now + 1 : Math.max(1, now - 1)
+      : Math.min(8, Math.max(0.5, now + (up ? 0.5 : -0.5)));
   }
 
   function portionsLabel(recipe, portions) {
@@ -1493,18 +1494,57 @@
       : `× ${RecipeScale.formatQuantity(portions)}`;
   }
 
-  /**
-   * Put a recipe on the first checklist, at the top, as one item with its
-   * ingredients under it, scaled and in this reader's units (J18.18). It
-   * says so with an Undo, like every other way an item comes or goes here.
-   */
-  function addRecipeToList(recipe, portions) {
-    if (!canPlan() || !recipe) return false;
-    const list = firstChecklist();
-    if (!list) {
-      toast("There is no checklist to put it on — make one in Lists.");
-      return false;
+  function renderAddChooser() {
+    const recipe = adding && store.getById(adding.recipeId);
+    if (!recipe) return;
+    const cancel = `<button type="button" class="btn btn-ghost" data-al="cancel">Cancel</button>`;
+    const all = checklists();
+    if (all.length === 0) {
+      addContent.innerHTML = `
+        <p class="books-hint">This book has no checklist to put a recipe on yet.</p>
+        <div class="action-bar">${cancel}
+          <button type="button" class="btn" data-al="make">Make “Shopping”</button></div>`;
+      return;
     }
+    const picks = all
+      .map(
+        (l) => `<button type="button" class="btn btn-ghost addlist-pick" data-al="pick" data-id="${escapeHTML(l.id)}"
+                        aria-pressed="${l.id === adding.listId}">${escapeHTML(l.name)}</button>`
+      )
+      .join("");
+    addContent.innerHTML = `
+      <p class="books-hint">${escapeHTML(recipe.name)}</p>
+      <div class="addlist-lists" role="group" aria-label="Which list">${picks}</div>
+      <div class="addlist-portions" role="group" aria-label="Portions">
+        <button type="button" class="scale-btn" data-al="down" aria-label="Fewer portions">−</button>
+        <span class="scale-value">${escapeHTML(portionsLabel(recipe, adding.portions))}</span>
+        <button type="button" class="scale-btn" data-al="up" aria-label="More portions">+</button>
+      </div>
+      <div class="action-bar">${cancel}
+        <button type="button" class="btn" data-al="add">Add</button></div>`;
+  }
+
+  function openAddChooser() {
+    const recipe = detailId && store.getById(detailId);
+    if (!recipe || !canPlan()) return;
+    const list = defaultList();
+    adding = {
+      recipeId: recipe.id,
+      listId: list ? list.id : null,
+      portions: startingPortions(recipe),
+    };
+    renderAddChooser();
+    addDialog.showModal();
+  }
+
+  /**
+   * Put the recipe on the chosen checklist, at the top, as one item with
+   * its ingredients under it, scaled and in this reader's units (J18.18),
+   * and record it as planned (J18.21). It says so with an Undo, like every
+   * other way an item comes or goes here.
+   */
+  function addRecipeToList(recipe, list, portions) {
+    if (!canPlan() || !recipe || !list) return false;
     const rootId = RecipeLists.newId();
     const node = RecipeLists.recipeItems(recipe, portions, store.prefs);
     const after = listStore.change(list.id, (l) =>
@@ -1517,77 +1557,85 @@
       toast(`“${list.name}” is full — clear some of it first.`);
       return false;
     }
+    rememberList(list.id);
+    // The record "Last planned" reads: written here and owed to the book,
+    // so it goes up whenever there is a network. Without a sync layer
+    // (nobody signed in) it is kept on this device.
+    const cloud = window.RecipeCloud;
+    const sync = cloud && cloud.sync;
+    let recordId = null;
+    if (sync && typeof sync.recordPlanned === "function") recordId = sync.recordPlanned(recipe, portions);
+    else if (planStore && window.RecipePlan) {
+      const kept = planStore.archivePlan(RecipePlan.plannedMeal(recipe, portions));
+      recordId = kept ? kept.id : null;
+    }
+    plannedIndexCache = null;
     toast(`Added “${recipe.name}” to ${list.name}.`, {
       label: "Undo",
-      run: () => {
+      run: async () => {
         listStore.change(list.id, (l) => RecipeLists.deleteItems(l, RecipeLists.subtree(l, rootId)));
         listsChanged([list.id]);
+        if (!recordId) return;
+        // The list item is gone either way. The record needs the network
+        // to come back out of the book (J7.11), so offline it stays, and
+        // the recipe still says it was planned.
+        try {
+          if (sync && typeof sync.unrecordPlanned === "function") await sync.unrecordPlanned(recordId);
+          else planStore.removeArchived(recordId);
+          plannedIndexCache = null;
+          render();
+        } catch {
+          toast("Taken off the list. Reconnect to take back “Last planned” too.");
+        }
       },
     });
     listsChanged([list.id]);
+    render();
     return true;
   }
 
-  /** What a card offers in plan mode: a way on, and the portions it adds at. */
-  function planCardRow(recipe) {
-    if (!planMode || !canPlan()) return "";
-    const id = escapeHTML(recipe.id);
-    const name = escapeHTML(recipe.name);
-    const target = firstChecklist();
-    const where = escapeHTML(target ? target.name : "a list");
-    return `
-        <div class="plan-card-row">
-          <button type="button" class="btn btn-ghost plan-add" data-plan="add" data-id="${id}"
-                  aria-label="Add ${name} to ${where}">+ Add</button>
-          <span class="plan-portions" role="group" aria-label="Portions of ${name}">
-            <button type="button" class="scale-btn" data-plan="down" data-id="${id}"
-                    aria-label="Fewer portions of ${name}">−</button>
-            <span class="scale-value">${escapeHTML(portionsLabel(recipe, portionsFor(recipe)))}</span>
-            <button type="button" class="scale-btn" data-plan="up" data-id="${id}"
-                    aria-label="More portions of ${name}">+</button>
-          </span>
-        </div>`;
-  }
-
-  function cardPlanAction(action, recipeId) {
-    if (!canPlan()) return;
-    const recipe = store.getById(recipeId);
-    if (!recipe) return;
-    if (action === "add") {
-      addRecipeToList(recipe, portionsFor(recipe));
-      delete pendingPortions[recipeId];
-    } else {
-      stepPending(recipe, action);
+  addContent.addEventListener("click", (event) => {
+    const btn = event.target.closest("[data-al]");
+    if (!btn || !adding) return;
+    const recipe = store.getById(adding.recipeId);
+    const action = btn.dataset.al;
+    if (action === "cancel" || !recipe) {
+      addDialog.close();
+    } else if (action === "pick") {
+      adding.listId = btn.dataset.id;
+      renderAddChooser();
+    } else if (action === "up" || action === "down") {
+      adding.portions = stepPortions(recipe, adding.portions, action === "up");
+      renderAddChooser();
+    } else if (action === "make") {
+      const made = listStore && canPlan() ? listStore.create("Shopping", "checklist") : null;
+      if (!made) {
+        toast("This book has as many lists as it can hold.");
+        return;
+      }
+      adding.listId = made.id;
+      adding.portions = startingPortions(recipe);
+      listsChanged([made.id]);
+      renderAddChooser();
+    } else if (action === "add") {
+      const list = listStore.get(adding.listId);
+      const portions = adding.portions;
+      addDialog.close();
+      addRecipeToList(recipe, list, portions);
     }
-    render();
-  }
+  });
+  addDialog.addEventListener("close", () => {
+    adding = null;
+  });
 
-  /** The header toggle and the bar over the list. Called from render(). */
+  /** The Lists button and the recipe view's Add to list. Called from render(). */
   function syncPlanUI() {
-    const available = canPlan();
-    const planBtn = $("#plan-btn");
-    if (planBtn) {
-      planBtn.hidden = !available;
-      planBtn.setAttribute("aria-pressed", String(planMode));
-      planBtn.classList.toggle("is-on", planMode);
-    }
     // Lists are read by everyone in the book (J18.4), so the way in is
-    // there for a viewer too.
+    // there for a viewer too; adding to one is not (J18.18).
     const listsBtn = $("#lists-btn");
     if (listsBtn) listsBtn.hidden = !listStore;
-    const bar = $("#plan-bar");
-    if (bar) bar.hidden = !(available && planMode);
-    const barText = $("#plan-bar-text");
-    if (barText && available && planMode) {
-      const target = firstChecklist();
-      barText.textContent = target
-        ? `Adding to ${target.name} — choose the portions on a card, then + Add.`
-        : "No checklist to add to yet — make one in Lists.";
-      const open = $("#plan-open-btn");
-      if (open) open.textContent = target ? `Open ${target.name}` : "Open lists";
-    }
-    const detailBtn = $("#detail-plan-btn");
-    if (detailBtn) detailBtn.hidden = !(available && planMode);
+    const addBtn = $("#detail-addlist-btn");
+    if (addBtn) addBtn.hidden = !canPlan();
   }
 
   /**
@@ -2560,28 +2608,8 @@
 
   $("#lists-btn").addEventListener("click", () => openListsView());
 
-  $("#plan-btn").addEventListener("click", () => {
-    if (!canPlan()) return;
-    planMode = !planMode;
-    if (!planMode) forgetPendingPortions();
-    render();
-  });
-
-  // Over the Lists screen, so Back from the list goes where it always does.
-  $("#plan-open-btn").addEventListener("click", () => {
-    const target = firstChecklist();
-    openListsView();
-    if (target) openList(target.id);
-  });
-
-  $("#detail-plan-btn").addEventListener("click", () => {
-    const recipe = detailId && store.getById(detailId);
-    if (!recipe || !canPlan()) return;
-    // At the portions on screen: the recipe view's own stepper (J18.18).
-    const portions = Number(recipe.servings) > 0 ? Math.round(recipe.servings * detailScale * 10) / 10 : detailScale;
-    addRecipeToList(recipe, portions);
-    render();
-  });
+  // The chooser starts from the recipe's own servings (J18.18).
+  $("#detail-addlist-btn").addEventListener("click", () => openAddChooser());
 
   // --- Import / export ---
   function exportRecipes() {
@@ -2907,12 +2935,6 @@
       // would raise the on-screen one over the recipes just asked for.
       const byKey = event.detail === 0;
       removeFilter(clearBtn.dataset.remove, undefined, byKey ? [() => searchInput] : []);
-      return;
-    }
-    // Checked first: these sit inside a card, which is itself a button.
-    const planBtn = event.target.closest("[data-plan]");
-    if (planBtn && planBtn.dataset.plan) {
-      cardPlanAction(planBtn.dataset.plan, planBtn.dataset.id);
       return;
     }
     const favBtn = event.target.closest('[data-action="favorite"]');
