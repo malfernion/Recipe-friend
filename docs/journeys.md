@@ -317,7 +317,9 @@ Covers a share link someone sent, and a recipe an assistant wrote out.
 
 1. Everyone's first book is named after them and can be shared as it is.
    There is no separate "personal" tier to migrate out of.
-2. Anyone can create more books, and switch between them from the header.
+2. Anyone can create more books, and switch between them from the header
+   (Books, or on a phone the book's name, which is the header's title:
+   J18.29).
 3. Everyone in a book who may write to it can add, edit and delete its
    recipes (J7.17). Membership alone no longer means write access.
 4. An owner can invite others with a link. A link is **good for one person
@@ -479,7 +481,8 @@ Covers a share link someone sent, and a recipe an assistant wrote out.
 5. A failed sync retries on the next change, when the tab regains focus, and
    when the network returns.
 6. A status line reports Saving… / Syncing… / Synced, and says when sync is
-   failing rather than appearing to work.
+   failing rather than appearing to work. On a phone only the failing
+   status is shown (J18.29).
 7. Each book caches separately, so switching books never mixes their
    recipes.
 
@@ -1389,20 +1392,39 @@ and a recipe drops onto it as a single item.
 
 ### Getting to a list
 
-27. **The recipe page has the book's lists in one row under the app
-    bar**, one button to a list, in the order of the Lists screen and
-    showing only its name. Tap one and that list opens. The buttons fill
-    the row; any that do not fit are hidden, never wrapped or scrolled,
-    and the row always ends with "All lists", which is never hidden. A
-    book with no lists shows a single "Lists" button. A read-only member
-    sees it too (J18.4).
-28. **A list says when it was last changed**, in small muted words by its
-    title — "Edited just now", "5 minutes ago", "2 hours ago", and from a
-    day on the day wording of "Last planned" (J14.6). It is worked out
-    from the list's own dates, a counter tap's included (each item's
-    counter keeps the date of its latest change, merged by the newest), so
-    it is there offline and moves when a change arrives. It stays current
-    while the list is open, and says nothing if the list holds no date.
+27. **The recipe page has the book's lists as the app bar's second
+    row**, one link to a list, in the order of the Lists screen and
+    showing only its name, in the bar's own small capitals — no boxes.
+    Tap one and that list opens. Each is a 44px target. The lists run
+    from the left; any that do not fit are hidden, never wrapped or
+    scrolled, and the row always ends, at the right, with "All lists ›",
+    which is never hidden. A book with no lists shows a single "Lists". A
+    read-only member sees it too (J18.4). The row is part of the bar, so
+    it is there wherever the bar is: on the recipe list, not in a view.
+28. **A list's header is one line**: the way back, the list's name, and
+    when it was last changed, right-aligned in small muted words —
+    "Edited just now", "5 minutes ago", "2 hours ago", and from a day on
+    the day wording of "Last planned" (J14.6). On a phone the way back
+    is a ‹ (the same step as the trail's Lists); wider, it is the trail,
+    "<book> › Lists ›", leading into the name. A long name ends in an
+    ellipsis and the edited time never wraps. The line stays at the top
+    as the list scrolls. The name is still renamed in place (J18.3); a
+    read-only member gets the same line without that. The edited time is
+    worked out from the list's own dates, a counter tap's included (each
+    item's counter keeps the date of its latest change, merged by the
+    newest), so it is there offline and moves when a change arrives. It
+    stays current while the list is open, and says nothing if the list
+    holds no date.
+29. **On a phone the app bar is one line**: logo, title, "+ New" and
+    "···". The title is the book you are in, with a ▾, and opens Books;
+    there is no separate Books button and no account name in the bar —
+    "···" opens with "Signed in as <name>". The sync status gets a line
+    of its own only when it needs attention, that is when sync is failing
+    (J9.6); saving and syncing do not, so a normal sync never changes the
+    bar's height. Signed out, or before
+    the book is known, the title is "Recipe Friend". Wider screens keep
+    the full bar: the wordmark, the account, the book and the status,
+    "+ New recipe", Books and "···".
 
 ### How it arrived
 

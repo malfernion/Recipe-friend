@@ -215,20 +215,31 @@
 
   function renderCrumbs() {
     const trail = crumbTrail();
+    const sep = '<span class="crumb-sep" aria-hidden="true">\u203a</span>';
+    const link = (crumb, i, mark = true) => {
+      // The last link is the way up, and the only one a phone shows.
+      const parent = mark && i === trail.length - 2 ? " crumb-parent" : "";
+      return `<button type="button" class="crumb${parent}" data-crumb="${escapeHTML(crumb.to)}">${escapeHTML(crumb.label)}</button>`;
+    };
     const html = trail
-      .map((crumb, i) => {
-        const last = i === trail.length - 1;
-        if (last) {
-          return `<span class="crumb crumb-here" aria-current="page">${escapeHTML(crumb.label)}</span>`;
-        }
-        // The last link is the way up, and the only one a phone shows.
-        const parent = i === trail.length - 2 ? " crumb-parent" : "";
-        return `<button type="button" class="crumb${parent}" data-crumb="${escapeHTML(crumb.to)}">${escapeHTML(crumb.label)}</button>`;
-      })
-      .join('<span class="crumb-sep" aria-hidden="true">\u203a</span>');
-    for (const id of ["#detail-crumbs", "#lists-crumbs", "#list-crumbs", "#editor-crumbs"]) {
+      .map((crumb, i) =>
+        i === trail.length - 1
+          ? `<span class="crumb crumb-here" aria-current="page">${escapeHTML(crumb.label)}</span>`
+          : link(crumb, i)
+      )
+      .join(sep);
+    for (const id of ["#detail-crumbs", "#lists-crumbs", "#editor-crumbs"]) {
       const el = $(id);
       if (el) el.innerHTML = html;
+    }
+    // A list's trail leads into its title, which sits on the same line and
+    // is the list's own editor, so the trail stops short of it.
+    const listTrail = $("#list-crumbs");
+    if (listTrail) {
+      listTrail.innerHTML = trail
+        .slice(0, -1)
+        .map((crumb, i) => link(crumb, i, false) + sep) // a phone has ‹ here instead
+        .join("");
     }
   }
 
@@ -266,6 +277,10 @@
       return climbTo(crumb.dataset.crumb); // returned so a test can await it
     });
   }
+
+  // A phone's way back from a list: the same step as the trail's Lists.
+  const listBack = $("#list-back");
+  if (listBack) listBack.addEventListener("click", () => climbTo("lists"));
 
   let toastTimer = null;
   let toastAction = null;
@@ -1661,7 +1676,7 @@
   });
 
   /**
-   * The book's lists as one row of buttons under the app bar (J18.27): in
+   * The book's lists as the app bar's second row (J18.27): in
    * the Lists screen's order, names only, as many as fit. The rest are
    * hidden (the attribute, not a style: CSP) and "All lists" never is.
    */

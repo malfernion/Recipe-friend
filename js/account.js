@@ -11,6 +11,7 @@
   const cfg = window.RECIPE_FRIEND_CONFIG;
   const signInBtn = document.getElementById("account-btn");
   const nameEl = document.getElementById("account-name");
+  const whoEl = document.getElementById("account-who");
   if (!signInBtn) return;
 
   if (!cfg || !cfg.supabaseUrl || !cfg.supabaseKey || !window.supabase) {
@@ -88,6 +89,10 @@
     statusEl.hidden = !state;
     statusEl.textContent = STATUS_TEXT[state] || "";
     statusEl.classList.toggle("sync-error", state === "error");
+    // A phone shows the status only when it needs attention. Saving and
+    // syncing are the normal run of things, and a line that came and went
+    // with each would make the header jump.
+    document.body.classList.toggle("sync-news", state === "error");
     if (state === "synced" && detail && (detail.pushed || detail.pulled)) {
       window.RecipeApp && window.RecipeApp.render();
     }
@@ -197,6 +202,7 @@
     const bookLabel = document.getElementById("current-book");
     if (booksBtn) booksBtn.hidden = true;
     if (bookLabel) bookLabel.hidden = true;
+    document.body.classList.remove("book-known");
     books = null;
     window.RecipeCloud.books = null;
     if (app) {
@@ -225,12 +231,21 @@
       signInBtn.textContent = "Sign out";
       nameEl.textContent = displayName(session);
       nameEl.hidden = false;
+      // The ··· menu says who is signed in: a phone's bar has no room to.
+      if (whoEl) {
+        whoEl.textContent = `Signed in as ${displayName(session)}`; // text, so escaped
+        whoEl.hidden = false;
+      }
       if (!had) startSync(session);
     } else {
       signInBtn.textContent = "Sign in";
       signInBtn.title = "Sign in with Google";
       nameEl.hidden = true;
       nameEl.textContent = "";
+      if (whoEl) {
+        whoEl.hidden = true;
+        whoEl.textContent = "";
+      }
       if (had) stopSync();
     }
   }

@@ -780,6 +780,46 @@ test("J8.2 · a profile that cannot be read never stops the recipes arriving", a
 // Session transitions
 // ---------------------------------------------------------------------
 
+test("J18.29 · a phone shows the sync status only when it needs attention, so a normal sync never moves the bar", async () => {
+  const a = arrive({ session: aSession() });
+  await flush();
+  const news = () => a.win.document.body.classList.contains("sync-news");
+  assert.equal(a.el("sync-status").textContent, "Synced");
+  assert.equal(news(), false, "Synced is not news");
+  assert.equal(a.win.document.body.classList.contains("book-known"), true, "and the title is the book");
+
+  // Driven through the callback sync.js reports with.
+  const report = a.cloud().sync.onStatus;
+  for (const state of ["pending", "syncing", "synced"]) {
+    report(state);
+    assert.equal(news(), false, `${state} is the normal run of things`);
+  }
+  report("error", "offline");
+  assert.equal(a.el("sync-status").hidden, false);
+  assert.equal(news(), true, "a failing sync needs attention");
+  report("syncing");
+  assert.equal(news(), false, "and a retry under way takes the line away again");
+
+  await a.el("account-btn").fire("click");
+  await flush();
+  assert.equal(news(), false, "signed out, nothing to say");
+  assert.equal(a.win.document.body.classList.contains("book-known"), false, "and the wordmark is back");
+});
+
+test("J18.29 · the ··· menu says who is signed in, as text, and forgets it on sign-out", async () => {
+  const a = arrive({ session: aSession() });
+  await flush();
+  const who = a.el("account-who");
+  assert.equal(who.hidden, false);
+  assert.equal(who.textContent, "Signed in as Dave");
+  assert.equal(who.innerHTML, "", "set as text, never as markup");
+
+  await a.el("account-btn").fire("click");
+  await flush();
+  assert.equal(who.hidden, true);
+  assert.equal(who.textContent, "");
+});
+
 test("J1.1 · signing out stops sync and puts the gate back", async () => {
   const a = arrive({ session: aSession() });
   await flush();
