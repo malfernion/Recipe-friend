@@ -305,6 +305,24 @@ body {
   cursor: pointer;
 }
 
+/* Who is signed in: said, not a control. */
+.more-who {
+  margin: 0;
+  padding: 0.6rem 0.75rem 0.55rem;
+  border-bottom: 1px solid var(--rule);
+  margin-bottom: 0.2rem;
+  font-family: var(--serif);
+  font-style: italic;
+  font-size: 0.9rem;
+  color: var(--ink-soft);
+  max-width: 16rem;
+  overflow-wrap: anywhere;
+}
+
+.more-who[hidden] {
+  display: none;
+}
+
 .more-item:hover {
   background: var(--paper);
   color: var(--accent);
@@ -337,9 +355,10 @@ body {
 /*
   A phone's bar is one line: logo, title, + New and ···. The title is the
   book you are in and opens Books, so the Books button and the book's
-  label go; the account is in the ··· menu. The sync status has a line of
-  its own only when it has news (offline, saving, failing): "Synced" is
-  the normal state, and a row of chrome is a row of recipes (J4.19).
+  label go; who is signed in is said at the top of the ··· menu. The sync
+  status has a line of its own only when it needs attention (failing):
+  saving and syncing are the normal run of things, and a line that came
+  and went with each would make the bar jump (J4.19).
 */
 @media (max-width: 620px) {
   .appbar {
@@ -2074,9 +2093,21 @@ button.crumb:hover {
   -webkit-user-modify: read-write-plaintext-only;
 }
 
+/* Inside, because the title clips what overflows it. */
 .li-name:focus {
   outline: 2px solid var(--accent);
-  outline-offset: 3px;
+  outline-offset: -2px;
+}
+
+/* Being renamed, the whole name shows, wrapping, so the caret is never
+   out of sight; the ellipsis comes back when the name is left. Not
+   :focus-within: the heading itself takes focus when a list opens. */
+.list-head .list-title:has(.li-name:focus) {
+  white-space: normal;
+  overflow: visible;
+  text-overflow: clip;
+  overflow-wrap: break-word;
+  flex-shrink: 1;
 }
 
 /* --- The list itself --- */
@@ -2702,7 +2733,8 @@ button.crumb:hover {
      to find your place in, which is the one thing a recipe must not be. */
   .detail-view > #detail-content,
   .lists-view > #lists-content,
-  .lists-view > #list-content {
+  .lists-view > #list-content,
+  .lists-view > .list-head {
     max-width: 46rem;
     margin-inline: auto;
   }
@@ -2753,7 +2785,8 @@ button.crumb:hover {
 @media (min-width: 820px) {
   .detail-view > #detail-content,
   .lists-view > #lists-content,
-  .lists-view > #list-content {
+  .lists-view > #list-content,
+  .lists-view > .list-head {
     max-width: none;
   }
 

@@ -481,8 +481,8 @@ Covers a share link someone sent, and a recipe an assistant wrote out.
 5. A failed sync retries on the next change, when the tab regains focus, and
    when the network returns.
 6. A status line reports Saving… / Syncing… / Synced, and says when sync is
-   failing rather than appearing to work. On a phone "Synced" is not
-   shown; anything else is (J18.29).
+   failing rather than appearing to work. On a phone only the failing
+   status is shown (J18.29).
 7. Each book caches separately, so switching books never mixes their
    recipes.
 
@@ -1417,9 +1417,11 @@ and a recipe drops onto it as a single item.
     holds no date.
 29. **On a phone the app bar is one line**: logo, title, "+ New" and
     "···". The title is the book you are in, with a ▾, and opens Books;
-    there is no separate Books button and no account name (that is in
-    "···"). The sync status gets a line of its own only when it is not
-    "Synced" — saving, syncing or failing (J9.6). Signed out, or before
+    there is no separate Books button and no account name in the bar —
+    "···" opens with "Signed in as <name>". The sync status gets a line
+    of its own only when it needs attention, that is when sync is failing
+    (J9.6); saving and syncing do not, so a normal sync never changes the
+    bar's height. Signed out, or before
     the book is known, the title is "Recipe Friend". Wider screens keep
     the full bar: the wordmark, the account, the book and the status,
     "+ New recipe", Books and "···".

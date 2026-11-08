@@ -216,9 +216,9 @@
   function renderCrumbs() {
     const trail = crumbTrail();
     const sep = '<span class="crumb-sep" aria-hidden="true">\u203a</span>';
-    const link = (crumb, i) => {
+    const link = (crumb, i, mark = true) => {
       // The last link is the way up, and the only one a phone shows.
-      const parent = i === trail.length - 2 ? " crumb-parent" : "";
+      const parent = mark && i === trail.length - 2 ? " crumb-parent" : "";
       return `<button type="button" class="crumb${parent}" data-crumb="${escapeHTML(crumb.to)}">${escapeHTML(crumb.label)}</button>`;
     };
     const html = trail
@@ -238,7 +238,7 @@
     if (listTrail) {
       listTrail.innerHTML = trail
         .slice(0, -1)
-        .map((crumb, i) => link(crumb, i) + sep)
+        .map((crumb, i) => link(crumb, i, false) + sep) // a phone has ‹ here instead
         .join("");
     }
   }

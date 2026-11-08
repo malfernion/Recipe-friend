@@ -206,8 +206,8 @@ delete it, invite, remove people, or move a recipe out.
 Signed in, recipes sync in the background and the most recently edited
 version of a recipe wins. Deletes travel as tombstones so a recipe deleted
 on one device doesn't reappear from another's cache. A status line in the
-header shows Saving… / Syncing… / Synced (on a phone, only when it is not
-Synced).
+header shows Saving… / Syncing… / Synced (on a phone, only when sync is
+failing).
 
 Ownership, invites, leaving, deleting and moving recipes between books are
 specified in [`docs/journeys.md`](docs/journeys.md) (J7), along with the

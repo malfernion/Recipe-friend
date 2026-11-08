@@ -200,6 +200,7 @@ test("J18.28 · a list's header is one line: back, the trail up to the title, th
   assert.match(trail, /data-crumb="list"[^>]*>Recipes</, "the book first");
   assert.match(trail, /data-crumb="lists"[^>]*>Lists<\/button><span class="crumb-sep"[^>]*>›<\/span>$/, "then Lists, leading into the title");
   assert.doesNotMatch(trail, /Shopping/, "the name is the title's, not the trail's");
+  assert.doesNotMatch(trail, /crumb-parent/, "a phone has ‹, not a collapsed trail");
   assert.match(app.el("list-heading").innerHTML, /data-li-name>Shopping &lt;i&gt;</, "the title is its own editor");
 });
 
