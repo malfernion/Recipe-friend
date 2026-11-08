@@ -437,3 +437,23 @@ test("J18.25 · a hostile mark from the future on the server does not drop new i
   }
   assert.ok(server.row(list.id).pruned_to <= Date.now() - a.L.limits.KEEP_GONE_MS, "what goes back up is clamped");
 });
+
+test("J18.18 · a Shopping made again after the first was deleted, with a recipe added, survives a sync", async () => {
+  const server = fakeServer();
+  const a = device(server);
+  await a.sync.syncLists(null, SEED);
+  const first = a.L.shoppingListId(BOOK);
+  a.lists.remove(first);
+  await a.sync.syncLists(null, SEED);
+  assert.ok(server.row(first).deleted_at, "the derived id now holds a tombstone");
+
+  // What "Make Shopping" then "Add" does: a list under a fresh id.
+  const made = a.lists.create("Shopping", "checklist");
+  assert.notEqual(made.id, first);
+  const recipe = a.store.add(aRecipe({ name: "Curry", servings: 2 }));
+  a.lists.change(made.id, (l) => a.L.addTree(l, a.L.recipeItems(recipe, 2, {}), { atTop: true }));
+  await a.sync.syncLists(null, SEED);
+  await a.sync.syncLists(null, SEED);
+  assert.deepEqual(a.lists.lists.map((l) => l.name), ["Shopping"]);
+  assert.deepEqual(texts(a, made.id), ["1 l stock", "Curry"]);
+});

@@ -79,15 +79,12 @@
 
   /**
    * An insert the server has answered with a no that waiting will not
-   * change: a check or quota the row fails (P0001, 23514), or a refusal in
-   * the 4xx range other than the ones that mean "sign in again" or "slow
-   * down".
+   * change: a check or a quota the row itself fails (P0001, 23514). Not
+   * 42501: that is also what a request with no session gets, and it must
+   * keep the record owed until somebody is signed in again.
    */
   function refusedForGood(err) {
-    if (!err) return false;
-    if (err.code === "P0001" || err.code === "23514" || err.code === "42501") return true;
-    const status = Number(err.status);
-    return status >= 400 && status < 500 && ![401, 408, 429].includes(status);
+    return Boolean(err) && (err.code === "P0001" || err.code === "23514");
   }
 
   /** Nothing in it at all — no meal, no line added by hand, nothing settled. */

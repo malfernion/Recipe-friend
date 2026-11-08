@@ -580,8 +580,9 @@ and puts them on the shopping list.
 > archived plan holding that meal, and "Last planned" and the sorts that
 > read it stay as they were (J14.5 on). A book keeps its newest 2000
 > records; at that, the oldest go to make room (migration 013) rather
-> than an add being refused, and a device never drops the newest record
-> of any recipe to stay under its own cap. Undo takes the record back
+> than an add being refused, and a device does not drop the newest
+> record of any recipe to stay under its own cap (once the server has
+> rolled a record off, though, the device follows it). Undo takes the record back
 > even offline: it goes from the device at once and the delete is retried
 > on the next sync.
 

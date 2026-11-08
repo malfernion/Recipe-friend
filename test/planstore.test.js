@@ -1367,17 +1367,17 @@ test("J18.21 · a record the book refuses for good is dropped with a warning, an
     assert.equal(d.planStore.hasArchived(id), false, "the record is dropped here");
     assert.equal(d.planStore.owes(id), false);
     assert.ok(warnings.some((w) => /refused a record/.test(w)));
-    for (const status of [403, 400]) {
-      cloud.breakWrite("plans.insert", Object.assign(new Error("no"), { status }));
-      d.sync.recordPlanned(recipe, 4, 3000);
-      assert.ok(await d.sync.syncNow(), `a ${status} is permanent too`);
-      assert.equal(d.planStore.archive.length, 0);
-    }
-    // A passing failure is not permanent: it is retried.
-    cloud.breakWrite("plans.insert", Object.assign(new Error("slow down"), { status: 429 }));
+    // A check the row fails is as final as a quota.
+    cloud.breakWrite("plans.insert", Object.assign(new Error("check"), { code: "23514" }));
+    d.sync.recordPlanned(recipe, 4, 3000);
+    assert.ok(await d.sync.syncNow());
+    assert.equal(d.planStore.archive.length, 0);
+    // 42501 is also what a request with no session gets: the record stays owed.
+    cloud.breakWrite("plans.insert", Object.assign(new Error("permission denied"), { code: "42501" }));
     const keep = d.sync.recordPlanned(recipe, 4, 4000);
     assert.equal(await d.sync.syncNow(), null);
     assert.equal(d.planStore.owes(keep), true);
+    assert.equal(d.planStore.hasArchived(keep), true);
   } finally {
     console.warn = realWarn;
   }

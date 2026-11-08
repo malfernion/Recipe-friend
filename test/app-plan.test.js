@@ -309,15 +309,21 @@ test("J18.18 · a list deleted while the chooser is open says so, and adds nothi
   assert.equal(app.archived().length, 0);
 });
 
-test("J18.18 · Make Shopping makes the book's own Shopping list, so two devices cannot make two", () => {
+test("J18.18 · Make Shopping makes a list of its own id, never the derived one a deleted Shopping may have tombstoned", () => {
   const app = planning([BOLOGNESE], { shopping: false });
   const bookId = "11111111-1111-4111-8111-111111111111";
   app.win.RecipeCloud = { sync: { bookId } };
   app.openChooser("Bolognese");
   app.choose("make");
-  assert.equal(app.listStore.lists[0].id, app.win.RecipeLists.shoppingListId(bookId));
-  app.listStore.create("Shopping", "checklist", Date.now(), app.win.RecipeLists.shoppingListId(bookId));
-  assert.equal(app.listStore.lists.length, 1, "asking again finds it");
+  assert.notEqual(app.listStore.lists[0].id, app.win.RecipeLists.shoppingListId(bookId));
+});
+
+test("J18.18 · a Shopping that appeared while the chooser was open is used, not doubled", () => {
+  const app = planning([BOLOGNESE], { shopping: false });
+  app.openChooser("Bolognese");
+  app.listStore.create("Shopping", "checklist");
+  app.choose("make");
+  assert.equal(app.listStore.lists.length, 1);
 });
 
 test("J18.21 · with a sync layer the record is handed to it, and Undo asks it to take it back", async () => {

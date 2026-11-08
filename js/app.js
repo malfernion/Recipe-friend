@@ -1629,14 +1629,12 @@
       adding.portions = stepPortions(recipe, adding.portions, action === "up");
       syncAddChooser();
     } else if (action === "make") {
-      // The book's own Shopping id, so two devices that make it before
-      // either has seen the other's make one list, not two.
-      const cloud = window.RecipeCloud;
-      const bookId = cloud && cloud.sync && cloud.sync.bookId;
-      const made =
-        listStore && canPlan()
-          ? listStore.create("Shopping", "checklist", Date.now(), bookId ? RecipeLists.shoppingListId(bookId) : undefined)
-          : null;
+      // A fresh id, as the Lists screen makes one: the book's derived
+      // Shopping id may hold a tombstone from a Shopping that was deleted,
+      // and a tombstone is final. A checklist already called Shopping
+      // (the chooser was opened before a pull) is used rather than doubled.
+      const have = checklists().find((l) => l.name.toLowerCase() === "shopping");
+      const made = have || (listStore && canPlan() ? listStore.create("Shopping", "checklist") : null);
       if (!made) {
         toast("This book has as many lists as it can hold.");
         return;
