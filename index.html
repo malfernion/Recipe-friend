@@ -51,6 +51,14 @@
   <header class="appbar">
     <div class="brand">
       <img class="brand-logo" src="assets/logo.png" width="512" height="512" alt="">
+      <!--
+        On a phone the title is the book you are in, and opens Books (the
+        Books button is not shown there). Only once a book is known: until
+        then, and above 620px, the wordmark is the title. books.js fills it.
+      -->
+      <button type="button" id="book-title" class="brand-book" title="Recipe books and sharing"
+              aria-haspopup="dialog"><span id="book-title-name" class="brand-book-name"></span><span
+              class="brand-book-caret" aria-hidden="true">▾</span></button>
       <span class="brand-name">Recipe <em>Friend</em></span>
     </div>
 
@@ -90,6 +98,9 @@
       </details>
     </nav>
 
+    <!-- The book's lists, the header's second row (J18.27). Filled by app.js. -->
+    <nav id="lists-row" class="lists-bar" aria-label="Lists" hidden></nav>
+
     <input type="file" id="import-file" accept="application/json,.json" hidden>
   </header>
 
@@ -108,9 +119,6 @@
       </p>
     </div>
   </section>
-
-  <!-- The book's lists, a tap from the recipes (J18.27). Filled by app.js. -->
-  <nav id="lists-row" class="lists-bar" aria-label="Lists" hidden></nav>
 
   <main class="container">
     <section class="toolbar" aria-label="Search, filter and sort">
@@ -319,12 +327,17 @@
   </section>
 
   <section id="list-view" class="view detail-view lists-view" hidden>
-    <nav class="crumbs" id="list-crumbs" aria-label="Breadcrumb"></nav>
-    <div class="detail-head">
-      <div class="detail-head-text">
-        <h2 class="detail-title" id="list-heading" tabindex="-1"></h2>
-        <p class="list-edited" id="list-edited" hidden></p>
-      </div>
+    <!--
+      One sticky line: the way back, the name and when it last changed.
+      A phone gets ‹ for the way back; wider screens get the trail, whose
+      last link is the same step (J18.9). The name is its own editor (J18.3).
+    -->
+    <div class="list-head">
+      <button type="button" class="list-back" id="list-back" aria-label="Back to Lists"><span
+              aria-hidden="true">‹</span></button>
+      <nav class="list-trail" id="list-crumbs" aria-label="Breadcrumb"></nav>
+      <h2 class="detail-title list-title" id="list-heading" tabindex="-1"></h2>
+      <p class="list-edited" id="list-edited" hidden></p>
     </div>
     <div id="list-content"></div>
     <!-- Delete asks first and keeps its distance from Clear ticked, which has an Undo. -->

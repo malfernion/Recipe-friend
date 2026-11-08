@@ -31,9 +31,9 @@ for accounts and sync.
   Clear ticked and every delete come with an Undo. Lists work offline,
   merge item by item between phones — two people each taking one from
   the freezer both count — and show the other phones' changes within
-  seconds. A row under the app bar on the recipe page has a button for
-  each list (as many as fit, then "All lists"), and a list shows "Edited
-  3 days ago" by its title. "+ List" in the recipe view asks which checklist and how many
+  seconds. The app bar's second row on the recipe page names each list
+  (as many as fit, then "All lists ›"), and a list's header is one line:
+  the way back, its name and "Edited 3 days ago". "+ List" in the recipe view asks which checklist and how many
   portions, then puts the recipe at the top as one item with its
   ingredients under it, in your own units, with an Undo. That is also
   what "Last planned" records: cards say when a recipe last went on a
@@ -188,8 +188,9 @@ One-time setup:
 
 Your first book is created on sign-in and named after you. There is no
 separate "personal" tier — that book can be shared exactly like any other.
-From **Books** in the header you can create more, rename ones you own,
-switch between them, and invite others.
+From **Books** in the header (on a phone, tap the book's name, which is
+the header's title) you can create more, rename ones you own, switch
+between them, and invite others.
 
 An invite link is a key, not an announcement: whoever opens it can join. So
 each link is good for **one** person, expires after **48 hours**, and can be
@@ -204,8 +205,9 @@ delete it, invite, remove people, or move a recipe out.
 
 Signed in, recipes sync in the background and the most recently edited
 version of a recipe wins. Deletes travel as tombstones so a recipe deleted
-on one device doesn't reappear from another's cache. A status line under the
-header shows Saving… / Syncing… / Synced.
+on one device doesn't reappear from another's cache. A status line in the
+header shows Saving… / Syncing… / Synced (on a phone, only when it is not
+Synced).
 
 Ownership, invites, leaving, deleting and moving recipes between books are
 specified in [`docs/journeys.md`](docs/journeys.md) (J7), along with the

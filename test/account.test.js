@@ -780,6 +780,30 @@ test("J8.2 · a profile that cannot be read never stops the recipes arriving", a
 // Session transitions
 // ---------------------------------------------------------------------
 
+test("J9.6 · a phone shows the sync status only when it is not Synced", async () => {
+  const a = arrive({ session: aSession() });
+  await flush();
+  const news = () => a.win.document.body.classList.contains("sync-news");
+  assert.equal(a.el("sync-status").textContent, "Synced");
+  assert.equal(news(), false, "Synced is not news");
+  assert.equal(a.win.document.body.classList.contains("book-known"), true, "and the title is the book");
+
+  // Driven through the callback sync.js reports with.
+  const report = a.cloud().sync.onStatus;
+  report("error", "offline");
+  assert.equal(a.el("sync-status").hidden, false);
+  assert.equal(news(), true, "a failing sync is");
+  report("syncing");
+  assert.equal(news(), true, "and so is one under way");
+  report("synced");
+  assert.equal(news(), false);
+
+  await a.el("account-btn").fire("click");
+  await flush();
+  assert.equal(news(), false, "signed out, nothing to say");
+  assert.equal(a.win.document.body.classList.contains("book-known"), false, "and the wordmark is back");
+});
+
 test("J1.1 · signing out stops sync and puts the gate back", async () => {
   const a = arrive({ session: aSession() });
   await flush();

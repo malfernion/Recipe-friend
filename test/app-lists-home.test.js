@@ -66,6 +66,13 @@ test("J18.27 · the main page has one button per list, in the Lists screen's ord
   assert.doesNotMatch(html, /style=/, "no inline styles (CSP)");
 });
 
+test("J18.27 · the row is the app bar's second row, so it goes wherever the bar goes", () => {
+  const html = require("node:fs").readFileSync(require("node:path").join(__dirname, "..", "index.html"), "utf8");
+  const header = html.slice(html.indexOf('<header class="appbar"'), html.indexOf("</header>"));
+  assert.match(header, /<nav id="lists-row" class="lists-bar"/);
+  assert.equal(html.match(/id="lists-row"/g).length, 1, "and nowhere else");
+});
+
 test("J18.27 · the row is not rebuilt when the names have not changed, and refits when the font arrives", async () => {
   let loaded;
   const listeners = {};

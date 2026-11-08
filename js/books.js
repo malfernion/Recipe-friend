@@ -192,12 +192,20 @@
       return this.books.find((b) => b.id === this.sync.bookId) || null;
     }
 
-    /** Header shows which book you are cooking from, once there's a choice. */
+    /**
+     * Header shows which book you are cooking from, once there's a choice.
+     * On a phone the book's name is the header's title and opens Books, in
+     * place of the wordmark and the Books button; `book-known` on the body
+     * is what lets the CSS make that swap (J7.2).
+     */
     renderHeader() {
       const label = $("#current-book");
       const btn = $("#books-btn");
+      const title = $("#book-title-name");
       const book = this.currentBook();
       if (btn) btn.hidden = false;
+      document.body.classList.toggle("book-known", Boolean(book));
+      if (title) title.textContent = book ? book.name : "";
       if (!label) return;
       label.hidden = !book;
       if (book) label.textContent = book.name;
@@ -668,10 +676,14 @@
      * picking one, renaming one, making one.
      */
     wireDialog() {
-      $("#books-btn").addEventListener("click", async () => {
+      const openBooks = async () => {
         this.dialog.showModal();
         await this.refresh();
-      });
+      };
+      $("#books-btn").addEventListener("click", openBooks);
+      // The phone header's title: the same Books, under the book's name.
+      const title = $("#book-title");
+      if (title) title.addEventListener("click", openBooks);
       $("#books-close-btn").addEventListener("click", () => this.dialog.close());
       // However the dialog closes — the button, Escape, a tap outside —
       // an agent's key goes with it (J16.6), and so does anything opened

@@ -88,6 +88,9 @@
     statusEl.hidden = !state;
     statusEl.textContent = STATUS_TEXT[state] || "";
     statusEl.classList.toggle("sync-error", state === "error");
+    // A phone shows the status only when it has news: "Synced" is the
+    // normal state and not worth a row of the header.
+    document.body.classList.toggle("sync-news", Boolean(state) && state !== "synced");
     if (state === "synced" && detail && (detail.pushed || detail.pulled)) {
       window.RecipeApp && window.RecipeApp.render();
     }
@@ -197,6 +200,7 @@
     const bookLabel = document.getElementById("current-book");
     if (booksBtn) booksBtn.hidden = true;
     if (bookLabel) bookLabel.hidden = true;
+    document.body.classList.remove("book-known");
     books = null;
     window.RecipeCloud.books = null;
     if (app) {

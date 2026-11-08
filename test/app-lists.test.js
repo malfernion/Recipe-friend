@@ -183,6 +183,54 @@ test("J18.1 · the breadcrumb climbs to Lists, or home in one tap", () => {
   assert.equal(app.win.location.hash, "");
 });
 
+test("J18.28 · a list's header is one line: back, the trail up to the title, the title, the edited time", () => {
+  const html = require("node:fs").readFileSync(require("node:path").join(__dirname, "..", "index.html"), "utf8");
+  const view = html.slice(html.indexOf('id="list-view"'), html.indexOf("</section>", html.indexOf('id="list-view"')));
+  const head = view.slice(view.indexOf('class="list-head"'));
+  const order = ['id="list-back"', 'id="list-crumbs"', 'id="list-heading"', 'id="list-edited"'].map((s) => head.indexOf(s));
+  assert.ok(order.every((i) => i > 0), "all four are in the one line");
+  assert.deepEqual([...order].sort((a, b) => a - b), order, "in that order");
+  assert.doesNotMatch(view, /class="crumbs"/, "no separate crumbs row");
+
+  const app = lists();
+  const list = app.listStore.create("Shopping <i>", "checklist");
+  app.openLists();
+  app.tapList(list.id);
+  const trail = app.el("list-crumbs").innerHTML;
+  assert.match(trail, /data-crumb="list"[^>]*>Recipes</, "the book first");
+  assert.match(trail, /data-crumb="lists"[^>]*>Lists<\/button><span class="crumb-sep"[^>]*>›<\/span>$/, "then Lists, leading into the title");
+  assert.doesNotMatch(trail, /Shopping/, "the name is the title's, not the trail's");
+  assert.match(app.el("list-heading").innerHTML, /data-li-name>Shopping &lt;i&gt;</, "the title is its own editor");
+});
+
+test("J18.9 · the ‹ on a list goes back to Lists, as the trail's Lists does", async () => {
+  const app = lists();
+  const list = app.listStore.create("Shopping", "checklist");
+  app.openLists();
+  app.tapList(list.id);
+  await app.el("list-back").fire("click");
+  assert.equal(app.el("list-view").open, false);
+  assert.equal(app.el("lists-view").open, true, "Back from a list is the Lists screen");
+  assert.equal(app.win.location.hash, "#lists");
+
+  // Opened cold from its address, there is no Lists entry to return to.
+  app.win.history.back();
+  app.win.location.hash = `#list/${list.id}`;
+  app.app.openFromHash();
+  await app.el("list-back").fire("click");
+  assert.equal(app.el("lists-view").open, true, "Lists is opened rather than returned to");
+});
+
+test("J18.4 · a viewer's list header has the same line, without the rename", () => {
+  const app = lists();
+  const list = app.listStore.create("Shopping", "checklist");
+  app.app.setCanEdit(false);
+  app.openLists();
+  app.tapList(list.id);
+  assert.equal(app.el("list-heading").innerHTML, "Shopping");
+  assert.match(app.el("list-crumbs").innerHTML, /data-crumb="lists"/);
+});
+
 test("J18.1 · a list opens from its address", () => {
   const ui = lists();
   const list = ui.listStore.create("Shopping", "checklist");

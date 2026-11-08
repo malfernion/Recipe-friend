@@ -626,6 +626,21 @@ test("J7.2 · books are switched from the header", async () => {
   assert.deepEqual(h.store.recipes.map((r) => r.name), ["Only in mine"], "and comes back intact");
 });
 
+test("J7.2 · on a phone the header's title is the book's name, and opens Books", async () => {
+  const h = harness();
+  assert.equal(h.doc.body.classList.contains("book-known"), false, "before a book is known: the wordmark");
+  await h.books.refresh();
+  assert.equal(h.doc.body.classList.contains("book-known"), true, "which the CSS swaps for the title");
+  assert.equal(h.el("book-title-name").textContent, "Dave's recipes");
+
+  await h.el("book-title").fire("click");
+  assert.equal(h.el("books-dialog").open, true, "the title opens what the Books button opens");
+  h.el("books-dialog").close();
+
+  await h.books.switchTo(SHARED);
+  assert.equal(h.el("book-title-name").textContent, "Household", "and follows a switch");
+});
+
 test("J7.2 · the book you were last in is remembered, per person", async () => {
   const h = harness();
   const { rememberSelection, rememberedSelection } = h.win.RecipeBooks;
