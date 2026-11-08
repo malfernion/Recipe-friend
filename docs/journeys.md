@@ -1272,7 +1272,9 @@ and a recipe drops onto it as a single item.
    break becomes a space.
 7. **Enter makes the next item**, directly below and at the same depth,
    with the cursor in it — so a list can be typed out without touching
-   anything else.
+   anything else. On an item that has others nested under it, the new
+   item is its first child, so it is still directly below rather than
+   after however many ingredients a recipe has.
 8. **Items nest.** Swipe an item right to put it under the one above;
    swipe left to bring it back out. On a keyboard, Tab and Shift-Tab do
    the same. Whatever is nested under an item moves with it.
@@ -1409,10 +1411,8 @@ accident:
   is on. That is the number worth having — but it is the size of the list
   *with that tag on*, not the size of the list a tap would produce, and
   the two differ for a tag already chosen.
-- A plan is a bag of meals, not a calendar: nothing in it is assigned to
-  a day or a date (J12.1). An assistant that thinks in dates keeps them
-  on its own side; the app is asked for meals and portions, and the
-  calendar stays where the calendar is.
+- A list is not a calendar: nothing on it belongs to a day or a date
+  (J18.5). An assistant that thinks in dates keeps them on its own side.
 - **One key, one book, and no book of its own** (J16.1). An agent
   cannot be added to a second book, cannot create one, and is not given
   the one a new account gets. All three are enforced rather than
@@ -1445,81 +1445,41 @@ accident:
   needed in front of one. An agent no longer depends on any rule of the
   auth server's refresh tokens (J16.9). Earlier agents did, and
   `mcp/session.js` existed to survive those rules; it is gone.
-- **A week finished while an agent is mid-change can be reopened by it.**
-  An agent refuses to add to a plan that is already finished (J17.9), but
-  it can only refuse what it can see: it reads the plan, and the Done
-  arrives from somebody's phone in the round trip before it writes. What
-  it pushes then wins on the ordinary rule that the more recently touched
-  body wins whole (J12.11), and the completion goes with it. What does
-  *not* go is the thing J16.4 is actually guarding: a device records the
-  week before it clears the live row, and the archive is keyed by the
-  plan's own id, so the week stays on the record and the agent's meal
-  never joins it. The same rule governs a person's second phone, which is
-  why this is written here rather than answered with a special case for
-  agents.
-- **The planning modules carry no DOM, and that is load-bearing outside
-  this app.** `plan.js`, `shoplist.js`, `search.js`, `scale.js`,
-  `units.js` and `html.js` name nothing a browser provides; `storage.js`,
-  `planstore.js` and `sync.js` reach no further than `localStorage`. It
-  is what lets the server in `mcp/` — the thing an agent talks to (J16) —
-  compute the household's shopping list by running the household's own
+- **The logic modules carry no DOM, and that is load-bearing outside
+  this app.** `plan.js`, `lists.js`, `listdrop.js`, `search.js`,
+  `scale.js`, `units.js` and `html.js` name nothing a browser provides;
+  `storage.js`, `planstore.js`, `liststore.js` and `sync.js` reach no
+  further than `localStorage`. It is what lets the server in `mcp/` — the
+  thing an agent talks to (J16) — answer by running the household's own
   code rather than a second implementation, which would drift on exactly
-  the things this app is careful about: promotion to kilograms, plurals,
-  and not guessing how big a tin is. Breaking it costs nothing visible in
-  the app: reach for the page in `plan.js` and the site still works, and
-  the list goes wrong in a supermarket. So it is held by a test rather
-  than by anybody remembering.
-- Plans are shared with the book, so a read-only member cannot plan or
-  settle a line at all (J12.10).
-- The shopping list is what the planned recipes ask for and what was
-  added to it by hand (J13.15). There is no pantry of staples that settles
-  itself, and no ordering by aisle — which would need the app to know what
-  a supermarket is.
-- **Emptying a line added by hand removes it** (J13.16), with an Undo,
-  rather than putting back what it said. It is the only way to remove
-  such a line outright, and Escape is the way to abandon an edit.
-- **A line added by hand is never combined with anything** (J13.15), so
-  milk added twice is two lines until somebody takes one off. Deciding
-  that two lines are one need is the list keeper's job, and the agent's
-  when the agent is adding (J17.14).
-- Nothing carries from one plan to the next. Saying "we have onions" is
-  about this shop (J13.9), and a line added by hand is about this shop
-  too (J14.13).
-- **Two phones' lists merge without loss up to what a plan holds, and
-  not past it** (J12.13). A list takes a hundred lines, and a plan holds
-  a hundred and thirty, counting lines taken off, so that two phones
-  near the limit can meet and keep everything. Past that — both phones
-  adding thirty or more lines apiece, offline, to a list already nearly
-  full — the plan keeps what is on the list before what was taken off,
-  and the newest before the oldest. That is a list nobody keeps, and
-  the size check the server applies (007) is why there is a limit at
-  all.
-- **Two plans are two plans, and the newer one wins whole.** Settlements
-  merge per item within a plan (J12.11), but never between one plan and
-  the next, or "we have onions" — said about a shop that is over — comes
-  back on the following list. **The cost is that work put into the losing
-  generation goes with it**: a plan built on a device which has never
-  synced this book, a meal added on one phone in the window between
-  another phone finishing the plan and this one hearing about it, or one
-  of two plans when two devices each start the first plan a book has ever
-  had. Both really are plans, and a book has one (J12.2); merging them
-  instead would resurrect exactly what clearing a plan is for (J14.4). It
-  is not warned about on screen, because the warning would have to appear
-  every time two devices meet and would be wrong almost every time.
-- **Tolerating plurals when combining (J13.4) merges some things that are
-  not the same thing.** "Pepper" and "peppers" are one line, and ground
-  pepper and bell peppers are not one shop. The rule earns its place on
-  "onion"/"onions", which is the common case by a distance; the wrong
-  merges are rare, and J13.7 is what makes each one visible on the line
-  rather than silent. Matching more cleverly would need the app to know
-  what food is.
-- **An export carries recipes, not plans** (J10.1). Planning history lives
-  in the book's archived plans and does not survive a restore into a new
-  account, in the same way a photo does not (J10.4).
-- There is no shareable plan link; J6.6 still holds.
-- A shopping quantity is never rendered as 0, though a recipe's is
-  (J13.3 against J4.8). The list is the one place where the difference
-  between "a very little" and "none" is a wasted trip.
+  the things this app is careful about: scaling, units and plurals.
+  Breaking it costs nothing visible in the app, so it is held by a test
+  rather than by anybody remembering.
+- A read-only member reads every list and changes nothing on any of them
+  (J18.4), the same rule as recipes.
+- **A list is what was put on it.** There is no pantry of staples that
+  refills itself, no ordering by aisle — which would need the app to know
+  what a supermarket is — and nothing is summed: two recipes that each
+  want onions show onions under each (J18.19). A recipe on a list does
+  not follow later edits to the recipe.
+- **Emptying an item deletes it** (J18.10), with an Undo, rather than
+  putting back what it said. Escape is the way to abandon an edit.
+- **Deleted is final.** A deleted item is a tombstone that no older copy
+  can bring back (J9.4); Undo puts back copies of what went, under new
+  ids. Holding on to an old id across an Undo finds nothing.
+- **A list's kind is for good** (J18.2). A checklist does not become a
+  stock list; make another list.
+- **A counter merges as changes, not as whoever wrote last** (J18.17),
+  and never shows below 0 (J18.15). Two phones each taking the last one
+  leave it at 0, and + from there means one, not two.
+- **"Within seconds" is a poll** (J18.24): while a list is on screen and
+  the tab is visible, every few seconds and on coming back to the tab.
+  There is no realtime service in the stack, and a list nobody is
+  looking at is not polled.
+- **An export carries recipes, not plans or lists** (J10.1). Planning
+  history lives in the book's archived plans and does not survive a
+  restore into a new account, in the same way a photo does not (J10.4).
+- There is no shareable list link; J6.6 still holds.
 - The recipe view keeps its full preamble — kicker, title, description,
   meta and tags — above the ingredients on every screen. On the shortest
   ones that is still most of the first screenful. Shrinking it was
@@ -1535,8 +1495,8 @@ are the failures that would be silent — a recipe quietly losing its tags is
 worse than a page that will not load.
 
 It also covers the MCP server (J17), which is the same kind of risk
-wearing different clothes: a wrong shopping list computed somewhere with
-no screen to notice it on. The `mcp-*` files stub the eight calls sync
+wearing different clothes: a wrong answer computed somewhere with no
+screen to notice it on. The `mcp-*` files stub the eight calls sync
 makes rather than the whole of PostgREST, so what they hold is which of
 those an agent is allowed to reach for — and `mcp-http.test.js` drives the
 real HTTP handler for what a caller without a good key is told.
