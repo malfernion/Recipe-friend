@@ -520,9 +520,8 @@
 
   /**
    * The newest stamp the list holds — when it was last changed, worked out
-   * from the list itself so it is known offline (J18.28). A counter tap
-   * carries no stamp of its own (tallies merge as changes, J18.17), so it
-   * does not move this. 0 when nothing is stamped.
+   * from the list itself so it is known offline (J18.28). A counter change
+   * carries its item's `countAt` for this. 0 when nothing is stamped.
    */
   function lastEdited(list) {
     let at = 0;

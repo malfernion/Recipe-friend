@@ -234,7 +234,7 @@ test("J18.4 · a viewer sees no Add to list, and a tap that got through anyway i
   app.app.setCanEdit(false);
   app.openRecipe(app.named("Bolognese").id);
   assert.equal(app.el("detail-addlist-btn").hidden, true);
-  assert.equal(app.el("lists-btn").hidden, false, "but the lists are there to read");
+  assert.equal(app.el("lists-row").hidden, false, "but the lists are there to read");
   app.el("detail-addlist-btn").fire("click");
   assert.equal(app.el("addlist-dialog").open, false);
   assert.equal(app.items().length, 0);
@@ -424,7 +424,7 @@ test("J15.6 · a page without the planner is offered neither of the sorts that r
 test("J18 · a page that never loaded the lists still draws its cards, and offers no lists", () => {
   const app = planning([BOLOGNESE], { lists: false });
   assert.deepEqual(app.titles(), ["Bolognese"]);
-  assert.equal(app.el("lists-btn").hidden, true);
+  assert.equal(app.el("lists-row").hidden, true);
   assert.equal(app.el("detail-addlist-btn").hidden, true);
 });
 

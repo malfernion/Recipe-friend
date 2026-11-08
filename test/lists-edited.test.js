@@ -27,6 +27,22 @@ test("J18.28 · editedWhen is precise within a day and the day wording after", (
   assert.equal(P.plannedLabel(now - 5 * MIN, now), "Last planned today", "Last planned is unchanged");
 });
 
+test("day counts do not lose a day across a clock change (London, 29 Mar 2026)", () => {
+  const was = process.env.TZ;
+  process.env.TZ = "Europe/London";
+  try {
+    // Midnight to midnight across the spring change is 47 hours.
+    const at = new Date(2026, 2, 28, 12, 0).getTime();
+    const now = new Date(2026, 2, 30, 9, 0).getTime();
+    assert.equal(P.relativeWhen(at, now), "2 days ago");
+    assert.equal(P.editedWhen(at, now), "2 days ago");
+    assert.equal(P.plannedLabel(new Date(2026, 2, 29, 12, 0).getTime(), now), "Last planned yesterday");
+  } finally {
+    if (was === undefined) delete process.env.TZ;
+    else process.env.TZ = was;
+  }
+});
+
 function stock() {
   let list = L.createList({ name: "Freezer", kind: "stock", now: 1000 });
   list = L.addItem(list, { text: "soup", id: "a1111111-1111-4111-8111-111111111111", now: 2000 });

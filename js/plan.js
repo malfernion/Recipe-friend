@@ -593,7 +593,9 @@
    */
   function relativeWhen(at, now = Date.now()) {
     if (!at) return "";
-    const days = Math.floor((startOfDay(now) - startOfDay(at)) / DAY_MS);
+    // Rounded: midnight to midnight is 23 or 25 hours across a clock
+    // change, and a floor would lose a day.
+    const days = Math.round((startOfDay(now) - startOfDay(at)) / DAY_MS);
     if (days <= 0) return "today";
     if (days === 1) return "yesterday";
     if (days < 7) return `${days} days ago`;

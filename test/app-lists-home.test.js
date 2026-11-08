@@ -18,7 +18,7 @@ function app() {
 
 /** Open a list from the Lists screen, as a finger does. */
 function open(ui, id) {
-  ui.el("lists-btn").fire("click");
+  tapHome(ui.el("lists-row"), "[data-home-lists]", {});
   ui.el("lists-content").fire("click", {
     target: { closest: (sel) => (sel === "[data-lists-open]" ? { dataset: { listsOpen: id } } : null) },
   });
@@ -64,7 +64,32 @@ test("J18.27 · the main page has one button per list, in the Lists screen's ord
   assert.match(html, /Freezer &lt;b&gt;/, "names are escaped");
   assert.match(html, /data-home-lists[^>]*>All lists</);
   assert.doesNotMatch(html, /style=/, "no inline styles (CSP)");
-  assert.equal(ui.el("lists-btn").hidden, false, "the app-bar Lists button stays");
+});
+
+test("J18.27 · the row is not rebuilt when the names have not changed, and refits when the font arrives", async () => {
+  let loaded;
+  const listeners = {};
+  const fonts = {
+    ready: new Promise((r) => { loaded = r; }),
+    addEventListener: (type, fn) => { listeners[type] = fn; },
+  };
+  const ui = loadUI({ fonts });
+  ui.listStore.create("Shopping", "checklist");
+  ui.app.render();
+  const row = ui.el("lists-row");
+  row.innerHTML = row.innerHTML + "<!--marker-->";
+  ui.app.render();
+  assert.match(row.innerHTML, /marker/, "same lists: left alone");
+
+  const { buttons } = layout(ui, { avail: 100 });
+  assert.equal(buttons[0].hidden, true);
+  row.clientWidth = 1000; // the font arrived and the names got narrower
+  listeners.loadingdone();
+  assert.equal(buttons[0].hidden, false, "refit on loadingdone");
+  buttons[0].hidden = true;
+  loaded();
+  await fonts.ready;
+  assert.equal(buttons[0].hidden, false, "and on fonts.ready");
 });
 
 test("J18.27 · a book with no lists gets one Lists button", () => {

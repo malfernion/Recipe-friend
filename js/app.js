@@ -1666,6 +1666,7 @@
    * hidden (the attribute, not a style: CSP) and "All lists" never is.
    */
   const listsRow = $("#lists-row");
+  let listsRowKey = null;
 
   function renderListsRow() {
     if (!listsRow) return;
@@ -1675,6 +1676,14 @@
     }
     const lists = listStore.lists;
     listsRow.hidden = false;
+    // Not rebuilt for nothing: a keystroke elsewhere redraws the page, and a
+    // rebuilt row would lose the focus a keyboard user has put on it.
+    const key = JSON.stringify(lists.map((l) => [l.id, l.name]));
+    if (key === listsRowKey && listsRow.innerHTML) {
+      fitListsRow();
+      return;
+    }
+    listsRowKey = key;
     listsRow.innerHTML =
       lists
         .map(
@@ -1723,6 +1732,13 @@
     } else {
       window.addEventListener("resize", () => fitListsRow());
     }
+    // The names are measured in the web font, which may arrive after the
+    // first draw and change every width.
+    const fonts = document.fonts;
+    if (fonts) {
+      if (fonts.ready && typeof fonts.ready.then === "function") fonts.ready.then(() => fitListsRow());
+      if (typeof fonts.addEventListener === "function") fonts.addEventListener("loadingdone", () => fitListsRow());
+    }
   }
 
   /** "Edited 2 days ago" by the open list's title, from its own stamps (J18.28). */
@@ -1747,8 +1763,6 @@
     renderListsRow();
     // Lists are read by everyone in the book (J18.4), so the way in is
     // there for a viewer too; adding to one is not (J18.18).
-    const listsBtn = $("#lists-btn");
-    if (listsBtn) listsBtn.hidden = !listStore;
     const addBtn = $("#detail-addlist-btn");
     if (addBtn) addBtn.hidden = !canPlan();
   }
@@ -2723,8 +2737,6 @@
   });
 
   // --- Wiring ----------------------------------------------------------
-
-  $("#lists-btn").addEventListener("click", () => openListsView());
 
   // The chooser starts from the recipe's own servings (J18.18).
   $("#detail-addlist-btn").addEventListener("click", () => openAddChooser());

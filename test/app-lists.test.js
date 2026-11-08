@@ -21,7 +21,11 @@ function lists(options = {}) {
   const api = {
     ...ui,
     Lists,
-    openLists: () => ui.el("lists-btn").fire("click"),
+    // The row's "All lists" button, under the app bar (J18.27).
+    openLists: () =>
+      ui.el("lists-row").fire("click", {
+        target: { closest: (sel) => (sel === "[data-home-lists]" ? {} : null) },
+      }),
     /** Fill in the New list form and press Make. */
     make: (name, kind = "checklist") =>
       ui.el("lists-content").fire("submit", {
