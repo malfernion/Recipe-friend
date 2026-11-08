@@ -10,20 +10,25 @@
 -- cannot update a record (nobody can) or delete one (Undo is a person's),
 -- and cannot touch another book's.
 --
--- The roll-off from 013 deletes the oldest rows to make room, and ran as
--- whoever inserted — so for an agent, which may not delete, it would
--- silently delete nothing and the book would grow past its quota. It runs
--- as the definer now, and only for somebody who may insert into that book:
--- a BEFORE trigger fires ahead of the policy check, so without the guard
--- an attempted insert into somebody else's book could delete their rows.
+-- The roll-off from 013 (the oldest records go to keep a book at 2000)
+-- ran BEFORE INSERT and as whoever inserted. Both were wrong once an
+-- agent may insert:
+--   * as the inserter, an agent's roll-off deleted nothing (it may not
+--     delete), so the book grew past its quota;
+--   * before the insert, it ran for rows that never went in: an insert
+--     refused by the policies, or one that met `on conflict do nothing`,
+--     still deleted the oldest record — a way to erase a book's history
+--     one row at a time.
+-- So it runs AFTER INSERT, for rows that were inserted and so passed the
+-- policies, as the definer, keeping the new row.
 --
--- Idempotent: a policy dropped and made again, a function replaced.
+-- Idempotent: a policy, a trigger and functions dropped or replaced.
 
 drop policy if exists "agent plans insert" on public.plans;
 create policy "agent plans insert" on public.plans
   for insert to authenticated with check (is_book_agent(book_id));
 
-create or replace function public.check_plan_quota()
+create or replace function public.roll_off_plans()
 returns trigger
 language plpgsql
 security definer
@@ -32,21 +37,24 @@ as $$
 declare
   excess integer;
 begin
-  -- Somebody the policies will refuse makes no room in a book that is not
-  -- theirs; their insert fails after this, on its own.
-  if not (is_book_editor(new.book_id) or is_book_agent(new.book_id)) then
-    return new;
-  end if;
-  select count(*) - 1999 into excess from plans where book_id = new.book_id;
+  select count(*) - 2000 into excess from plans where book_id = new.book_id;
   if excess > 0 then
     delete from plans
      where (book_id, id) in (
        select book_id, id from plans
-        where book_id = new.book_id
+        where book_id = new.book_id and id <> new.id
         order by completed_at asc, id asc
         limit excess
      );
   end if;
-  return new;
+  return null;
 end;
 $$;
+
+drop trigger if exists plans_quota on public.plans;
+drop function if exists public.check_plan_quota();
+
+drop trigger if exists plans_roll_off on public.plans;
+create trigger plans_roll_off
+  after insert on public.plans
+  for each row execute function public.roll_off_plans();

@@ -732,7 +732,7 @@ not somebody.
    the book and not being an agent; nothing signs in through the auth
    server, so there is no challenge to pass and no public way to make an
    agent at all.
-3. **An agent may read the book, add recipes, and work on the plan.** It
+3. **An agent may read the book, add recipes, and work on the lists.** It
    may not edit or delete a recipe — which is also what stops it
    favouriting one, a favourite being a property of the recipe (J3.6) —
    and it may not move one, invite anybody, change a role, or touch the
@@ -756,7 +756,9 @@ not somebody.
    the dinners the agent itself put on the list, and it would suggest
    them again. So it may add a record in its own book, the same one the
    app's "+ List" adds (014). It may not take one back — Undo is a
-   person's — nor change one, nor write into another book's.
+   person's — nor change one, nor write into another book's. Like
+   anybody's, its record can roll the book's oldest record off once the
+   book holds 2000 (013).
 
    **It also does not finish somebody else's.** A plan carrying
    `completedAt` is a Done that landed half way, and any device that may

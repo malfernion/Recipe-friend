@@ -524,3 +524,22 @@ test("J18.17 · the agent can always set any count from 0 to 9999, however often
   assert.equal(L.count(bol), 0);
   assert.ok(bol.tally.length <= 4, "a few slots of its own, not one per change");
 });
+
+test("J18.21, J16.4 · a recipe add that did not get in leaves no record of being planned", async () => {
+  const harness = await aBook();
+  const { call, api, phone, idOf, sent } = harness;
+  const update = api.updateList.bind(api);
+  // Somebody writes before every one of the agent's attempts.
+  api.updateList = async (...args) => {
+    phone(SHOP, (l, L) => L.setTicked(l, MILK, !l.items.find((i) => i.id === MILK).ticked, Date.now() + 1));
+    return update(...args);
+  };
+  const out = await call(ADD, { list: "Shopping", recipeId: idOf("Chicken pie") });
+  assert.match(out.error, /did not get in/);
+  assert.deepEqual(sent.archived, [], "no record for a dinner that is not on the list");
+
+  api.updateList = update;
+  await call(GET);
+  assert.deepEqual(sent.archived, [], "nor one left owed to go up later");
+  assert.equal(harness.book.planStore.archive.length, 0);
+});

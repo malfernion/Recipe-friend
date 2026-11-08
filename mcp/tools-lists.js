@@ -384,41 +384,26 @@ const addToList = {
         if (!wanted.length) return nothing(notAdded);
       }
 
-      // The record behind "Last planned" (J18.21), made the way the app's
-      // "+ List" makes it, and pushed by the same sync as the list.
-      const recordId = recipe ? book.sync.recordPlanned(recipe, portions.portions) : null;
-      const forget = () => {
-        if (recordId && book.planStore.owes(recordId)) book.planStore.removeArchived(recordId);
-      };
-
       const ids = touchedIds(before, list);
       book.listStore.change(before.id, () => list);
-      let done;
-      try {
-        done = await commit(book, before.id, before, ids);
-      } catch (err) {
-        forget();
-        throw err;
-      }
-      if (done.error) {
-        forget();
-        return { error: done.error };
-      }
+      const done = await commit(book, before.id, before, ids);
+      if (done.error) return { error: done.error };
 
       const now = drawn(L, done.list);
       const added = wanted.map((id) => now.get(id)).filter(Boolean);
       const out = { added };
       if (recipe) {
         out.recipe = { id: recipe.id, name: recipe.name, ...portions.size };
-        // The list went up; the record goes with the same sync, and a sync
-        // whose plan half failed may have left it behind. One more try,
-        // then say which it is: this process forgets anything still owed.
-        if (recordId && book.planStore.owes(recordId)) await book.pushNow().catch(() => {});
-        if (!recordId) out.planned = false;
-        else if (book.planStore.owes(recordId)) {
-          forget();
-          out.planned = false;
-        } else out.planned = true;
+        // The record behind "Last planned" (J18.21), made the way the
+        // app's "+ List" makes it — and only once the recipe is known to
+        // be on the list, because a record cannot be taken back from here
+        // (J16.4): one made for an add that failed would count a dinner
+        // nobody planned, and again on the retry. Then pushed, and said
+        // which it is: this process forgets anything still owed.
+        const recordId = book.sync.recordPlanned(recipe, portions.portions);
+        if (recordId) await book.pushNow().catch(() => {});
+        out.planned = Boolean(recordId) && !book.planStore.owes(recordId);
+        if (recordId && !out.planned) book.planStore.removeArchived(recordId);
         if (!out.planned) out.plannedNote = "It is on the list, but could not be recorded as planned just now.";
       }
       if (notAdded.length) {

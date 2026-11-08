@@ -314,7 +314,8 @@ A change goes through the app's own merge and sync, so a phone and the
 assistant working on one list both keep what they did; a count is set as
 the agent's own taps, so somebody else's tap meanwhile still counts. A
 recipe the agent puts on a list is recorded as planned, as a person's is
-(J18.21); it cannot take that record back (J16.4). A write answers with
+(J18.21); it cannot take that record back (J16.4), though like anybody's
+it can roll the book's oldest record off at the 2000 kept (013). A write answers with
 what it changed and the list's size; `get_lists` reads the whole list.
 
 One more that changes something, and it cannot be taken back from here.
