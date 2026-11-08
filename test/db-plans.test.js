@@ -129,3 +129,27 @@ db("J14.2 · Undo takes the record back, and only for somebody who could make it
   await s.as(ann);
   assert.equal((await s.q("delete from plans where book_id = $1 and id = $2", [ann.book, week])).rowCount, 1);
 });
+
+db("J18.21 · at the quota the oldest records go instead of the insert being refused (013)", async (s) => {
+  const ann = await s.person("Ann");
+  const bea = await s.person("Bea");
+  await s.asAdmin();
+  // 2000 records, oldest first, one a minute apart; and one in another book.
+  await s.q(
+    `insert into plans (id, book_id, data, completed_at)
+     select gen_random_uuid(), $1, '{}', now() - make_interval(mins => 5000 - n) from generate_series(1, 2000) n`,
+    [ann.book]
+  );
+  await s.q(ARCHIVE, [randomUUID(), bea.book]);
+  const oldest = await s.one("select id from plans where book_id = $1 order by completed_at asc limit 1", [ann.book]);
+
+  await s.as(ann);
+  const fresh = randomUUID();
+  assert.equal((await s.attempt(ARCHIVE, [fresh, ann.book])).error, null, "the add is not refused");
+  await s.asAdmin();
+  assert.equal((await s.one("select count(*)::int as n from plans where book_id = $1", [ann.book])).n, 2000);
+  assert.equal((await s.q("select 1 from plans where id = $1", [oldest.id])).rowCount, 0, "the oldest made room");
+  assert.equal((await s.q("select 1 from plans where id = $1", [fresh])).rowCount, 1, "and the new one is kept");
+  assert.equal((await s.one("select count(*)::int as n from plans where book_id = $1", [bea.book])).n, 1,
+    "another book's record is not touched");
+});

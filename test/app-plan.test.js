@@ -70,10 +70,7 @@ function planning(recipes, options = {}) {
       api.openRecipe(api.named(name).id);
       ui.el("detail-addlist-btn").fire("click");
     },
-    stepper: () => {
-      const m = /<span class="scale-value">([^<]*)<\/span>/.exec(ui.el("addlist-content").innerHTML);
-      return m ? m[1] : "";
-    },
+    stepper: () => ui.el("addlist-value").textContent,
     /** Add from the chooser as it stands, then answer to the archive. */
     addAs: (name) => {
       api.openChooser(name);
@@ -121,9 +118,11 @@ test("J18.18 · Add to list opens a chooser: the first checklist, the recipe's s
   app.el("detail-addlist-btn").fire("click");
   assert.equal(app.el("addlist-dialog").open, true);
   const html = app.el("addlist-content").innerHTML;
-  assert.match(html, /aria-pressed="true"[^>]*>Shopping</);
+  assert.match(html, new RegExp(`data-id="${app.shopping.id}"[^>]*>Shopping<`));
   assert.match(html, /Bolognese/);
   assert.equal(app.stepper(), "Serves 4");
+  assert.match(html, /aria-live="polite"/, "the number is read out as it changes");
+  assert.match(html, /btn btn-primary" data-al="add"/, "and Add is the primary action");
 });
 
 test("J18.18 · only checklists are offered, and a stock list is not one", () => {
@@ -187,14 +186,16 @@ test("J18.18 · with several checklists the one picked is the one used, and is r
   const app = planning([BOLOGNESE, CURRY]);
   const party = app.listStore.create("Party", "checklist");
   app.openChooser("Bolognese");
+  const drawn = app.el("addlist-content").innerHTML;
   app.choose("pick", party.id);
-  assert.match(app.el("addlist-content").innerHTML, new RegExp(`data-id="${party.id}"[^>]*aria-pressed="true"`));
+  assert.equal(app.el("addlist-content").innerHTML, drawn, "picking changes the controls in place, so focus stays");
   app.choose("add");
   assert.equal(app.listStore.get(party.id).items.filter((i) => i.text === "Bolognese").length, 1);
   assert.equal(app.items().length, 0, "Shopping is untouched");
 
   app.openChooser("Curry");
-  assert.match(app.el("addlist-content").innerHTML, new RegExp(`data-id="${party.id}"[^>]*aria-pressed="true"`),
+  app.choose("add");
+  assert.equal(app.listStore.get(party.id).items.filter((i) => i.text === "Curry").length, 1,
     "the last list used is where the next chooser starts");
 });
 
@@ -276,18 +277,47 @@ test("J18.21 · Undo takes the record back, and the recipe says nothing again", 
   assert.equal(noteOnCard(app), "");
 });
 
-test("J18.21 · Undo with no network keeps the record but still takes the item off, and says so", async () => {
+test("J18.21 · Undo with no network still takes the item off, and says the record clears when back online", async () => {
   const app = planning([BOLOGNESE]);
   const sync = {
     recordPlanned: (r, p) => app.planStore.archivePlan(app.win.RecipePlan.plannedMeal(r, p)).id,
-    unrecordPlanned: async () => { throw new Error("offline"); },
+    unrecordPlanned: async (id) => { app.planStore.removeArchived(id); return false; },
   };
   app.win.RecipeCloud = { sync };
   app.addAs("Bolognese");
   await app.el("toast-action").fire("click");
   assert.deepEqual(app.items(), [], "the list item Undo works offline");
-  assert.equal(app.archived().length, 1, "the record needs a network to come back out");
-  assert.match(app.el("toast").textContent, /Reconnect/);
+  assert.match(app.el("toast").textContent, /back online/);
+});
+
+test("J14.6 · the open recipe's Last planned follows an add and its Undo", async () => {
+  const app = planning([BOLOGNESE]);
+  app.openRecipe(app.named("Bolognese").id);
+  app.el("detail-addlist-btn").fire("click");
+  app.choose("add");
+  assert.match(app.el("detail-content").innerHTML, /Last planned/);
+  await app.el("toast-action").fire("click");
+  assert.doesNotMatch(app.el("detail-content").innerHTML, /Last planned/);
+});
+
+test("J18.18 · a list deleted while the chooser is open says so, and adds nothing", () => {
+  const app = planning([BOLOGNESE]);
+  app.openChooser("Bolognese");
+  app.listStore.remove(app.shopping.id);
+  app.choose("add");
+  assert.match(app.el("toast").textContent, /gone/);
+  assert.equal(app.archived().length, 0);
+});
+
+test("J18.18 · Make Shopping makes the book's own Shopping list, so two devices cannot make two", () => {
+  const app = planning([BOLOGNESE], { shopping: false });
+  const bookId = "11111111-1111-4111-8111-111111111111";
+  app.win.RecipeCloud = { sync: { bookId } };
+  app.openChooser("Bolognese");
+  app.choose("make");
+  assert.equal(app.listStore.lists[0].id, app.win.RecipeLists.shoppingListId(bookId));
+  app.listStore.create("Shopping", "checklist", Date.now(), app.win.RecipeLists.shoppingListId(bookId));
+  assert.equal(app.listStore.lists.length, 1, "asking again finds it");
 });
 
 test("J18.21 · with a sync layer the record is handed to it, and Undo asks it to take it back", async () => {

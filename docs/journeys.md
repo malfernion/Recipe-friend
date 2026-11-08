@@ -544,7 +544,10 @@ and puts them on the shopping list.
    recipe is never edited** (J4.3), and the number chosen is not kept.
 6. *Replaced by J18.20.* A recipe can go on a list more than once.
 7. *Replaced by J18.18.* The recipe view's own "Add to list" is the one
-   control that goes with it, and it is short enough for the row (J4.19).
+   control that goes with it. It is "+ List", and at 320px the row still
+   fits inside the gutter with everything showing at once — an owner of
+   two books (Copy and Move) with cook mode on ("Staying on") — measured
+   in a browser, with the tracking and gaps tightened to make it so.
 8. *Gone.* Items on a list do not follow the recipe they came from
    (J18.19).
 9. **The lists have addresses** (`#lists`, `#list/<id>`; the old `#plan`
@@ -575,7 +578,12 @@ and puts them on the shopping list.
 > Done, Clear and finished plans are gone with the plan readout (J18).
 > What is recorded now is an add to a list (J18.21): each one writes one
 > archived plan holding that meal, and "Last planned" and the sorts that
-> read it stay as they were (J14.5 on).
+> read it stay as they were (J14.5 on). A book keeps its newest 2000
+> records; at that, the oldest go to make room (migration 013) rather
+> than an add being refused, and a device never drops the newest record
+> of any recipe to stay under its own cap. Undo takes the record back
+> even offline: it goes from the device at once and the delete is retried
+> on the next sync.
 
 1. *Gone* (J18.26). Done finished a plan and recorded it.
 2. *Gone.*
@@ -1585,7 +1593,8 @@ gap is visible:
   The other five are unchanged, and no action bar moved: the plan's own
   control in the recipe view (J12.7) was shown only in plan mode (it is
   now "+ List", J18.18, which is always there for someone who can write)
-  and the bar held one row at 320px. Both entries that moved were already
+  and the bar held one row at 320px. Adding it took the bar's tracking
+  and gaps down a notch at narrow widths; see J12.7. Both entries that moved were already
   the tightest of the seven, and both lose their last line rather than
   their first — which is the shape of the deferred preamble again, not a
   new problem. The line is not paid for anywhere: shrinking the preamble

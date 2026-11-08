@@ -423,7 +423,7 @@ const planningHistory = {
   name: "planning_history",
   title: "What we have and have not had lately",
   description:
-    "What we have and have not had lately, from the plans the book has finished. Gives back: " +
+    "What we have and have not had lately, from when recipes were added to a list (the record behind \"Last planned\"). Gives back: " +
     "id, name, lastPlanned and timesPlanned for every recipe — least recently planned first, " +
     "never planned first of all. " + HOUSEHOLD_DATA,
   annotations: LOOKS,

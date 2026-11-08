@@ -139,9 +139,13 @@
     // --- local edits: persisted, and pushed on the usual debounce -------
 
     /** Make a list (J18.1, J18.2). Null when the book is full. */
-    create(name, kind, now = Date.now()) {
+    create(name, kind, now = Date.now(), id) {
+      // A named id is how a list that two devices might both make is the
+      // same list on both (the book's Shopping): asking again finds it.
+      const had = id && this.get(id);
+      if (had) return had;
       if (this.state.lists.length >= MAX_LISTS) return null;
-      const list = global.RecipeLists.createList({ name, kind, now });
+      const list = global.RecipeLists.createList({ name, kind, now, id });
       this.state.lists.push(list);
       this._persist(true);
       return list;

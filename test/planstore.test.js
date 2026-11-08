@@ -79,12 +79,29 @@ function fakeCloud() {
       data = hit;
     }
 
+    // order() and range() as PostgREST answers them, with its page limit.
+    if (q.op === "select") {
+      if (q.orderBy.length) {
+        data = [...data].sort((a, b) => {
+          for (const [col, asc] of q.orderBy) {
+            const x = a[col] instanceof Date ? a[col].getTime() : a[col];
+            const y = b[col] instanceof Date ? b[col].getTime() : b[col];
+            if (x < y) return asc ? -1 : 1;
+            if (x > y) return asc ? 1 : -1;
+          }
+          return 0;
+        });
+      }
+      const [from, to] = q.range || [0, Infinity];
+      data = data.slice(from, Math.min(to + 1, from + (db.maxRows || 1000)));
+    }
+
     if (q.maybeSingle) return { data: data[0] || null, error: null };
     return { data, error: null };
   }
 
   function builder(table) {
-    const q = { table, op: "select", filters: [], payload: null };
+    const q = { table, op: "select", filters: [], payload: null, orderBy: [], range: null };
     const api = {
       select() { return api; },
       insert(p) { q.op = "insert"; q.payload = p; return api; },
@@ -93,6 +110,8 @@ function fakeCloud() {
       eq(col, val) { q.filters.push([col, "eq", val]); return api; },
       in(col, vals) { q.filters.push([col, "in", vals]); return api; },
       is(col, val) { q.filters.push([col, "is", val]); return api; },
+      order(col, { ascending = true } = {}) { q.orderBy.push([col, ascending]); return api; },
+      range(from, to) { q.range = [from, to]; return api; },
       maybeSingle() { q.maybeSingle = true; return Promise.resolve(run(q)); },
       then(resolve, reject) { return Promise.resolve(run(q)).then(resolve, reject); },
     };
@@ -1223,7 +1242,7 @@ test("J18.21 · unrecordPlanned deletes the row and the local copy", async () =>
   assert.equal(d.planStore.archive.length, 0, "and the next sync does not bring it back");
 });
 
-test("J18.21 · unrecordPlanned needs the network for a record the book holds", async () => {
+test("J18.21 · Undo offline goes at once here, is owed to the book, and is retried on the next sync", async () => {
   const cloud = fakeCloud();
   joinBook(cloud);
   const d = device(cloud);
@@ -1231,9 +1250,46 @@ test("J18.21 · unrecordPlanned needs the network for a record the book holds", 
   await d.sync.syncNow();
 
   cloud.breakWrite("plans.delete");
-  await assert.rejects(() => d.sync.unrecordPlanned(id));
-  assert.equal(d.planStore.archive.length, 1, "left where it was");
+  assert.equal(await d.sync.unrecordPlanned(id), false, "the book has not been told");
+  assert.equal(d.planStore.archive.length, 0, "but the record is gone from here");
   assert.equal(cloud.db.plans.length, 1);
+  await d.sync.syncNow().catch(() => {});
+  assert.equal(d.planStore.archive.length, 0, "and a pull does not bring it back");
+
+  cloud.mend("plans.delete");
+  await d.sync.syncNow();
+  assert.equal(cloud.db.plans.length, 0, "the owed delete lands");
+  assert.equal(d.planStore.owesDelete(id), false);
+  await d.sync.syncNow();
+  assert.equal(d.planStore.archive.length, 0);
+});
+
+test("J18.21 · Undo while that record's insert is in flight waits for it, then deletes", async () => {
+  const cloud = fakeCloud();
+  joinBook(cloud);
+  const d = device(cloud);
+  const id = d.sync.recordPlanned(shareRecipe(cloud), 4, 2000);
+
+  // Hold the insert on the wire.
+  const real = d.sync.api.insertArchivedPlan.bind(d.sync.api);
+  let release;
+  const held = new Promise((r) => { release = r; });
+  let started;
+  const sawInsert = new Promise((r) => { started = r; });
+  d.sync.api.insertArchivedPlan = async (...args) => {
+    started();
+    await held;
+    return real(...args);
+  };
+  const syncing = d.sync.syncNow();
+  await sawInsert;
+  const undone = d.sync.unrecordPlanned(id);
+  release();
+  await syncing;
+  await undone;
+  assert.equal(cloud.db.plans.length, 0, "the insert landed first and the delete took it out");
+  await d.sync.syncNow();
+  assert.equal(d.planStore.archive.length, 0, "and it does not come back");
 });
 
 test("J18.21 · a record the book never heard of just goes, offline or not", async () => {
@@ -1252,4 +1308,94 @@ test("J18.21 · a viewer records nothing", () => {
   const d = device(cloud, { readOnly: true });
   assert.equal(d.sync.recordPlanned(shareRecipe(cloud), 4), null);
   assert.equal(d.planStore.archive.length, 0);
+});
+
+// ---------------------------------------------------------------------
+// J18.21 · The record at the scale an add per meal reaches
+// ---------------------------------------------------------------------
+
+test("J18.21 · over the cap the newest record of every recipe is kept, and older repeats go first", () => {
+  const win = loadApp("units.js", "scale.js", "storage.js", "plan.js", "planstore.js");
+  const { capArchive } = win.RecipePlanStore;
+  const { MAX_ARCHIVE } = win.RecipePlanStore.limits;
+  const rare = { id: "rare", completedAt: 1, meals: [{ recipeId: "R0" }] };
+  const often = [];
+  for (let i = 0; i < MAX_ARCHIVE + 4; i++) {
+    often.push({ id: `o${i}`, completedAt: 100000 - i, meals: [{ recipeId: "R1" }] });
+  }
+  const sorted = [...often, rare].sort((a, b) => b.completedAt - a.completedAt);
+  const kept = capArchive(sorted);
+  assert.equal(kept.length, MAX_ARCHIVE);
+  assert.ok(kept.some((p) => p.id === "rare"), "the only record of a recipe survives, however old");
+  assert.ok(kept.some((p) => p.id === "o0"), "as does the newest of the busy one");
+  assert.ok(!kept.some((p) => p.id === `o${MAX_ARCHIVE + 3}`), "an older repeat is what went");
+});
+
+test("J18.21 · a book with more records than one request returns is pulled whole", async () => {
+  const cloud = fakeCloud();
+  joinBook(cloud);
+  const d = device(cloud);
+  const recipe = shareRecipe(cloud);
+  for (let i = 0; i < 1250; i++) {
+    const record = d.plan.plannedMeal(recipe, 4, 1_000_000 + i * 1000);
+    cloud.db.plans.push({ id: record.id, book_id: BOOK, data: record, completed_at: new Date(record.completedAt).toISOString() });
+  }
+  const mine = d.sync.recordPlanned(recipe, 4, 9_000_000_000);
+  await d.sync.syncNow();
+  assert.equal(d.planStore.archive.length, 1251, "every record came down");
+  assert.ok(cloud.db.plans.some((r) => r.id === mine));
+  const selects = cloud.calls.filter((c) => c.table === "plans" && c.op === "select").length;
+  await d.sync.syncNow();
+  assert.equal(d.planStore.archive.length, 1251, "and a record this device has pushed is not dropped by the next sync");
+  assert.ok(selects >= 3, "in pages");
+});
+
+test("J18.21 · a record the book refuses for good is dropped with a warning, and sync carries on", async () => {
+  const cloud = fakeCloud();
+  joinBook(cloud);
+  const d = device(cloud);
+  const recipe = shareRecipe(cloud);
+  const warnings = [];
+  const realWarn = console.warn;
+  console.warn = (...a) => warnings.push(a.join(" "));
+  try {
+    cloud.breakWrite("plans.insert", Object.assign(new Error("this book has recorded as many plans as it can hold"), { code: "P0001" }));
+    const id = d.sync.recordPlanned(recipe, 4, 2000);
+    const result = await d.sync.syncNow();
+    assert.ok(result, "the sync did not fail");
+    assert.equal(d.statuses.at(-1), "synced");
+    assert.equal(d.planStore.hasArchived(id), false, "the record is dropped here");
+    assert.equal(d.planStore.owes(id), false);
+    assert.ok(warnings.some((w) => /refused a record/.test(w)));
+    for (const status of [403, 400]) {
+      cloud.breakWrite("plans.insert", Object.assign(new Error("no"), { status }));
+      d.sync.recordPlanned(recipe, 4, 3000);
+      assert.ok(await d.sync.syncNow(), `a ${status} is permanent too`);
+      assert.equal(d.planStore.archive.length, 0);
+    }
+    // A passing failure is not permanent: it is retried.
+    cloud.breakWrite("plans.insert", Object.assign(new Error("slow down"), { status: 429 }));
+    const keep = d.sync.recordPlanned(recipe, 4, 4000);
+    assert.equal(await d.sync.syncNow(), null);
+    assert.equal(d.planStore.owes(keep), true);
+  } finally {
+    console.warn = realWarn;
+  }
+});
+
+test("J18.21 · an archive error does not keep the lists from syncing, and then they are not seeded", async () => {
+  const cloud = fakeCloud();
+  joinBook(cloud);
+  const d = device(cloud);
+  const seen = [];
+  d.sync.syncLists = async (id, opts) => { seen.push(opts); return null; };
+  cloud.breakWrite("plans.select", new Error("offline"));
+  const realWarn = console.warn;
+  console.warn = () => {};
+  try {
+    assert.equal(await d.sync.syncNow(), null, "the run still reports its error");
+  } finally {
+    console.warn = realWarn;
+  }
+  assert.deepEqual(seen, [{ seed: false }], "but the lists were synced, without moving a plan that was not pulled");
 });

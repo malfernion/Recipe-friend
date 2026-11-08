@@ -170,6 +170,7 @@ function fakeSupabase(opts = {}) {
       gt() { return api; },
       is() { return api; },
       order() { return api; },
+      range() { return api; },
       single() { q.single = true; return api; },
       maybeSingle() { q.single = true; return api; },
       then(onOk, onErr) {

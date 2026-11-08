@@ -145,24 +145,42 @@
      * neither side can be out of date about a row that cannot be edited.
      */
     async fetchArchivedPlanIds(bookId) {
-      const { data, error } = await this.client
-        .from("plans")
-        .select("id")
-        .eq("book_id", bookId);
-      if (error) throw error;
-      return (data || []).map((row) => row.id);
+      // PostgREST answers at most 1000 rows to one request, and every add
+      // to a list is a row (J18.21), so this pages — newest first, with the
+      // id to break ties — rather than trust one answer to be all of them.
+      const PAGE = 1000;
+      const ids = [];
+      for (let from = 0; ; from += PAGE) {
+        const { data, error } = await this.client
+          .from("plans")
+          .select("id")
+          .eq("book_id", bookId)
+          .order("completed_at", { ascending: false })
+          .order("id", { ascending: true })
+          .range(from, from + PAGE - 1);
+        if (error) throw error;
+        const rows = data || [];
+        for (const row of rows) ids.push(row.id);
+        if (rows.length < PAGE) return ids;
+      }
     }
 
     /** The plans behind some of those ids. */
     async fetchArchivedPlans(bookId, ids) {
       if (!ids || ids.length === 0) return [];
-      const { data, error } = await this.client
-        .from("plans")
-        .select("id, data, completed_at")
-        .eq("book_id", bookId)
-        .in("id", ids);
-      if (error) throw error;
-      return data || [];
+      // In batches: a few thousand uuids in one `in (...)` is a URL no
+      // proxy will carry.
+      const out = [];
+      for (let i = 0; i < ids.length; i += 100) {
+        const { data, error } = await this.client
+          .from("plans")
+          .select("id, data, completed_at")
+          .eq("book_id", bookId)
+          .in("id", ids.slice(i, i + 100));
+        if (error) throw error;
+        out.push(...(data || []));
+      }
+      return out;
     }
 
     /**
