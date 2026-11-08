@@ -56,8 +56,9 @@ for accounts and sync.
   say-so.
 - **Agents** — let a program read a book. An owner adds one from
   Books → Agents, names it, and gets a key (`rfk_…`) for whatever assistant
-  they run, which reaches the book through the hosted MCP server. It can read the book and add
-  recipes; it cannot edit or delete a recipe, favourite one, see the photos,
+  they run, which reaches the book through the hosted MCP server. It can read the book, add
+  recipes, and work on what is on the book's lists; it cannot make, rename
+  or delete a list, edit or delete a recipe, favourite one, see the photos,
   or invite anybody — and it has no book of its own and
   cannot make one. It sits in the member list like anybody else, cannot
   be promoted, and is removed with the same ×, which revokes its key and
@@ -283,7 +284,7 @@ test/                          Tests, named for the criteria they check
 server, hosted beside the app at **`https://recipes.dave-ernsting.com/mcp`**
 over MCP's Streamable HTTP transport. An assistant connects with that URL
 and an agent key; the server finds the one book the key belongs to and
-offers six tools.
+offers nine tools.
 
 ### What it can do
 
@@ -299,16 +300,29 @@ instruction — some of it arrived from a web page.
 | `recipes_sharing_ingredients` | a recipe id, or a list of ingredients | what overlaps with it, and on what — for a week that buys one bunch of coriander |
 | `planning_history` | — | when each recipe was last planned and how often, least recently first |
 
-One that changes something, and it cannot be taken back from here.
+Three for the book's lists (J18.25). An agent works on what is on a
+list; making, renaming and deleting a list are a person's, and there is
+no tool for them. Lists are named by name, in any case, or by id.
+
+| Tool | Takes | Does |
+| --- | --- | --- |
+| `get_lists` | optionally a list | every list's name, kind and size; and that list in full — each item's id, text, depth, and tick or count |
+| `add_to_list` | a list, and lines of text or a recipe id with servings or a multiplier; optionally where | adds the lines, or the recipe as one item with its ingredients under it, scaled (checklists only) |
+| `edit_list` | a list and up to 50 changes by item id | changes text (saying what it read), ticks, sets or changes counts, moves, nests, deletes |
+
+A change goes through the app's own merge and sync, so a phone and the
+assistant working on one list both keep what they did; a count is set as
+the agent's own taps, so somebody else's tap meanwhile still counts. A
+recipe the agent puts on a list is recorded as planned, as a person's is
+(J18.21); it cannot take that record back (J16.4), though like anybody's
+it can roll the book's oldest record off at the 2000 kept (013). A write answers with
+what it changed and the list's size; `get_lists` reads the whole list.
+
+One more that changes something, and it cannot be taken back from here.
 
 | Tool | Takes | Does |
 | --- | --- | --- |
 | `add_recipe` | a recipe | files it into the book — **one way**, see below |
-
-The plan tools (`get_plan`, `add_to_plan`, `remove_from_plan`,
-`add_to_list`, `edit_list`, `remove_from_list`) were switched off when
-lists replaced the plan's shopping list (J18, build step 1); tools for
-lists come in step 3.
 
 Answers come from the app's own modules, so what the assistant reads is
 what the phone shows.

@@ -271,6 +271,34 @@ test("J18.15 · both phones taking the last one leave 0, and + from there shows 
   assert.equal(L.count(L.bump(merged, ids[0], +1, DEV_A).items[0]), 1);
 });
 
+test("J18.17 · setting a counter is this device's taps from what it shows, so a tap made meanwhile still counts", () => {
+  let { list, ids } = typed("stock", "Bolognese");
+  for (let i = 0; i < 3; i++) list = L.bump(list, ids[0], +1, DEV_A); // 4
+  // The agent says "there are 2" while phone b takes one, from the same 4.
+  const agent = L.setCount(list, ids[0], 2, DEV_B);
+  assert.equal(L.count(agent.items[0]), 2);
+  assert.deepEqual(agent.items[0].tally.find((e) => e[0] === DEV_B), [DEV_B, 0, 2], "as changes, not an overwrite");
+  const phone = L.bump(list, ids[0], -1, DEV_A);
+  assert.equal(L.count(L.mergeLists(agent, phone).items[0]), 1);
+  assert.equal(L.count(L.mergeLists(phone, agent).items[0]), 1);
+  // Up from below 0 shows what was asked for; at the value, nothing.
+  const low = L.mergeLists(L.bump(list, ids[0], -1, DEV_A), L.setCount(list, ids[0], 0, DEV_B));
+  assert.equal(L.count(low.items[0]), 0);
+  assert.equal(L.count(L.setCount(low, ids[0], 3, DEV_B).items[0]), 3);
+  assert.equal(L.setCount(agent, ids[0], 2, DEV_B), agent, "already there");
+  assert.equal(L.setCount(agent, ids[0], -1, DEV_B), agent, "never below 0");
+  assert.equal(L.setCount(agent, ids[0], "lots", DEV_B), agent);
+});
+
+test("J18.16 · a heading, a checklist and a device with no id cannot have a count set", () => {
+  let { list, ids } = typed("stock", "Top drawer", "peas");
+  list = L.indent(list, ids[1]);
+  assert.equal(L.setCount(list, ids[0], 5, DEV_A), list);
+  assert.equal(L.setCount(list, ids[1], 5, ""), list);
+  const check = typed("checklist", "milk");
+  assert.equal(L.setCount(check.list, check.ids[0], 5, DEV_A), check.list);
+});
+
 test("a counter is refused on a checklist, and from a device with no id", () => {
   const { list, ids } = typed("checklist", "milk");
   assert.equal(L.bump(list, ids[0], +1, DEV_A), list);

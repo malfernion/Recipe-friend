@@ -17,16 +17,34 @@ const BOOK = "11111111-1111-4111-8111-111111111111";
  * `archive` is a function rather than a list because an archived plan
  * names recipe ids, and those are not known until the rows are made.
  */
-async function agentBook({ recipes = [], archive = () => [], role = "agent" } = {}) {
+async function agentBook({ recipes = [], archive = () => [], role = "agent", lists = [] } = {}) {
   const win = loadApp("units.js", "scale.js", "storage.js", "plan.js", "planstore.js", "search.js");
   const rows = recipes.map((raw, i) => {
     const recipe = win.RecipeStore.sanitizeRecipe(raw);
     return { id: recipe.id, data: recipe, updated_at: new Date(1000 + i).toISOString(), deleted_at: null };
   });
   const idFor = (name) => rows.find((r) => r.data.name === name).id;
-  const plans = () => archive(idFor, win);
+  // What the book was given, and what has been recorded since — an
+  // agent's recipe add is one (J18.21, 014).
+  const plans = () => [...archive(idFor, win), ...sent.archived];
 
-  const sent = { recipes: [], livePlans: [], archived: [] };
+  const sent = { recipes: [], livePlans: [], archived: [], listUpdates: [], listRefusals: [] };
+  const L = loadApp("units.js", "scale.js", "lists.js").RecipeLists;
+  let listClock = 10000;
+  const listRow = (list) => ({
+    id: list.id,
+    book_id: BOOK,
+    name: list.name,
+    name_at: list.nameAt,
+    kind: list.kind,
+    items: list.items,
+    pruned_to: list.prunedTo || 0,
+    deleted_at: null,
+    created_at: new Date(list.createdAt || 1).toISOString(),
+    updated_at: new Date(++listClock).toISOString(),
+  });
+  const listRows = lists.map((l) => listRow(L.sanitizeList(l)));
+  let brokenListPush = null;
   let pulls = 0;
   let live = null;
   let broken = null;
@@ -70,6 +88,37 @@ async function agentBook({ recipes = [], archive = () => [], role = "agent" } = 
     },
     async insertArchivedPlan(bookId, plan) {
       sent.archived.push(plan);
+      return true;
+    },
+    // Lists (J18): one row each, written back compare-and-set on
+    // updated_at, refusing what the database refuses an agent (012).
+    async fetchLists() {
+      if (broken) throw new Error(broken);
+      return listRows.map((r) => ({ ...r }));
+    },
+    async fetchList(bookId, id) {
+      if (broken) throw new Error(broken);
+      const row = listRows.find((r) => r.id === id);
+      return row ? { ...row } : null;
+    },
+    async insertList() {
+      sent.listRefusals.push("insert");
+      throw new Error("new row violates row-level security policy for table \"lists\"");
+    },
+    async deleteList() {
+      sent.listRefusals.push("delete");
+      throw new Error("an agent may change a list's items, not the list");
+    },
+    async updateList(bookId, id, fields, seenAt) {
+      if (broken || brokenListPush) throw new Error(broken || brokenListPush);
+      const row = listRows.find((r) => r.id === id);
+      if (!row || row.updated_at !== seenAt) return false;
+      if ("name" in fields || "name_at" in fields || "deleted_at" in fields) {
+        sent.listRefusals.push("rename");
+        throw new Error("an agent may change a list's items, not the list");
+      }
+      Object.assign(row, fields, { updated_at: new Date(++listClock).toISOString() });
+      sent.listUpdates.push({ id, fields });
       return true;
     },
   };
@@ -119,8 +168,31 @@ async function agentBook({ recipes = [], archive = () => [], role = "agent" } = 
     },
     /** Give all of it back. */
     mendNetwork: () => {
-      broken = brokenPlans = brokenRecipePush = brokenPlanPush = null;
+      broken = brokenPlans = brokenRecipePush = brokenPlanPush = brokenListPush = null;
     },
+    /** Only writing a list back fails. */
+    breakListPush: (why = "network") => {
+      brokenListPush = why;
+    },
+    /** The lists as the server holds them. */
+    listRow: (id) => listRows.find((r) => r.id === id),
+    serverList: (id) => {
+      const r = listRows.find((x) => x.id === id);
+      return r && L.sanitizeList({ id: r.id, name: r.name, nameAt: r.name_at, kind: r.kind, prunedTo: r.pruned_to, items: r.items });
+    },
+    /** Somebody changes a list from a phone: `fn` is a RecipeLists op. */
+    phone: (id, fn) => {
+      const r = listRows.find((x) => x.id === id);
+      const now = L.sanitizeList({ id: r.id, name: r.name, nameAt: r.name_at, kind: r.kind, prunedTo: r.pruned_to, items: r.items });
+      const next = fn(now, L);
+      Object.assign(r, { items: next.items, name: next.name, name_at: next.nameAt, updated_at: new Date(++listClock).toISOString() });
+      return next;
+    },
+    /** Somebody makes a list from a phone. */
+    addRemoteList: (list) => {
+      listRows.push(listRow(L.sanitizeList(list)));
+    },
+    L,
     /**
      * Break only the plan half of a sync, which is the shape that made
      * `add_recipe` lie: the recipes go up first and succeed, and the

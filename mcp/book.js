@@ -27,6 +27,7 @@ const { loadApp } = require("../test/helpers/load.js");
 const MODULES = [
   "units.js", "scale.js", "storage.js",
   "plan.js", "planstore.js",
+  "lists.js", "liststore.js",
   "search.js", "sync.js",
 ];
 
@@ -90,7 +91,12 @@ async function openBook(session, { api: injected } = {}) {
 
   const store = new win.RecipeStore();
   const planStore = new win.RecipePlanStore();
-  const sync = new win.RecipeSync(store, api, () => {}, planStore);
+  // The agent's counter taps (J18.17) are one device's, the same on every
+  // request: its own slot of the 64 a counter keeps, rather than a new one
+  // for each process this stateless server starts.
+  win.localStorage.setItem("recipe-friend:device:v1", agentDevice(userId));
+  const listStore = new win.RecipeListStore();
+  const sync = new win.RecipeSync(store, api, () => {}, planStore, listStore);
   sync.userId = userId;
   // Three answers to "may this device write", not two (J16.3). `addOnly`
   // is what stops an upsert going up against a row the server already
@@ -99,11 +105,21 @@ async function openBook(session, { api: injected } = {}) {
   sync.setBook(bookId, { readOnly: false, addOnly: true });
   store.useBook(bookId);
 
-  return new Book(win, api, store, planStore, sync, book, session);
+  return new Book(win, api, store, planStore, sync, book, session, listStore);
+}
+
+/**
+ * A counter device id (8–16 letters and digits, js/liststore.js) that is
+ * a function of the agent's member id. Fifteen characters, leaving one
+ * for the spare slots a full counter moves on to (tools-lists.js).
+ */
+function agentDevice(userId) {
+  return ("agent" + String(userId || "").replace(/[^0-9a-z]/gi, "")).slice(0, 15).padEnd(8, "0");
 }
 
 class Book {
-  constructor(win, api, store, planStore, sync, book, session) {
+  constructor(win, api, store, planStore, sync, book, session, listStore) {
+    this.listStore = listStore;
     this.session = session;
     this.lane = Promise.resolve();
     this.syncing = null;
@@ -232,6 +248,11 @@ class Book {
   get plan() {
     return this.planStore.plan;
   }
+
+  /** The book's lists, in the order the app shows them (J18.1). */
+  get lists() {
+    return this.listStore.lists;
+  }
 }
 
-module.exports = { openBook, Book, BookError, MODULES, REMOVED };
+module.exports = { openBook, Book, BookError, MODULES, REMOVED, agentDevice };

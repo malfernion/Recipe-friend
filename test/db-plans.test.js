@@ -153,3 +153,50 @@ db("J18.21 · at the quota the oldest records go instead of the insert being ref
   assert.equal((await s.one("select count(*)::int as n from plans where book_id = $1", [bea.book])).n, 1,
     "another book's record is not touched");
 });
+
+db("J18.21 · an agent's record rolls the oldest off too, and nobody's insert makes room in a book not theirs (014)", async (s) => {
+  const ann = await s.person("Ann");
+  const olly = await s.person("Olly");
+  const agent = await s.agentIn(ann.book);
+  await s.asAdmin();
+  await s.q(
+    `insert into plans (id, book_id, data, completed_at)
+     select gen_random_uuid(), $1, '{}', now() - make_interval(mins => 5000 - n) from generate_series(1, 2000) n`,
+    [ann.book]
+  );
+  const oldest = await s.one("select id from plans where book_id = $1 order by completed_at asc limit 1", [ann.book]);
+
+  // Somebody outside the book is refused, and takes nothing with them.
+  await s.as(olly);
+  const refused = await s.attempt(ARCHIVE, [randomUUID(), ann.book]);
+  assert.equal(refused.error && refused.error.code, "42501");
+  await s.asAdmin();
+  assert.equal((await s.one("select count(*)::int as n from plans where book_id = $1", [ann.book])).n, 2000);
+  assert.equal((await s.q("select 1 from plans where id = $1", [oldest.id])).rowCount, 1);
+
+  // An insert that inserts nothing makes no room: a duplicate id met with
+  // `on conflict do nothing` would otherwise erase a record a time.
+  await s.as(agent);
+  const dup = await s.attempt(`${ARCHIVE} on conflict do nothing`, [oldest.id, ann.book]);
+  assert.equal(dup.error, null);
+  assert.equal(dup.rowCount, 0);
+  await s.asAdmin();
+  assert.equal((await s.one("select count(*)::int as n from plans where book_id = $1", [ann.book])).n, 2000);
+  assert.equal((await s.q("select 1 from plans where id = $1", [oldest.id])).rowCount, 1, "nothing deleted");
+
+  await s.as(agent);
+  const mine = randomUUID();
+  assert.equal((await s.attempt(ARCHIVE, [mine, ann.book])).error, null);
+  await s.asAdmin();
+  assert.equal((await s.one("select count(*)::int as n from plans where book_id = $1", [ann.book])).n, 2000, "still at the quota");
+  assert.equal((await s.q("select 1 from plans where id = $1", [oldest.id])).rowCount, 0, "the oldest made room");
+  assert.equal((await s.q("select 1 from plans where id = $1", [mine])).rowCount, 1, "and the new one is kept");
+
+  // A new record dated before every other is still the one kept.
+  await s.as(agent);
+  const early = randomUUID();
+  await s.q("insert into plans (id, book_id, data, completed_at) values ($1, $2, '{}', now() - interval '10 years')", [early, ann.book]);
+  await s.asAdmin();
+  assert.equal((await s.q("select 1 from plans where id = $1", [early])).rowCount, 1);
+  assert.equal((await s.one("select count(*)::int as n from plans where book_id = $1", [ann.book])).n, 2000);
+});

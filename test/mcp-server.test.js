@@ -38,15 +38,17 @@ async function connect({ openBook, recipes = [SOUP] } = {}) {
   return client;
 }
 
-test("a host is offered six tools, each saying what kind of thing it is", async () => {
+test("a host is offered nine tools, each saying what kind of thing it is", async () => {
   const client = await connect();
 
   const { tools } = await client.listTools();
 
-  // The plan tools went with the plan's shopping list (J18, build step 1).
+  // The plan tools went with the plan's shopping list (J18, build step 1);
+  // the list tools replaced them (step 3). None makes, renames or deletes
+  // a list, which an agent may not do (J18.25, J17.6).
   assert.deepEqual(tools.map((t) => t.name).sort(), [
-    "add_recipe", "find_recipes", "get_recipe", "list_recipes", "planning_history",
-    "recipes_sharing_ingredients",
+    "add_recipe", "add_to_list", "edit_list", "find_recipes", "get_lists", "get_recipe",
+    "list_recipes", "planning_history", "recipes_sharing_ingredients",
   ]);
   for (const tool of tools) {
     assert.ok(tool.description, `${tool.name} says what it is for`);
@@ -57,6 +59,9 @@ test("a host is offered six tools, each saying what kind of thing it is", async 
   const filing = tools.find((t) => t.name === "add_recipe");
   assert.equal(filing.annotations.destructiveHint, true, "the one-way tool tells the host so");
   assert.equal(tools.find((t) => t.name === "planning_history").annotations.readOnlyHint, true);
+  assert.equal(tools.find((t) => t.name === "get_lists").annotations.readOnlyHint, true);
+  assert.equal(tools.find((t) => t.name === "edit_list").annotations.destructiveHint, true, "it can delete items");
+  assert.equal(tools.find((t) => t.name === "add_to_list").annotations.destructiveHint, false);
 });
 
 /**

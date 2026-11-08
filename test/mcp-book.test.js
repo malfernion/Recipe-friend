@@ -46,6 +46,13 @@ function fakeApi({ role = "agent", rows = [] } = {}) {
       pushed.archived.push(plan);
       return true;
     },
+    // A book with no lists: an agent's sync never makes one (J18.25).
+    async fetchLists() {
+      return [];
+    },
+    async insertList() {
+      throw new Error("an agent cannot make a list");
+    },
   };
 }
 
@@ -142,7 +149,7 @@ test("J16.3 · only rows the server has never seen go up", async () => {
   assert.deepEqual(api.pushed.recipes.map((r) => r.data.name), ["Filed"]);
 });
 
-test("J16.4 · an agent never records a plan, even one it finds finished", async () => {
+test("J16.4 · an agent never finishes a plan, even one it finds finished", async () => {
   const win = loadApp("units.js", "storage.js", "plan.js", "planstore.js");
   const api = fakeApi();
   // A Done that landed half way: recorded by somebody's phone, and the

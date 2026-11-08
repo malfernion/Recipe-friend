@@ -1303,6 +1303,19 @@ test("J18.21 · a record the book never heard of just goes, offline or not", asy
   assert.equal(d.planStore.owes(id), false, "and nothing is owed on it");
 });
 
+test("J18.21, J16.4 · an agent records its add like a person, and cannot take it back", async () => {
+  const cloud = fakeCloud();
+  joinBook(cloud, { role: "agent" });
+  const d = device(cloud, { addOnly: true });
+  const id = d.sync.recordPlanned(shareRecipe(cloud), 4, 2000);
+  assert.ok(id);
+  await d.sync.syncNow();
+  assert.deepEqual(cloud.db.plans.map((r) => r.id), [id], "the record went up");
+  assert.equal(d.planStore.owes(id), false);
+  assert.equal(await d.sync.unrecordPlanned(id), false, "Undo is a person's");
+  assert.deepEqual(cloud.db.plans.map((r) => r.id), [id]);
+});
+
 test("J18.21 · a viewer records nothing", () => {
   const cloud = fakeCloud();
   const d = device(cloud, { readOnly: true });

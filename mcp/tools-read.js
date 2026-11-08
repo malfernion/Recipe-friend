@@ -1,5 +1,5 @@
 /**
- * mcp/tools-read.js — the five tools that only look.
+ * mcp/tools-read.js — the five tools that only look at recipes.
  *
  * Coarse and workflow-shaped rather than one per endpoint: the questions
  * somebody putting a week together actually asks, answered by the app's
@@ -451,8 +451,10 @@ const planningHistory = {
   },
 };
 
-// get_plan went with the plan's shopping list (J18, build step 1): lists
-// replaced it, and tools that read them come in build step 3 (J18.25).
+// get_plan went with the plan's shopping list (J18, build step 1); the
+// book's lists are read by get_lists (tools-lists.js, J18.25).
 module.exports = [listRecipes, getRecipe, findRecipes, recipesSharingIngredients, planningHistory];
 // The write tools hand over household text too, and say the same thing.
 module.exports.HOUSEHOLD_DATA = HOUSEHOLD_DATA;
+// A recipe goes onto a list at a size asked the same two ways (J17.12).
+module.exports.sizeAsked = sizeAsked;

@@ -652,19 +652,10 @@
       // line on "Sync paused" and makes read-only look broken.
       if (this.readOnly) return { pushed: 0, pulled: missingHere.length, live: "read" };
 
-      // An agent works on the live plan and never on the record (J16.4),
-      // so the archive push below is not its errand. It has nothing owed
-      // in any case — the branch that mints a debt is the one it did not
-      // take above — and skipping it is what keeps that true even if a
-      // debt arrives from somewhere else, which would otherwise be
-      // pushed, refused, and park the sync.
-      if (this.addOnly) {
-        const blank = isBlank(plan);
-        const live = (!remote && blank) || samePlan(plan, remote) ? "unchanged" : "pushed";
-        if (live === "pushed") await this.api.pushLivePlan(this.bookId, plan);
-        return { pushed: 0, pulled: missingHere.length, live };
-      }
-
+      // An agent pushes records too: the one it owes is a recipe it put
+      // on a list (J18.21, `recordPlanned`), which 014 lets it insert. It
+      // never finishes a week (J16.4), so the branch above that would
+      // mint a debt for a finished plan is not one it takes.
       // The record first, the live row second, and that order is the whole
       // of what makes a half-finished Done safe. Recording a plan and then
       // failing to clear it leaves a plan that is on the record and still
@@ -707,10 +698,12 @@
      * Record that a recipe was planned (J18.21): one archived plan holding
      * that one meal. Written to this device first and owed to the book, so
      * it works with no network and goes up on the usual push, retried
-     * until it lands (J9.5). Returns the record's id, for Undo.
+     * until it lands (J9.5). Returns the record's id, for Undo. An agent
+     * records its adds the same way (J16.4, 014); taking one back is a
+     * person's (`unrecordPlanned`).
      */
     recordPlanned(recipe, portions, now = Date.now()) {
-      if (!this.planStore || this.readOnly || this.addOnly) return null;
+      if (!this.planStore || this.readOnly) return null;
       const archived = this.planStore.archivePlan(global.RecipePlan.plannedMeal(recipe, portions, now));
       return archived ? archived.id : null;
     }
