@@ -1769,7 +1769,10 @@
    */
   function renderList(force = false) {
     if (!listStore || !openListId) return;
-    if (!force && editingItem && listView.open) {
+    // Nor under a finger that is holding or dragging a row: a redraw would
+    // take the row out from under it, and the drop would land at the end
+    // of the list. The gesture's end pays what is owed.
+    if (!force && (editingItem || gesture) && listView.open) {
       listStale = true;
       return;
     }
@@ -1902,17 +1905,43 @@
     sel.addRange(range);
   }
 
-  /** Take items off, saying so with an Undo (J18.10). */
+  /**
+   * Take items off, saying so with an Undo (J18.10, J18.13). A delete is
+   * final (J9.4), so what Undo puts back is a snapshot taken first, and it
+   * comes back as copies under new ids — nothing here holds an old id
+   * across the Undo except to find a "Ticked (n)" group that was open.
+   */
   function deleteWithUndo(ids, label) {
     const listId = openListId;
+    const held = listStore.get(listId);
+    if (!held) return;
+    const snap = RecipeLists.snapshot(held, ids);
     listStore.change(listId, (l) => RecipeLists.deleteItems(l, ids));
     toast(label, {
       label: "Undo",
       run: () => {
-        listStore.change(listId, (l) => RecipeLists.restoreItems(l, ids));
+        const now = listStore.get(listId);
+        if (!now) return;
+        const had = new Set(now.items.map((i) => i.id));
+        const after = listStore.change(listId, (l) => RecipeLists.restoreItems(l, snap));
+        if (after && after !== now) keepGroupsOpen(listId, snap, after.items.filter((i) => !had.has(i.id)));
         listsChanged([listId]);
       },
     });
+  }
+
+  /**
+   * A restored parent whose "Ticked (n)" group was open stays open: the
+   * open set is keyed by id, and the copy has a new one. A copy is the
+   * snapshot's item in the same place saying the same thing.
+   */
+  function keepGroupsOpen(listId, snap, copies) {
+    const set = openSet(listId);
+    for (const old of snap) {
+      if (!set.has(old.id)) continue;
+      const copy = copies.find((c) => c.text === old.text && c.order === old.order && c.ticked === old.ticked);
+      if (copy) set.add(copy.id);
+    }
   }
 
   function deletedLabel(item, count) {
@@ -1951,7 +1980,11 @@
     return "saved";
   }
 
-  /** Enter: the next item, directly below at the same depth (J18.7). */
+  /**
+   * Enter: the next item, with the caret in it (J18.7). Below a leaf, at
+   * its depth; on an item that holds others, its first child — directly
+   * below, rather than after however many ingredients a recipe has.
+   */
   function enterAt(el) {
     if (!lineWords(el)) {
       // Enter on an empty item is the end of typing: it goes, quietly.
@@ -1960,13 +1993,75 @@
     }
     const id = el.dataset.liText;
     commitText(el);
+    const list = currentList();
+    if (!list) return;
+    const before = RecipeLists.rows(list, openSet(list.id));
     const newId = RecipeLists.newId();
-    const after = listStore.change(openListId, (l) => RecipeLists.addItem(l, { afterId: id, id: newId }));
+    const holds = RecipeLists.children(list, id).length > 0;
+    const after = listStore.change(openListId, (l) =>
+      RecipeLists.addItem(l, holds ? { parentId: id, atTop: true, id: newId } : { afterId: id, id: newId })
+    );
     if (!after || !after.items.some((i) => i.id === newId)) {
       toast(`This list is full — it holds ${RecipeLists.limits.MAX_LIVE} items.`);
       return;
     }
-    redrawAndFocus(newId);
+    if (!insertRowInPlace(before, after, id, newId)) redrawAndFocus(newId);
+  }
+
+  /**
+   * One row as a key: what drawing it depends on. Two row lists with the
+   * same keys draw the same.
+   */
+  const rowKey = (r) =>
+    r.type === "ticked"
+      ? `t:${r.parentId || ""}:${r.depth}:${r.count}:${r.open}`
+      : `i:${r.id}:${r.depth}:${r.counter}:${r.faded}:${r.hasChildren}:${r.item.ticked}:${r.item.text}`;
+
+  /**
+   * Put a new item's row into the page next to the one being typed in,
+   * and the caret into it, without redrawing the list — so the element
+   * with focus is never replaced, and a phone's keyboard stays up (iOS
+   * drops it when the focused element goes). Only where the new row is
+   * the one difference, directly below; anything else is a redraw.
+   */
+  function insertRowInPlace(beforeRows, list, id, newId) {
+    const rows = RecipeLists.rows(list, openSet(list.id));
+    const at = beforeRows.findIndex((r) => r.id === id);
+    if (at < 0 || !rows[at + 1] || rows[at + 1].id !== newId) return false;
+    const want = [...beforeRows.slice(0, at + 1), rows[at + 1], ...beforeRows.slice(at + 1)].map(rowKey);
+    if (want.join("|") !== rows.map(rowKey).join("|")) return false;
+    const textEl = document.getElementById(`li-${id}`);
+    const rowEl = textEl && textEl.closest ? textEl.closest("[data-li-row]") : null;
+    if (!rowEl || typeof rowEl.insertAdjacentHTML !== "function") return false;
+    rowEl.insertAdjacentHTML("afterend", itemRowHTML(list, rows[at + 1], true));
+    restructuring = true;
+    try {
+      focusItem(newId);
+    } finally {
+      restructuring = false;
+    }
+    return true;
+  }
+
+  /** The same for Backspace: the emptied row goes, the caret goes up. */
+  function removeRowInPlace(beforeRows, list, id, above) {
+    const rows = RecipeLists.rows(list, openSet(list.id));
+    if (!above || rows.length === 0) return false;
+    const want = beforeRows.filter((r) => r.id !== id).map(rowKey);
+    if (want.join("|") !== rows.map(rowKey).join("|")) return false;
+    const textEl = document.getElementById(`li-${id}`);
+    const rowEl = textEl && textEl.closest ? textEl.closest("[data-li-row]") : null;
+    if (!rowEl || typeof rowEl.remove !== "function") return false;
+    restructuring = true;
+    try {
+      // The caret moves first, so there is always an editable element
+      // with focus and the keyboard has no moment to go down.
+      focusItem(above);
+      rowEl.remove();
+    } finally {
+      restructuring = false;
+    }
+    return true;
   }
 
   /** Backspace in an empty item: it goes, and the caret goes up (J18.10). */
@@ -1976,13 +2071,16 @@
     if (!list) return;
     const item = RecipeLists.liveItems(list).find((i) => i.id === id);
     if (!item) return;
-    const items = RecipeLists.rows(list, openSet(list.id)).filter((r) => r.type === "item");
+    const before = RecipeLists.rows(list, openSet(list.id));
+    const items = before.filter((r) => r.type === "item");
     const at = items.findIndex((r) => r.id === id);
     const above = at > 0 ? items[at - 1].id : null;
     const ids = RecipeLists.subtree(list, id);
     if (!item.text && ids.length === 1) listStore.change(openListId, (l) => RecipeLists.deleteItems(l, ids));
     else deleteWithUndo(ids, deletedLabel(item, ids.length));
-    redrawAndFocus(above);
+    editingItem = null;
+    const after = currentList();
+    if (!(after && removeRowInPlace(before, after, id, above))) redrawAndFocus(above);
   }
 
   /** Nest or un-nest an item (J18.8), keeping the caret if it had it. */
@@ -2130,6 +2228,11 @@
     if (event.inputType === "insertParagraph" || event.inputType === "insertLineBreak") {
       event.preventDefault();
       enterAt(el);
+    } else if (event.inputType === "deleteContentBackward" && !lineWords(el) && canEditBook) {
+      // Gboard and others send Backspace as keyCode 229 / "Unidentified",
+      // so the keydown above never sees it; the input it asks for does.
+      event.preventDefault();
+      backspaceAt(el);
     }
   });
 
@@ -2159,6 +2262,9 @@
       g.row.classList.remove("li-swiping");
       g.row.classList.remove("li-dragging");
     }
+    // A redraw held back while the finger was down. A moment from now,
+    // not now: a tap's click has still to land (see `listRedrawSoon`).
+    if (listStale) listRedrawSoon();
   }
 
   listContent.addEventListener("pointerdown", (event) => {
@@ -2258,6 +2364,13 @@
     }
     const active = document.activeElement;
     if (active && active.blur && listContent.contains(active)) active.blur();
+    // Leaving an empty item deletes it (J18.10). Its row is still in the
+    // page until the redraw the drag holds back, so it is hidden and never
+    // a place to drop beside.
+    g.live = new Set(RecipeLists.liveItems(currentList() || list).map((i) => i.id));
+    for (const r of listContent.querySelectorAll("[data-li-row]")) {
+      if (!g.live.has(r.dataset.liRow)) r.classList.add("li-carried");
+    }
     const sel = typeof window.getSelection === "function" ? window.getSelection() : null;
     if (sel) sel.removeAllRanges();
     if (listContent.setPointerCapture && g.pointerId !== undefined) {
@@ -2269,10 +2382,24 @@
     }
     if (navigator.vibrate) navigator.vibrate(12);
     suppressClick = true;
+    g.y = g.y0;
     dragMove(g.y0, 0);
+    // Held still near an edge, the page keeps coming to meet the finger.
+    const scroll = () => {
+      if (gesture !== g || g.mode !== "drag") return;
+      const h = window.innerHeight || 0;
+      const step = g.y < 64 ? -14 : h && g.y > h - 64 ? 14 : 0;
+      if (step && typeof window.scrollBy === "function") {
+        window.scrollBy(0, step);
+        dragMove(g.y, g.dx);
+      }
+      window.requestAnimationFrame(scroll);
+    };
+    if (typeof window.requestAnimationFrame === "function") window.requestAnimationFrame(scroll);
   }
 
-  const shown = (r) => !r.classList.contains("li-carried");
+  const shown = (r) =>
+    !r.classList.contains("li-carried") && !(gesture && gesture.live && r.dataset.liRow && !gesture.live.has(r.dataset.liRow));
 
   /** Move the lifted row to where the finger is, at the depth it is carried to. */
   function dragMove(y, dx) {
@@ -2306,12 +2433,7 @@
     const depth = Math.max(min, Math.min(max, g.depth0 + Math.round(dx / STEP_PX)));
     g.row.dataset.depth = String(Math.min(depth, 8));
     g.drop = { prevId: prev ? prev.dataset.liRow : null, depth };
-    // Near an edge, the page comes to meet the finger.
-    const h = window.innerHeight || 0;
-    if (typeof window.scrollBy === "function" && h) {
-      if (y < 64) window.scrollBy(0, -14);
-      else if (y > h - 64) window.scrollBy(0, 14);
-    }
+    g.y = y;
   }
 
   function finishDrag(g) {

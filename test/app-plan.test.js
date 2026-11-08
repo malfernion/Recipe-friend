@@ -304,3 +304,13 @@ test("J18 · a page that never loaded the lists still draws its cards, and offer
   assert.equal(app.el("lists-btn").hidden, true);
   assert.equal(app.el("plan-btn").hidden, true);
 });
+
+test("S3 · Undo of an add takes the whole recipe off, even after another phone edited an ingredient", () => {
+  const app = planMode([BOLOGNESE]);
+  app.card("add", app.named("Bolognese").id);
+  const Lists = app.win.RecipeLists;
+  const onions = Lists.liveItems(app.listStore.get(app.shopping.id)).find((i) => i.text === "2 onions");
+  app.listStore.change(app.shopping.id, (l) => Lists.editText(l, onions.id, "3 red onions", Date.now() + 5));
+  app.el("toast-action").fire("click");
+  assert.deepEqual(app.items(), []);
+});

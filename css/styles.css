@@ -1924,11 +1924,23 @@ button.crumb:hover {
 .li-row[data-depth="7"], .li-fold[data-depth="7"] { padding-left: calc(var(--indent) * 7); }
 .li-row[data-depth="8"], .li-fold[data-depth="8"] { padding-left: calc(var(--indent) * 8); }
 
-/* A phone's width is not spent on indentation. */
+/*
+  A phone's width is not spent on indentation. At 320px a stock row is
+  two 44px buttons and a count beside the words; with a 0.65rem step the
+  words still have about 100px at depth 6, where 1.25rem left 40px and
+  broke every word letter by letter.
+*/
 @media (max-width: 480px) {
   .li-row,
   .li-fold {
-    --indent: 1.25rem;
+    --indent: 0.9rem;
+  }
+}
+
+@media (max-width: 380px) {
+  .li-row,
+  .li-fold {
+    --indent: 0.65rem;
   }
 }
 

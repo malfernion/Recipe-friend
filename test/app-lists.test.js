@@ -591,3 +591,196 @@ test("J18.24 · a pull redraws the Lists screen without wiping a name being type
   assert.match(app.el("lists-index").innerHTML, /Freezer/);
   assert.equal(app.el("lists-make").innerHTML, "half-typed");
 });
+
+// ---------------------------------------------------------------------
+// Review of #58: B1, S1, S3, and phone keyboards
+// ---------------------------------------------------------------------
+
+/** Every timer the app sets, by delay, so a test decides when each runs. */
+function clock(app) {
+  const timers = [];
+  app.win.setTimeout = (fn, ms) => { timers.push({ fn, ms }); return timers.length; };
+  app.win.clearTimeout = (n) => { if (timers[n - 1]) timers[n - 1].fn = null; };
+  return {
+    run(ms) {
+      for (const t of timers.filter((x) => x.ms === ms && x.fn)) {
+        const fn = t.fn;
+        t.fn = null;
+        fn();
+      }
+    },
+  };
+}
+
+/** The drag rig again, but with the hold and the pointer moves apart. */
+function holdRow(app, c, id) {
+  const ids = app.Lists.rows(app.list()).filter((r) => r.type === "item").map((r) => r.id);
+  const ul = { children: [] };
+  const place = (r) => ul.children.indexOf(r);
+  ul.children = ids.map((rid) => {
+    const row = {
+      dataset: { liRow: rid, level: String(app.Lists.rows(app.list()).find((r) => r.id === rid).depth) },
+      style: {},
+      classList: { _s: new Set(), add(x) { this._s.add(x); }, remove(x) { this._s.delete(x); }, contains(x) { return this._s.has(x); } },
+      parentNode: ul,
+      getBoundingClientRect: () => ({ top: place(row) * 48, height: 48 }),
+      get previousElementSibling() { return ul.children[place(row) - 1] || null; },
+      get nextElementSibling() { return ul.children[place(row) + 1] || null; },
+    };
+    return row;
+  });
+  ul.insertBefore = (a, b) => { ul.children.splice(place(a), 1); ul.children.splice(place(b), 0, a); };
+  ul.appendChild = (a) => { ul.children.splice(place(a), 1); ul.children.push(a); };
+  Object.defineProperty(ul, "lastElementChild", { get: () => ul.children[ul.children.length - 1] });
+  const content = app.el("list-content");
+  const row = ul.children.find((r) => r.dataset.liRow === id);
+  const target = { closest: (sel) => (sel === "[data-li-row]" ? row : null) };
+  content.fire("pointerdown", { target, clientX: 100, clientY: place(row) * 48 + 24, pointerId: 9, button: 0 });
+  c.run(450); // the hold lasts
+  return {
+    move: (y, dx = 0) => content.fire("pointermove", { target, clientX: 100 + dx, clientY: y, pointerId: 9 }),
+    up: (y, dx = 0) => content.fire("pointerup", { target, clientX: 100 + dx, clientY: y, pointerId: 9 }),
+  };
+}
+
+test("B1 · a pull landing mid-drag does not redraw under the finger, and the drop lands where it was let go", () => {
+  const app = checklist("eggs", "milk", "bread");
+  const c = clock(app);
+  const listId = app.list().id;
+  const hold = holdRow(app, c, app.idOf("bread"));
+  hold.move(5);
+  const during = app.el("list-content").innerHTML;
+  // Another phone adds something; the poll brings it in.
+  app.listStore.change(listId, (l) => app.Lists.addItem(l, { text: "jam" }));
+  app.listStore.onRemote([listId]);
+  assert.equal(app.el("list-content").innerHTML, during, "no redraw while the finger is down");
+  hold.up(5);
+  assert.deepEqual(app.rows(), ["bread", "eggs", "milk", "jam"], "bread went to the top, not the bottom");
+  assert.match(app.el("list-content").innerHTML, /jam/, "and the owed redraw happened");
+});
+
+test("B1 · type, Enter, then hold another row: the empty item goes without redrawing under the drag", () => {
+  const app = checklist("eggs", "milk", "bread");
+  const c = clock(app);
+  const e = app.edit(app.idOf("bread"));
+  e.press("Enter");
+  const blank = app.Lists.liveItems(app.list()).find((i) => i.text === "");
+  const typing = app.edit(blank.id);
+  // The hold blurs the empty item, which deletes it and owes a redraw.
+  app.win.document.activeElement = { blur: () => typing.leave() };
+  app.el("list-content").contains = () => true;
+  const hold = holdRow(app, c, app.idOf("eggs"));
+  hold.move(120);
+  const during = app.el("list-content").innerHTML;
+  c.run(350); // the redraw the deleted item owed
+  assert.equal(app.el("list-content").innerHTML, during, "held back while dragging");
+  hold.up(120);
+  assert.deepEqual(app.rows(), ["milk", "bread", "eggs"], "eggs landed where it was let go");
+});
+
+test("S1 · Enter on an item that holds others makes its first child, with the caret in it", () => {
+  const app = checklist("Bolognese", "mince", "onions", "milk");
+  app.edit(app.idOf("mince")).press("Tab");
+  app.edit(app.idOf("onions")).press("Tab");
+  app.edit(app.idOf("Bolognese")).press("Enter");
+  const blank = app.Lists.liveItems(app.list()).find((i) => i.text === "");
+  assert.deepEqual(app.rows(), ["Bolognese", "  ", "  mince", "  onions", "milk"]);
+  assert.equal(app.el(`li-${blank.id}`).focused, true);
+});
+
+test("S1 · Enter on a leaf still makes the next item at its depth", () => {
+  const app = checklist("Bolognese", "mince", "milk");
+  app.edit(app.idOf("mince")).press("Tab");
+  app.edit(app.idOf("mince")).press("Enter");
+  assert.deepEqual(app.rows(), ["Bolognese", "  mince", "  ", "milk"]);
+});
+
+/** A row element that can take a new row after it, or be taken out. */
+function liveRow(app, id) {
+  const row = { inserted: [], removed: false };
+  row.insertAdjacentHTML = (where, html) => row.inserted.push([where, html]);
+  row.remove = () => { row.removed = true; };
+  app.el(`li-${id}`).closest = (sel) => (sel === "[data-li-row]" ? row : null);
+  return row;
+}
+
+test("phones · Enter puts the new row in place and focuses it without replacing the focused element", () => {
+  const app = checklist("eggs", "milk");
+  const row = liveRow(app, app.idOf("eggs"));
+  const drawn = app.el("list-content").innerHTML;
+  app.edit(app.idOf("eggs")).press("Enter");
+  const blank = app.Lists.liveItems(app.list()).find((i) => i.text === "");
+  assert.equal(app.el("list-content").innerHTML, drawn, "no redraw: iOS keeps its keyboard");
+  assert.equal(row.inserted.length, 1);
+  assert.equal(row.inserted[0][0], "afterend");
+  assert.match(row.inserted[0][1], new RegExp(`data-li-text="${blank.id}"`));
+  assert.equal(app.el(`li-${blank.id}`).focused, true);
+});
+
+test("phones · Backspace in an empty item takes its row out in place, the caret going up first", () => {
+  const app = checklist("eggs", "milk");
+  const row = liveRow(app, app.idOf("milk"));
+  const drawn = app.el("list-content").innerHTML;
+  const milk = app.edit(app.idOf("milk"));
+  milk.type("");
+  milk.press("Backspace");
+  assert.deepEqual(app.rows(), ["eggs"]);
+  assert.equal(row.removed, true);
+  assert.equal(app.el("list-content").innerHTML, drawn, "no redraw");
+  assert.equal(app.el(`li-${app.idOf("eggs")}`).focused, true);
+});
+
+test("phones · Gboard's Backspace (beforeinput deleteContentBackward) in an empty item deletes it", () => {
+  const app = checklist("eggs", "milk");
+  const milk = app.edit(app.idOf("milk"));
+  milk.type("");
+  let prevented = false;
+  app.el("list-content").fire("beforeinput", {
+    target: { closest: (sel) => (sel === "[data-li-text]" ? milk.el : null) },
+    inputType: "deleteContentBackward",
+    preventDefault: () => { prevented = true; },
+  });
+  assert.equal(prevented, true);
+  assert.deepEqual(app.rows(), ["eggs"]);
+
+  const eggs = app.edit(app.idOf("eggs"));
+  let left = false;
+  app.el("list-content").fire("beforeinput", {
+    target: { closest: (sel) => (sel === "[data-li-text]" ? eggs.el : null) },
+    inputType: "deleteContentBackward",
+    preventDefault: () => { left = true; },
+  });
+  assert.equal(left, false, "in words, Backspace is the browser's");
+});
+
+test("S3 · Undo puts back copies under new ids, and nothing holds the old ones", () => {
+  const app = checklist("eggs", "milk");
+  const old = app.idOf("milk");
+  const e = app.edit(old);
+  e.type("");
+  e.leave();
+  app.el("toast-action").fire("click");
+  assert.deepEqual(app.rows(), ["eggs", "milk"]);
+  assert.notEqual(app.idOf("milk"), old, "deleted is final; what comes back is a copy");
+  // The copy is an ordinary item: it ticks, and Clear ticked takes it.
+  app.tap({ li: "tick", id: app.idOf("milk") });
+  app.el("list-clear-btn").fire("click");
+  assert.deepEqual(app.rows(), ["eggs"]);
+  app.el("toast-action").fire("click");
+  assert.deepEqual(app.rows(), ["eggs", "Ticked (1)"], "and its Undo works on the copy too");
+});
+
+test("S3 · a restored parent whose Ticked group was open keeps it open", () => {
+  const app = checklist("Curry", "onion", "rice");
+  app.edit(app.idOf("onion")).press("Tab");
+  app.edit(app.idOf("rice")).press("Tab");
+  app.tap({ li: "tick", id: app.idOf("onion") });
+  app.tap({ li: "fold", parent: app.idOf("Curry") });
+  assert.match(app.el("list-content").innerHTML, /aria-expanded="true"/);
+  const curry = app.edit(app.idOf("Curry"));
+  curry.type("");
+  curry.leave();
+  assert.deepEqual(app.rows(), []);
+  app.el("toast-action").fire("click");
+  assert.match(app.el("list-content").innerHTML, /aria-expanded="true"[^>]*>Ticked \(1\)/);
+});
