@@ -24,7 +24,9 @@ async function agentBook({ recipes = [], archive = () => [], role = "agent", lis
     return { id: recipe.id, data: recipe, updated_at: new Date(1000 + i).toISOString(), deleted_at: null };
   });
   const idFor = (name) => rows.find((r) => r.data.name === name).id;
-  const plans = () => archive(idFor, win);
+  // What the book was given, and what has been recorded since — an
+  // agent's recipe add is one (J18.21, 014).
+  const plans = () => [...archive(idFor, win), ...sent.archived];
 
   const sent = { recipes: [], livePlans: [], archived: [], listUpdates: [], listRefusals: [] };
   const L = loadApp("units.js", "scale.js", "lists.js").RecipeLists;

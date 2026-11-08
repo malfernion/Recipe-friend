@@ -226,6 +226,12 @@ http("J18.23, J18.25 · a phone and the agent work on one list over HTTP, and bo
     );
     assert.ok(put.added, JSON.stringify(put));
     assert.equal(put.added[0].text, "Lentil soup");
+    // Recorded as planned, as a person's add is (J18.21, 014).
+    assert.equal(put.planned, true);
+    const record = await getPool().query("select data from plans where book_id = $1", [book]);
+    assert.deepEqual(record.rows.map((r) => r.data.meals[0].recipeId), [recipes[0].id]);
+    const history = said(await client.callTool({ name: "planning_history", arguments: {} }));
+    assert.equal(history.recipes.find((r) => r.id === recipes[0].id).timesPlanned, 1);
     await phone.sync();
     assert.equal(phone.L.children(phone.lists.get(shopping))[0].text, "Lentil soup");
   } finally {

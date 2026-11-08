@@ -175,8 +175,9 @@ db("J16.3 · an agent sees only the book it was placed in", async (s) => {
   assert.equal(elsewhere.error && elsewhere.error.code, "42501");
 });
 
-db("J16.4 · an agent does not finish a plan, and does not undo one", async (s) => {
+db("J16.4 · an agent records what it planned in its own book, and does not undo or edit a record (014)", async (s) => {
   const ann = await s.person("Ann");
+  const bob = await s.person("Bob");
   const agent = await s.agentIn(ann.book);
   const week = randomUUID();
   await s.asAdmin();
@@ -184,12 +185,20 @@ db("J16.4 · an agent does not finish a plan, and does not undo one", async (s) 
 
   await s.as(agent);
   assert.equal((await s.q("select id from plans")).rowCount, 1, "it reads the record");
-  const done = await s.attempt("insert into plans (id, book_id, data, completed_at) values ($1, $2, '{}', now())", [
-    randomUUID(),
+  const mine = randomUUID();
+  const recorded = await s.attempt("insert into plans (id, book_id, data, completed_at) values ($1, $2, '{}', now())", [
+    mine,
     ann.book,
   ]);
-  assert.equal(done.error && done.error.code, "42501");
-  assert.equal((await s.q("delete from plans where id = $1", [week])).rowCount, 0);
+  assert.equal(recorded.error, null, "a recipe it put on a list is recorded as planned (J18.21)");
+  const elsewhere = await s.attempt("insert into plans (id, book_id, data, completed_at) values ($1, $2, '{}', now())", [
+    randomUUID(),
+    bob.book,
+  ]);
+  assert.equal(elsewhere.error && elsewhere.error.code, "42501", "not in a book it is not in");
+  assert.equal((await s.q("delete from plans where id = $1", [week])).rowCount, 0, "no Undo");
+  assert.equal((await s.q("delete from plans where id = $1", [mine])).rowCount, 0, "not even of its own");
+  assert.equal((await s.q("update plans set data = '{\"x\":1}' where id = $1", [mine])).rowCount, 0, "no edit");
 
   // A person in the book does both.
   await s.as(ann);

@@ -748,10 +748,15 @@ not somebody.
    leaves the rest alone. There are three answers to "may this device
    write", not two, and pretending otherwise is what makes an agent's
    sync park on a book that is perfectly well.
-4. **An agent does not finish a plan, and does not undo one.** Done is
-   what records that a week was planned (J14.1), and that record is what
-   an agent reads to decide what to suggest next (J14.9). Something that
-   can write its own evidence can talk itself into anything.
+4. **An agent records what it plans, and does not undo or rewrite the
+   record.** Since lists, a row in the record is a recipe going on a list
+   (J18.21), not a week declared finished, and an agent putting a recipe
+   on a list has planned it exactly as a person who does it has. Leaving
+   that out would make "what we have not had in ages" (J14.9) a lie about
+   the dinners the agent itself put on the list, and it would suggest
+   them again. So it may add a record in its own book, the same one the
+   app's "+ List" adds (014). It may not take one back — Undo is a
+   person's — nor change one, nor write into another book's.
 
    **It also does not finish somebody else's.** A plan carrying
    `completedAt` is a Done that landed half way, and any device that may
@@ -1184,9 +1189,10 @@ release.
     **A recipe goes on as a person's does** (J18.18): one item at the top
     of a checklist, its ingredients under it, at the servings asked — or
     a multiplier, for a recipe that does not say what it serves (J17.12).
-    It is not recorded as planned. That record is the evidence an agent
-    reads to decide what to suggest (J14.9), and the database keeps an
-    agent out of it (J16.4); the answer says so.
+    It is recorded as planned the way the app records it (J18.21,
+    J16.4), by the same sync as the list; the answer says whether the
+    record landed, because a list can go up while the record is left
+    behind.
 
     **It is held to what a person is held to.** An item is a line, capped
     as a person's is; a list is full at the same size; fifty changes at
@@ -1197,6 +1203,23 @@ release.
     the book holds afterwards, read back from it (J17.9): a change that
     did not get in is said not to have, and is not left behind to go up
     with the next question's sync.
+
+    **Whether it got in is judged by its own changes.** Not by whether
+    the sync raised — the plan half can fail after the list went up —
+    and not by the whole list matching, which a phone ticking milk a
+    moment later would spoil. Saying "nothing was saved" about something
+    that was is how a retry puts it on the list twice. And what a call
+    did to itself is not another device's doing: unticking one
+    ingredient unticks the recipe it is under (J18.11), and deleting an
+    item takes what is under it (J18.10), so what is blamed on somebody
+    else is only what differs from the list as the whole call left it.
+
+    **A write answers with what it touched**, each item as it now stands,
+    a line saying what happened and the list's size — not the list, which
+    on a long one is thousands of words for one tick (J17.8, J17.13). A
+    change that changed nothing says so ("Already so."), and a counter
+    can always be set to any count from 0 to 9999: an agent whose own
+    tally is full counts on a spare slot of its own (J18.17).
 15. **An assistant can sign in instead of being given a key.** The
     clients people actually use — Claude.ai and ChatGPT connectors,
     Claude Code — speak MCP's OAuth, and Claude.ai has nowhere to paste
@@ -1350,9 +1373,8 @@ and a recipe drops onto it as a single item.
     add, edit, move, tick and delete items, change counts, and put a
     recipe on a checklist at a chosen size (J18.18). It cannot make,
     rename or delete a list — those belong to the people in the book, the
-    way deleting a recipe does (J16). A recipe it puts on a list is not
-    recorded as planned (J18.21): that record is what an agent reads to
-    decide what to suggest, and it is a person's to write (J16.4).
+    way deleting a recipe does (J16). A recipe it puts on a list is
+    recorded as planned, as a person's is (J18.21, J16.4).
 
 ### What goes
 
@@ -1758,7 +1780,7 @@ those count rows and read the row back. What they hold:
   (J14.2);
 - agents: no book of their own, one book only, never a person placed as one
   (J16.1), placed only by the owner (J16.2), reading, adding and planning
-  and nothing else (J16.3), never finishing or undoing a plan (J16.4),
+  and nothing else (J16.3), recording a plan and never undoing one (J16.4),
   clearing one (J16.5), gone when removed (J16.7), and a role that cannot
   be changed to or from (J16.8) — all of it still true of an agent whose
   account has been turned into a permanent one (below); and keys:

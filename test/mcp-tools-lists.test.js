@@ -59,6 +59,8 @@ function lists() {
 
 const aBook = (over = {}) => agentBook({ recipes: [PIE, DAL], lists: lists(), ...over });
 const texts = (list) => list.items.map((i) => "  ".repeat(i.depth) + i.text);
+const full = async (call, name) => (await call(GET, { list: name })).list;
+const see = async (call, name) => texts(await full(call, name));
 
 // --- reading -----------------------------------------------------------
 
@@ -101,7 +103,7 @@ test("J18.5 · lines go on at the end in the order sent, and only items go up", 
   const out = await call(ADD, { list: "Shopping", items: ["bread", "  2 l   oat\nmilk "] });
 
   assert.deepEqual(out.added.map((i) => i.text), ["bread", "2 l oat milk"], "a line, as a person's is (J18.6)");
-  assert.deepEqual(texts(out.list), ["milk", "6 eggs", "bread", "2 l oat milk"]);
+  assert.deepEqual((await see(call, "Shopping")), ["milk", "6 eggs", "bread", "2 l oat milk"]);
   assert.deepEqual(serverList(SHOP).items.filter((i) => !i.gone).length, 4, "what is reported is what the book holds");
   for (const u of sent.listUpdates) assert.deepEqual(Object.keys(u.fields).sort(), ["items", "pruned_to"], "never the name");
   assert.deepEqual(sent.listRefusals, []);
@@ -111,11 +113,11 @@ test("J18.8 · lines can be placed: under an item, directly below one, or at the
   const { call } = await aBook();
 
   let out = await call(ADD, { list: "Shopping", items: ["semi-skimmed", "whole"], parentId: MILK });
-  assert.deepEqual(texts(out.list), ["milk", "  semi-skimmed", "  whole", "6 eggs"]);
+  assert.deepEqual((await see(call, "Shopping")), ["milk", "  semi-skimmed", "  whole", "6 eggs"]);
   out = await call(ADD, { list: "Shopping", items: ["butter"], afterId: MILK });
-  assert.deepEqual(texts(out.list), ["milk", "  semi-skimmed", "  whole", "butter", "6 eggs"]);
+  assert.deepEqual((await see(call, "Shopping")), ["milk", "  semi-skimmed", "  whole", "butter", "6 eggs"]);
   out = await call(ADD, { list: "Shopping", items: ["tea"], atTop: true });
-  assert.equal(texts(out.list)[0], "tea");
+  assert.equal((await see(call, "Shopping"))[0], "tea");
 
   const wrong = await call(ADD, { list: "Shopping", items: ["x"], afterId: "not-an-item" });
   assert.match(wrong.error, /No item "not-an-item" is on Shopping/);
@@ -150,19 +152,22 @@ test("J18.18 · a recipe goes on a checklist at the top, its ingredients under i
 
   const out = await call(ADD, { list: "shopping", recipeId: idOf("Chicken pie"), servings: 2 });
 
-  assert.deepEqual(texts(out.list).slice(0, 3), ["Chicken pie", "  250 g chicken", "  ½ onion"]);
+  assert.deepEqual((await see(call, "Shopping")).slice(0, 3), ["Chicken pie", "  250 g chicken", "  ½ onion"]);
   assert.deepEqual(out.recipe, { id: idOf("Chicken pie"), name: "Chicken pie", servings: 2 });
   assert.equal(out.added.length, 3);
   assert.equal(out.added[0].depth, 0);
-  // The record behind "Last planned" is a person's (J16.4): nothing goes
-  // to the archive, and the answer says so.
-  assert.deepEqual(sent.archived, []);
-  assert.match(out.planned, /Not recorded in planning_history/);
+  // Recorded as planned, as a person's "+ List" records it (J18.21, J16.4).
+  assert.equal(out.planned, true);
+  assert.equal(sent.archived.length, 1);
+  assert.deepEqual(sent.archived[0].meals.map((m) => [m.recipeId, m.portions]), [[idOf("Chicken pie"), 2]]);
+  // A write answers with what it did and the list's size, not the list.
+  assert.equal(out.list.items, 5);
+  assert.match(out.summary, /^Added 3 items \(Chicken pie\)\. Shopping now holds 5 items, 0 ticked\.$/);
 
   const twice = await call(ADD, { list: "Shopping", recipeId: idOf("Chicken pie"), multiplier: 2 });
   assert.deepEqual(twice.recipe.servings, 8, "a multiplier works on a recipe that says what it serves");
-  assert.equal(texts(twice.list)[1], "  1000 g chicken");
-  assert.equal(texts(twice.list).filter((t) => t === "Chicken pie").length, 2, "each add its own item (J18.20)");
+  assert.equal((await see(call, "Shopping"))[1], "  1000 g chicken");
+  assert.equal((await see(call, "Shopping")).filter((t) => t === "Chicken pie").length, 2, "each add its own item (J18.20)");
 });
 
 test("J18.18 · a recipe's size is asked the two ways a recipe can be sized, and only on a checklist", async () => {
@@ -170,7 +175,7 @@ test("J18.18 · a recipe's size is asked the two ways a recipe can be sized, and
 
   assert.match((await call(ADD, { list: "Shopping", recipeId: idOf("Dal"), servings: 4 })).error, /does not say what it serves/);
   const dal = await call(ADD, { list: "Shopping", recipeId: idOf("Dal"), multiplier: 1.5 });
-  assert.equal(texts(dal.list)[1], "  300 g red lentils");
+  assert.equal((await see(call, "Shopping"))[1], "  300 g red lentils");
   assert.deepEqual(dal.recipe.multiplier, 1.5);
   assert.match((await call(ADD, { list: "Freezer", recipeId: idOf("Dal") })).error, /stock list; a recipe goes onto a checklist/);
   assert.match((await call(ADD, { list: "Shopping", recipeId: "nope" })).error, /No recipe with id "nope"/);
@@ -201,7 +206,7 @@ test("J17.14 · an edit says what it read, and a person's change since is not wr
     "No text to change it to. To take an item off, use delete.",
   ]);
   assert.deepEqual(out.missing, ["gone-id"]);
-  assert.deepEqual(texts(out.list), ["oat milk", "7 eggs"], "nothing written");
+  assert.deepEqual((await see(call, "Shopping")), ["oat milk", "7 eggs"], "nothing written");
 });
 
 test("J18.11 · ticking an item ticks what is under it; a stock list has no ticks", async () => {
@@ -210,7 +215,7 @@ test("J18.11 · ticking an item ticks what is under it; a stock list has no tick
 
   const out = await call(EDIT, { list: "Shopping", changes: [{ itemId: pie, ticked: true }] });
   assert.equal(out.edited[0].ticked, true);
-  assert.ok(out.list.items.filter((i) => i.parentId === pie).every((i) => i.ticked), "its ingredients too");
+  assert.ok((await full(call, "Shopping")).items.filter((i) => i.parentId === pie).every((i) => i.ticked), "its ingredients too");
 
   const stock = await call(EDIT, { list: "Freezer", changes: [{ itemId: BOL, ticked: true }] });
   assert.match(stock.notEdited[0].reason, /stock list: it has counts, not ticks/);
@@ -247,7 +252,7 @@ test("J18.17 · a count is set as the agent's own taps from what the counter sho
 });
 
 test("J18.17 · the agent's counter device is one per agent, the same on every request", async () => {
-  assert.equal(agentDevice("0b5c9a3e-1f2d-4c5b-8a9e-112233445566"), "agent0b5c9a3e1f2");
+  assert.equal(agentDevice("0b5c9a3e-1f2d-4c5b-8a9e-112233445566"), "agent0b5c9a3e1f");
   assert.match(agentDevice("0b5c9a3e-1f2d-4c5b-8a9e-112233445566"), /^[A-Za-z0-9]{8,16}$/);
 
   const first = await aBook();
@@ -267,13 +272,13 @@ test("J18.8, J18.9 · items move, nest and come back out, taking what is under t
   await call(ADD, { list: "Shopping", items: ["oat"], parentId: MILK });
 
   let out = await call(EDIT, { list: "Shopping", changes: [{ itemId: MILK, move: { afterId: EGGS } }] });
-  assert.deepEqual(texts(out.list), ["6 eggs", "milk", "  oat"]);
+  assert.deepEqual((await see(call, "Shopping")), ["6 eggs", "milk", "  oat"]);
   out = await call(EDIT, { list: "Shopping", changes: [{ itemId: MILK, nest: "in" }] });
-  assert.deepEqual(texts(out.list), ["6 eggs", "  milk", "    oat"]);
+  assert.deepEqual((await see(call, "Shopping")), ["6 eggs", "  milk", "    oat"]);
   out = await call(EDIT, { list: "Shopping", changes: [{ itemId: MILK, nest: "out" }, { itemId: MILK, move: { parentId: null, atTop: true } }] });
-  assert.deepEqual(texts(out.list), ["milk", "  oat", "6 eggs"]);
+  assert.deepEqual((await see(call, "Shopping")), ["milk", "  oat", "6 eggs"]);
 
-  const oat = out.list.items[1].itemId;
+  const oat = (await full(call, "Shopping")).items[1].itemId;
   const bad = await call(EDIT, {
     list: "Shopping",
     changes: [
@@ -297,7 +302,7 @@ test("J18.10 · deleting an item takes what is nested under it, and says what we
   const out = await call(EDIT, { list: "Freezer", changes: [{ itemId: DRAWER, delete: true }, { itemId: PEAS, text: "x", was: "peas" }] });
   assert.deepEqual(out.deleted, [{ itemId: DRAWER, text: "Top drawer", nested: 1 }]);
   assert.deepEqual(out.missing, [PEAS], "gone with it");
-  assert.deepEqual(texts(out.list), ["Bolognese"]);
+  assert.deepEqual((await see(call, "Freezer")), ["Bolognese"]);
   assert.ok(serverList(FREEZER).items.find((i) => i.id === DRAWER).gone, "a tombstone, so it cannot come back (J9.4)");
 
   const mixed = await call(EDIT, { list: "Freezer", changes: [{ itemId: BOL, delete: true, count: 2 }] });
@@ -324,7 +329,7 @@ test("J18.23 · a phone writing between the agent's read and its push: both keep
   const out = await call(EDIT, { list: "Shopping", changes: [{ itemId: EGGS, text: "12 eggs", was: "6 eggs" }] });
 
   assert.deepEqual(out.edited.map((i) => i.text), ["12 eggs"]);
-  const milk = out.list.items.find((i) => i.itemId === MILK);
+  const milk = (await full(call, "Shopping")).items.find((i) => i.itemId === MILK);
   assert.equal(milk.ticked, true, "the phone's tick survived the agent's edit");
   assert.equal(harness.serverList(SHOP).items.find((i) => i.id === EGGS).text, "12 eggs");
 });
@@ -387,4 +392,135 @@ test("J18.25 · an agent's sync never makes, renames or deletes a list, even one
   assert.equal(out.list.name, "Groceries");
   assert.deepEqual((await harness.call(GET)).lists.map((l) => l.name), ["Groceries", "Freezer", "Cupboard"]);
   assert.deepEqual(harness.sent.listRefusals, [], "nothing the database would refuse was tried");
+});
+
+// --- what the review of #62 found ----------------------------------------
+
+test("J17.9 · a phone writing between the agent's push and its read-back is not the agent failing", async () => {
+  const harness = await aBook();
+  const { call, api, phone } = harness;
+  const update = api.updateList.bind(api);
+  const fetchList = api.fetchList.bind(api);
+  let wrote = false;
+  api.updateList = async (...args) => (wrote = await update(...args));
+  api.fetchList = async (...args) => {
+    if (wrote) {
+      wrote = false;
+      phone(SHOP, (l, L) => L.setTicked(l, MILK, true, Date.now() + 1));
+    }
+    return fetchList(...args);
+  };
+
+  const out = await call(ADD, { list: "Shopping", items: ["bread"] });
+
+  assert.equal(out.error, undefined, JSON.stringify(out));
+  assert.deepEqual(out.added.map((i) => i.text), ["bread"]);
+  assert.equal(harness.serverList(SHOP).items.filter((i) => i.text === "bread").length, 1, "once, with no retry asked for");
+});
+
+test("J17.9 · a sync whose plan half fails after the list went up reports the list as it landed", async () => {
+  const harness = await aBook();
+  const { call, idOf } = harness;
+  await harness.book.refresh();
+  harness.breakPlanHalf("network");
+
+  const out = await ADD.run(harness.book, { list: "Shopping", items: ["bread"] });
+  assert.deepEqual(out.added.map((i) => i.text), ["bread"], "it is there, so it is said to be");
+
+  // The same for a recipe, whose record could not go with it.
+  const pie = await ADD.run(harness.book, { list: "Shopping", recipeId: idOf("Chicken pie") });
+  assert.equal(pie.added[0].text, "Chicken pie");
+  assert.equal(pie.planned, false);
+  assert.match(pie.plannedNote, /could not be recorded as planned/);
+
+  harness.mendNetwork();
+  const shop = await see(call, "Shopping");
+  assert.equal(shop.filter((t) => t === "bread").length, 1, "and nobody was invited to add it twice");
+  assert.deepEqual(harness.sent.archived, [], "a record not made is not made later behind the answer's back");
+});
+
+test("J18.11 · the call's own cascades are not blamed on another device", async () => {
+  const { call } = await aBook();
+  const semi = (await call(ADD, { list: "Shopping", items: ["semi-skimmed"], parentId: MILK })).added[0].itemId;
+
+  // "Tick the milk, except the semi-skimmed": unticking a child unticks
+  // its parent (J18.12), which is this call's doing.
+  let out = await call(EDIT, { list: "Shopping", changes: [{ itemId: MILK, ticked: true }, { itemId: semi, ticked: false }] });
+  assert.equal(out.notEdited, undefined, JSON.stringify(out.notEdited));
+  assert.deepEqual(out.edited.map((i) => [i.text, i.ticked]), [["milk", false], ["semi-skimmed", false]]);
+
+  out = await call(EDIT, {
+    list: "Shopping",
+    changes: [{ itemId: semi, text: "skimmed", was: "semi-skimmed" }, { itemId: MILK, delete: true }],
+  });
+  assert.equal(out.notEdited, undefined, JSON.stringify(out.notEdited));
+  assert.deepEqual(out.deleted, [{ itemId: MILK, text: "milk", nested: 1 }]);
+  assert.deepEqual(out.edited, []);
+});
+
+test("J17.13 · a write answers with what it touched and the list's size, not the whole list", async () => {
+  const { call } = await aBook();
+  const out = await call(EDIT, { list: "Shopping", changes: [{ itemId: MILK, ticked: true }] });
+  assert.deepEqual(out.edited, [{ itemId: MILK, text: "milk", depth: 0, ticked: true }]);
+  assert.deepEqual(out.list, { id: SHOP, name: "Shopping", kind: "checklist", items: 2, ticked: 1 });
+  assert.equal(out.summary, "Changed 1 item. Shopping now holds 2 items, 1 ticked.");
+});
+
+test("J18.21 · the agent's recipe add shows in planning_history like a person's", async () => {
+  const harness = await aBook();
+  await harness.call(ADD, { list: "Shopping", recipeId: harness.idOf("Dal") });
+  const history = await harness.call(require("../mcp/tools-read.js").find((t) => t.name === "planning_history"));
+  const dal = history.recipes.find((r) => r.name === "Dal");
+  assert.equal(dal.timesPlanned, 1);
+  assert.ok(dal.lastPlanned);
+});
+
+test("moves that cannot be made, or that disagree with themselves, are refused in words", async () => {
+  const { call } = await aBook();
+  const oat = (await call(ADD, { list: "Shopping", items: ["oat"], parentId: MILK })).added[0].itemId;
+
+  const out = await call(EDIT, {
+    list: "Shopping",
+    changes: [
+      { itemId: MILK, move: { afterId: oat } },
+      { itemId: EGGS, move: { parentId: MILK, afterId: EGGS } },
+      { itemId: EGGS, move: { parentId: null, afterId: oat } },
+    ],
+  });
+  assert.deepEqual(out.notEdited.map((n) => n.reason), [
+    "An item cannot go under itself or under what is nested in it.",
+    "An item cannot go under itself or under what is nested in it.",
+    "afterId is not under parentId. Send one or the other.",
+  ]);
+  assert.deepEqual(out.edited, []);
+  const add = await call(ADD, { list: "Shopping", items: ["x"], parentId: EGGS, afterId: oat });
+  assert.match(add.error, /afterId is not under parentId/);
+});
+
+test("a change that changes nothing says so, alone or among others", async () => {
+  const { call } = await aBook();
+  let out = await call(EDIT, { list: "Shopping", changes: [{ itemId: MILK, ticked: false }] });
+  assert.deepEqual(out.notEdited, [{ itemId: MILK, reason: "Already so." }]);
+  out = await call(EDIT, {
+    list: "Shopping",
+    changes: [{ itemId: MILK, text: "milk", was: "milk" }, { itemId: EGGS, ticked: true }, { itemId: MILK, move: { atTop: true } }],
+  });
+  assert.deepEqual(out.notEdited, [{ itemId: MILK, reason: "Already so." }, { itemId: MILK, reason: "Already so." }]);
+  assert.deepEqual(out.edited.map((i) => i.itemId), [EGGS]);
+  out = await call(EDIT, { list: "Freezer", changes: [{ itemId: BOL, by: 0 }, { itemId: BOL, count: 4 }] });
+  assert.deepEqual(out.notEdited.map((n) => n.reason), ["Already so.", "Already so."]);
+});
+
+test("J18.17 · the agent can always set any count from 0 to 9999, however often it swings", async () => {
+  const { call, serverList, L } = await aBook();
+  for (let round = 0; round < 15; round++) {
+    for (const target of [9999, 0]) {
+      const out = await call(EDIT, { list: "Freezer", changes: [{ itemId: BOL, count: target }] });
+      assert.equal(out.notEdited, undefined, `round ${round}: ${JSON.stringify(out.notEdited)}`);
+      assert.equal(out.edited[0].count, target, `round ${round}`);
+    }
+  }
+  const bol = serverList(FREEZER).items.find((i) => i.id === BOL);
+  assert.equal(L.count(bol), 0);
+  assert.ok(bol.tally.length <= 4, "a few slots of its own, not one per change");
 });

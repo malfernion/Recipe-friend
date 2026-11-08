@@ -110,10 +110,11 @@ async function openBook(session, { api: injected } = {}) {
 
 /**
  * A counter device id (8–16 letters and digits, js/liststore.js) that is
- * a function of the agent's member id.
+ * a function of the agent's member id. Fifteen characters, leaving one
+ * for the spare slots a full counter moves on to (tools-lists.js).
  */
 function agentDevice(userId) {
-  return ("agent" + String(userId || "").replace(/[^0-9a-z]/gi, "")).slice(0, 16).padEnd(8, "0");
+  return ("agent" + String(userId || "").replace(/[^0-9a-z]/gi, "")).slice(0, 15).padEnd(8, "0");
 }
 
 class Book {
