@@ -233,7 +233,24 @@
       .map((tag) => ({ tag, count: counts.get(tag), active: active.includes(tag) }));
   }
 
+  /**
+   * An ingredient's word as a key both its spellings reach, tolerating
+   * simple plurals the way search does (J3.4) — "tomatoes" and "tomato",
+   * "limes" and "lime" all key the same. Search itself uses a looser stem
+   * as a substring probe; a key has to be a form both spellings actually
+   * reach, so a trailing "e" goes too. The MCP server keys a recipe's
+   * ingredients on it (mcp/digest.js), and prints the word as written.
+   */
+  function stemWord(text) {
+    const s = String(text || "").trim().toLowerCase().replace(/\s+/g, " ");
+    const stripped = s.replace(/(?:es|s)$/, "");
+    const singular = stripped.length >= 3 ? stripped : s;
+    const trimmed = singular.replace(/e$/, "");
+    return trimmed.length >= 3 ? trimmed : singular;
+  }
+
   global.RecipeSearch = {
+    stemWord,
     readable,
     parseTerms,
     matchedTerms,

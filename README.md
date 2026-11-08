@@ -240,7 +240,6 @@ js/cookmode.js                 Keeping the screen awake while cooking
 js/search.js                   Search, filters, sorts, and "what can I cook?" ranking
 js/plan.js                     What was planned: the archive "Last planned" reads
 js/planstore.js                The plan's local cache, per book
-js/shoplist.js                 Item stemming the MCP server shares (the old summed list)
 js/lists.js                    A book's lists: items as a tree, merged per fact
 js/liststore.js                The lists' local cache, per book
 js/listdrop.js                 Where a dragged list item lands

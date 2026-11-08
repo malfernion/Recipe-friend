@@ -86,7 +86,7 @@
   //
   // A key is 240 because that is what the app can actually generate — an
   // item is capped at 200 characters (storage.js) and a unit at 24, and
-  // shoplist.js keys a line on the pair. Trimming that would silently
+  // the old shopping list keyed a line on the pair. Trimming that would silently
   // drop the settlement on a long-named item instead. The counts are
   // what gave way, and they had the room to. 40 meals is five weeks of
   // dinners in one plan. Eighty settled recipe lines is a very big shop —

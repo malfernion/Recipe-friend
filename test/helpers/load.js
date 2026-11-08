@@ -84,14 +84,14 @@ function loadUI(options = {}) {
   if (options.hash) win.location.hash = options.hash;
   if (options.gated) win.document.body.classList.add("gated");
   // The planner goes in with the rest: app.js makes a plan store as it
-  // loads, and reaches for plan.js and shoplist.js as bare globals, the
+  // loads, and reaches for plan.js and planstore.js as bare globals, the
   // same way a browser hands them over from index.html.
   //
   // `planner: false` leaves all three out, which is the page a browser
   // gets when one of those scripts does not arrive. index.html always
   // asks for them, so this is not a supported configuration — it is the
   // one a failed fetch produces, and the list still has to draw in it.
-  const planner = options.planner === false ? [] : ["plan.js", "planstore.js", "shoplist.js"];
+  const planner = options.planner === false ? [] : ["plan.js", "planstore.js"];
   // The lists (J18) go in the same way; `lists: false` is the page that
   // did not get them.
   const lists = options.lists === false ? [] : ["lists.js", "liststore.js", "listdrop.js"];
@@ -101,7 +101,7 @@ function loadUI(options = {}) {
   );
 
   for (const key of ["RecipeHTML", "RecipeApi", "RecipeUnits", "RecipeScale", "RecipeStore",
-                     "RecipePlan", "RecipePlanStore", "RecipeShopList", "RecipeShare", "RecipeCookMode",
+                     "RecipePlan", "RecipePlanStore", "RecipeShare", "RecipeCookMode",
                      "RecipeLists", "RecipeListStore", "RecipeListDrop"]) {
     // A module that was left out leaves its global unset here too, rather
     // than carrying the last test's copy over on globalThis.

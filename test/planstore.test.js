@@ -111,7 +111,7 @@ function fakeCloud() {
 
 /** One phone: its own caches, its own sync, pointed at a shared cloud. */
 function device(cloud, { bookId = BOOK, readOnly = false, addOnly = false } = {}) {
-  const win = loadApp("units.js", "scale.js", "storage.js", "plan.js", "shoplist.js", "planstore.js", "sync.js");
+  const win = loadApp("units.js", "scale.js", "storage.js", "plan.js", "planstore.js", "sync.js");
   const store = new win.RecipeStore();
   const planStore = new win.RecipePlanStore();
   const statuses = [];
@@ -153,6 +153,22 @@ function shareRecipe(cloud, name = "Bolognese") {
 // ---------------------------------------------------------------------
 // Where a plan lives
 // ---------------------------------------------------------------------
+
+
+/**
+ * A week recorded in the archive, the way a finished plan was: archived
+ * here and pushed. Done went with the plan readout (J18, build step 1),
+ * but the archive it wrote is what "Last planned" reads, and these tests
+ * are about how that archive syncs.
+ */
+async function finish(d, now) {
+  const live = d.planStore.plan;
+  const finished = d.plan.complete(live, now);
+  d.planStore.archivePlan(finished);
+  d.planStore.setPlan(d.plan.emptyPlan(d.plan.generationAfter(finished, now)));
+  await d.sync.syncNow();
+  return { archived: finished, plan: d.planStore.plan };
+}
 
 test("J12.3 · each book keeps its own plan in its own local cache, so switching books switches plans", () => {
   const cloud = fakeCloud();
@@ -533,16 +549,6 @@ test("J12.10 · a read-only member's client never pushes a plan", async () => {
   assert.deepEqual(viewer.statuses, ["syncing", "synced"]);
 });
 
-test("J12.10 · a read-only member cannot finish a plan either", async () => {
-  const cloud = fakeCloud();
-  const recipe = shareRecipe(cloud);
-  const viewer = device(cloud, { readOnly: true });
-  viewer.planStore.setPlan(viewer.plan.addMeal(viewer.planStore.plan, recipe, 1000));
-
-  await assert.rejects(() => viewer.sync.completePlan(3000), /read/);
-  assert.deepEqual(cloud.db.plans, [], "nothing is recorded");
-});
-
 test("J12.10 · a viewer still gets the plan, because reading is the point", async () => {
   const cloud = fakeCloud();
   const recipe = shareRecipe(cloud);
@@ -558,72 +564,6 @@ test("J12.10 · a viewer still gets the plan, because reading is the point", asy
 // ---------------------------------------------------------------------
 // Finishing a plan
 // ---------------------------------------------------------------------
-
-test("J14.1 · Done records the plan and an empty one takes its place", async () => {
-  const cloud = fakeCloud();
-  const recipe = shareRecipe(cloud);
-  const d = device(cloud);
-  d.planStore.setPlan(d.plan.addMeal(d.planStore.plan, recipe, 1000));
-  const was = d.planStore.plan.id;
-  await d.sync.syncNow();
-
-  const result = await d.sync.completePlan(7000);
-
-  assert.equal(result.archived.completedAt, 7000);
-  assert.equal(cloud.db.plans.length, 1, "the plan is on the record");
-  assert.equal(cloud.db.plans[0].id, was);
-  assert.equal(cloud.db.live_plans[0].data.id, result.plan.id, "and an empty one is live");
-  assert.deepEqual(cloud.db.live_plans[0].data.meals, []);
-  assert.notEqual(result.plan.id, was);
-  assert.deepEqual(d.planStore.archive.map((p) => p.id), [was]);
-});
-
-test("J14.3 · finishing needs at least one recipe, so an empty plan records nothing", async () => {
-  const cloud = fakeCloud();
-  const d = device(cloud);
-  assert.equal(await d.sync.completePlan(7000), null);
-  assert.deepEqual(cloud.db.plans, [], "an empty plan has nothing to record");
-});
-
-test("J14.1 · the record goes up before the live plan is cleared, so a failure after it loses nothing", async () => {
-  const cloud = fakeCloud();
-  const recipe = shareRecipe(cloud);
-  const d = device(cloud);
-  d.planStore.setPlan(d.plan.addMeal(d.planStore.plan, recipe, 1000));
-  const was = d.planStore.plan.id;
-  await d.sync.syncNow();
-
-  // The second of the two writes never lands.
-  cloud.breakWrite("live_plans.upsert");
-  await d.sync.completePlan(7000);
-
-  assert.equal(cloud.db.plans.length, 1, "the plan is recorded even though the reset failed");
-  assert.equal(d.planStore.plan.id !== was, true, "and this device has already moved on");
-  assert.equal(d.sync.pending, true, "with the rest of it queued for the retry (J9.5)");
-
-  cloud.mend("live_plans.upsert");
-  await d.sync.syncNow();
-  assert.deepEqual(cloud.db.live_plans[0].data.meals, [], "which finishes the job by itself");
-  assert.equal(cloud.db.plans.length, 1, "and records the plan once, not twice");
-});
-
-test("J14.10 · the other phone pressing Done on the same plan records it once, not twice", async () => {
-  const cloud = fakeCloud();
-  const recipe = shareRecipe(cloud);
-  const a = device(cloud);
-  const b = device(cloud);
-  a.planStore.setPlan(a.plan.addMeal(a.planStore.plan, recipe, 1000));
-  await a.sync.syncNow();
-  await b.sync.syncNow();
-
-  await a.sync.completePlan(7000);
-  await b.sync.completePlan(7001); // b never saw a finish it
-
-  assert.equal(cloud.db.plans.length, 1,
-    "every appearance counts, so a plan recorded twice would be a lie about how often it was planned");
-  await b.sync.syncNow();
-  assert.equal(b.planStore.archive.length, 1);
-});
 
 test("J14.1 · a live plan left carrying its completion is finished by whoever finds it", async () => {
   const cloud = fakeCloud();
@@ -675,30 +615,6 @@ test("J14.4 · a cleared plan does not come back from another device's cache", a
   assert.deepEqual(a.plan.settledFor(a.planStore.plan, "onion|unit:"), { have: 0, got: 0 });
 });
 
-test("J14.4 · a plan finished on one phone does not come back from the other's cache", async () => {
-  const cloud = fakeCloud();
-  const recipe = shareRecipe(cloud);
-  const a = device(cloud);
-  const b = device(cloud);
-  a.planStore.setPlan(a.plan.addMeal(a.planStore.plan, recipe, 1000));
-  await a.sync.syncNow();
-  await b.sync.syncNow();
-
-  await a.sync.completePlan(7000);
-  // b was in the shop with no signal, and adds another night to a plan
-  // that is already archived.
-  b.planStore.setPlan(b.plan.addMeal(b.planStore.plan, recipe, 8000));
-  await b.sync.syncNow();
-
-  assert.deepEqual(b.planStore.plan.meals, [], "the finished plan is finished");
-  assert.equal(cloud.db.plans.length, 1);
-  assert.deepEqual(cloud.db.live_plans[0].data.meals, []);
-});
-
-// ---------------------------------------------------------------------
-// What the archive is for
-// ---------------------------------------------------------------------
-
 test("J14.6, J14.10 · archived plans come down and answer when a recipe was last planned, and how often", async () => {
   const cloud = fakeCloud();
   const recipe = shareRecipe(cloud);
@@ -706,11 +622,11 @@ test("J14.6, J14.10 · archived plans come down and answer when a recipe was las
 
   // Two weeks, the second of them cooking it twice (J12.6).
   a.planStore.setPlan(a.plan.addMeal(a.planStore.plan, recipe, 1000));
-  await a.sync.completePlan(5000);
+  await finish(a, 5000);
   let plan = a.plan.addMeal(a.planStore.plan, recipe, 6000);
   plan = a.plan.addMeal(plan, recipe, 6001);
   a.planStore.setPlan(plan);
-  await a.sync.completePlan(9000);
+  await finish(a, 9000);
 
   const fresh = device(cloud);
   await fresh.sync.syncNow();
@@ -727,7 +643,7 @@ test("J14.6 · a device that already has an archived plan does not fetch it agai
   const recipe = shareRecipe(cloud);
   const a = device(cloud);
   a.planStore.setPlan(a.plan.addMeal(a.planStore.plan, recipe, 1000));
-  await a.sync.completePlan(5000);
+  await finish(a, 5000);
 
   const before = cloud.calls.length;
   await a.sync.syncNow();
@@ -742,7 +658,7 @@ test("J10.1 · an export carries recipes, not plans", async () => {
   const d = device(cloud);
   await d.sync.syncNow();
   d.planStore.setPlan(d.plan.addMeal(d.planStore.plan, recipe, 1000));
-  await d.sync.completePlan(5000);
+  await finish(d, 5000);
 
   // Planning history lives in the book's plans and does not survive a
   // restore into a new account, in the same way a photo does not (J10.4).
@@ -754,68 +670,6 @@ test("J10.1 · an export carries recipes, not plans", async () => {
 // ---------------------------------------------------------------------
 // Undo
 // ---------------------------------------------------------------------
-
-test("J14.2 · Undo takes the record back and puts the plan back", async () => {
-  const cloud = fakeCloud();
-  const recipe = shareRecipe(cloud);
-  const d = device(cloud);
-  d.planStore.setPlan(d.plan.addMeal(d.planStore.plan, recipe, 1000));
-  const { archived } = await d.sync.completePlan(7000);
-
-  const restored = await d.sync.undoComplete(archived.id, 8000);
-
-  assert.deepEqual(restored.meals.map((m) => m.name), ["Bolognese"]);
-  assert.equal(restored.completedAt, null);
-  assert.deepEqual(cloud.db.plans, [], "and the week no longer claims to have been planned");
-  assert.deepEqual(cloud.db.live_plans[0].data.meals.map((m) => m.name), ["Bolognese"]);
-  assert.deepEqual(d.planStore.archive, []);
-});
-
-test("J14.2 · Undo is not handed back by a phone that had already pulled the record", async () => {
-  const cloud = fakeCloud();
-  const recipe = shareRecipe(cloud);
-  const a = device(cloud);
-  const b = device(cloud);
-  a.planStore.setPlan(a.plan.addMeal(a.planStore.plan, recipe, 1000));
-  await a.sync.syncNow();
-
-  const { archived } = await a.sync.completePlan(7000);
-  // The other phone syncs in the seconds between Done and Undo, so it is
-  // holding the record when the record is taken back.
-  await b.sync.syncNow();
-  assert.deepEqual(b.planStore.archive.map((p) => p.id), [archived.id]);
-
-  await a.sync.undoComplete(archived.id, 8000);
-  await b.sync.syncNow();
-
-  assert.deepEqual(cloud.db.plans, [],
-    "the week no longer claims to have been planned, on either phone's next sync");
-  assert.deepEqual(b.planStore.archive, [],
-    "and the phone that had it lets it go rather than pushing it back");
-  assert.equal(b.planStore.plannedIndex()[recipe.id], undefined,
-    "so nobody is told the recipe was planned in a week that was un-finished");
-
-  await a.sync.syncNow();
-  assert.deepEqual(cloud.db.plans, [], "and it does not come back on the next trip either");
-});
-
-test("J14.1 · a Done pressed with no signal is still owed to the book when the signal returns", async () => {
-  const cloud = fakeCloud();
-  const recipe = shareRecipe(cloud);
-  const d = device(cloud);
-  d.planStore.setPlan(d.plan.addMeal(d.planStore.plan, recipe, 1000));
-
-  cloud.breakWrite("plans.insert");
-  cloud.breakWrite("live_plans.upsert");
-  await d.sync.completePlan(7000);
-  assert.deepEqual(cloud.db.plans, [], "nothing reached the book");
-
-  cloud.mend("plans.insert");
-  cloud.mend("live_plans.upsert");
-  await d.sync.syncNow();
-  assert.deepEqual(cloud.db.plans.map((r) => r.id), [d.planStore.archive[0].id],
-    "and the record goes up as soon as there is somewhere to put it");
-});
 
 test("J12.10 · a viewer does not finish somebody else's half-finished Done", async () => {
   const cloud = fakeCloud();
@@ -870,26 +724,6 @@ test("J7.17 · a book you may write is not mistaken for one you may only read", 
   assert.deepEqual(cloud.db.live_plans[0].data.meals.map((m) => m.name), ["Bolognese"]);
 });
 
-test("J14.2 · an Undo that does not reach the server changes nothing here either", async () => {
-  const cloud = fakeCloud();
-  const recipe = shareRecipe(cloud);
-  const d = device(cloud);
-  d.planStore.setPlan(d.plan.addMeal(d.planStore.plan, recipe, 1000));
-  const { archived } = await d.sync.completePlan(7000);
-
-  cloud.breakWrite("plans.delete");
-  await assert.rejects(() => d.sync.undoComplete(archived.id, 8000));
-
-  assert.equal(cloud.db.plans.length, 1);
-  assert.deepEqual(d.planStore.archive.map((p) => p.id), [archived.id],
-    "the record is not dropped here on the strength of a delete that did not happen");
-  assert.deepEqual(d.planStore.plan.meals, [], "and the plan is not half-restored");
-});
-
-// ---------------------------------------------------------------------
-// The ids
-// ---------------------------------------------------------------------
-
 test("a plan and its meals carry real uuids, because an archived plan's id is a primary key", () => {
   const cloud = fakeCloud();
   const d = device(cloud);
@@ -934,26 +768,6 @@ test("J16.4 · an agent leaves a finished plan alone rather than parking its syn
   assert.equal(agent.statuses[agent.statuses.length - 1], "synced",
     "and the sync finishes rather than parking");
   assert.ok(agent.planStore.plan.completedAt, "the finished plan is left as it was found");
-});
-
-test("J16.4 · an agent refuses to finish or undo a plan", async () => {
-  const cloud = fakeCloud();
-  joinBook(cloud, { role: "agent" });
-  const recipe = shareRecipe(cloud);
-  const agent = device(cloud, { addOnly: true });
-  agent.planStore.setPlan(
-    agent.plan.addMeal(agent.plan.emptyPlan(Date.now()), recipe, Date.now())
-  );
-
-  await assert.rejects(() => agent.sync.completePlan(), /does not finish a plan/);
-
-  // And Undo, given something to undo — it pulls a record off the
-  // archive, which is the write an agent has no policy for.
-  const done = { ...agent.plan.emptyPlan(Date.now() - 5000), completedAt: Date.now() - 4000 };
-  agent.planStore.archivePlan(done);
-  await assert.rejects(() => agent.sync.undoComplete(done.id), /does not finish a plan/);
-
-  assert.equal(cloud.db.plans.length, 0);
 });
 
 test("J16.3 · an agent still settles a line and pushes the live plan", async () => {
@@ -1164,93 +978,6 @@ test("J12.13 · over the cap, what is still on the list is kept before what was 
   assert.ok(!plan.items.some((i) => i.text === "gone 0"), "the oldest removal goes first");
 });
 
-test("J14.13 · Done records the meals and not what was added by hand", async () => {
-  const cloud = fakeCloud();
-  const recipe = shareRecipe(cloud);
-  const d = device(cloud);
-  let plan = d.plan.addMeal(d.planStore.plan, recipe, 1000);
-  plan = d.plan.addItem(plan, "milk", 1002);
-  d.planStore.setPlan(plan);
-
-  const result = await d.sync.completePlan(7000);
-
-  const recorded = cloud.db.plans[0].data;
-  assert.deepEqual(recorded.meals.map((m) => m.name), ["Bolognese"], "the week's meals are the record");
-  assert.equal("items" in recorded, false, "the list is not kept");
-  assert.equal("items" in d.planStore.archive[0], false, "not on this phone either");
-  assert.deepEqual(d.planStore.plan.items, [], "and nothing carries into the next plan");
-  assert.ok(cloud.db.live_plans.every((row) => (row.data.items || []).length === 0));
-  assert.deepEqual(result.items.map((i) => i.text), ["milk"], "Undo is handed it, and nothing else is");
-});
-
-test("J14.2 · Undo puts back what was on the list by hand as well as the meals", async () => {
-  const cloud = fakeCloud();
-  const recipe = shareRecipe(cloud);
-  const d = device(cloud);
-  let plan = d.plan.addMeal(d.planStore.plan, recipe, 1000);
-  plan = d.plan.addItem(plan, "milk", 1001);
-  d.planStore.setPlan(plan);
-  const { archived, items } = await d.sync.completePlan(7000);
-
-  const restored = await d.sync.undoComplete(archived.id, 8000, items);
-
-  assert.deepEqual(d.plan.liveItems(restored).map((i) => i.text), ["milk"]);
-  assert.deepEqual(d.plan.liveItems(cloud.db.live_plans[0].data).map((i) => i.text), ["milk"]);
-});
-
-test("J14.3 · a plan that is only lines added by hand is finished, and records nothing", async () => {
-  const cloud = fakeCloud();
-  const d = device(cloud);
-  d.planStore.setPlan(d.plan.addItem(d.planStore.plan, "milk", 1000));
-  await d.sync.syncNow();
-  const was = d.planStore.plan;
-
-  const done = await d.sync.completePlan(7000);
-
-  assert.equal(done.archived, null, "nothing claims a week was planned");
-  assert.deepEqual(cloud.db.plans, []);
-  assert.deepEqual(d.planStore.archive, []);
-  assert.equal(done.previous.id, was.id, "the plan that was is handed back for Undo");
-  assert.notEqual(d.planStore.plan.id, was.id, "and a later generation takes its place");
-  assert.deepEqual(d.planStore.plan.items, []);
-  assert.deepEqual(cloud.db.live_plans[0].data.items, [], "on the server too, so the other phone's list goes");
-});
-
-test("J14.3 · an empty plan has nothing to finish", async () => {
-  const cloud = fakeCloud();
-  const d = device(cloud);
-  assert.equal(await d.sync.completePlan(7000), null);
-  const id = d.win.RecipeStore.newId();
-  d.planStore.setPlan({ ...d.planStore.plan, items: [{ id, text: "milk", state: "removed", at: 1, addedAt: 1 }] });
-  assert.equal(await d.sync.completePlan(7000), null, "a line taken off is not something on the list");
-});
-
-test("J14.2 · the Undo of a Done that recorded nothing needs no network", async () => {
-  const cloud = fakeCloud();
-  const d = device(cloud);
-  d.planStore.setPlan(d.plan.addItem(d.planStore.plan, "milk", 1000));
-  const done = await d.sync.completePlan(7000);
-  const calls = cloud.calls.length;
-
-  const back = d.sync.restoreUnrecorded(done.previous, 8000);
-
-  assert.equal(cloud.calls.length, calls, "nothing was asked of the server to do it");
-  assert.deepEqual(d.plan.liveItems(back).map((i) => i.text), ["milk"]);
-  assert.ok(back.createdAt > done.plan.createdAt, "a later generation than the empty one it replaces");
-  await d.sync.syncNow();
-  assert.deepEqual(d.plan.liveItems(cloud.db.live_plans[0].data).map((i) => i.text), ["milk"],
-    "and it goes up with the next sync like any edit");
-});
-
-test("J16.4 · an agent cannot finish or bring back a list either", async () => {
-  const cloud = fakeCloud();
-  const d = device(cloud, { addOnly: true });
-  d.planStore.setPlan(d.plan.addItem(d.planStore.plan, "milk", 1000));
-  await assert.rejects(d.sync.completePlan(7000), /agent/);
-  assert.throws(() => d.sync.restoreUnrecorded(d.planStore.plan, 8000), /agent/);
-});
-
-
 test("J12.13 · a plan saved with a meal that was only a name keeps its lines as ordinary ones", () => {
   // The previous release let a meal be just a name, with lines of its own.
   // Those plans are still in the book: the meal goes, and nothing to buy
@@ -1290,49 +1017,6 @@ function stall(d, at = "fetchArchivedPlanIds") {
   return { arrived, release };
 }
 
-test("J14.3 · a Done pressed while a sync is running stays done", async () => {
-  const cloud = fakeCloud();
-  const d = device(cloud);
-  d.planStore.setPlan(d.plan.addItem(d.planStore.plan, "milk", 1000));
-  await d.sync.syncNow();
-  const was = d.planStore.plan.id;
-
-  const hold = stall(d);
-  const running = d.sync.syncNow();
-  await hold.arrived;
-  const done = await d.sync.completePlan(Date.now());
-  hold.release();
-  await running;
-  await d.sync.syncNow();
-
-  assert.equal(done.archived, null);
-  assert.notEqual(d.planStore.plan.id, was, "the sync that was running did not put the old plan back");
-  assert.deepEqual(d.plan.liveItems(d.planStore.plan), []);
-  assert.deepEqual(d.plan.liveItems(cloud.db.live_plans[0].data), [], "and neither did the server");
-});
-
-test("J14.1 · a recipe Done pressed while a sync is running is recorded, not dropped", async () => {
-  const cloud = fakeCloud();
-  const recipe = shareRecipe(cloud);
-  const d = device(cloud);
-  d.planStore.setPlan(d.plan.addMeal(d.planStore.plan, recipe, 1000));
-  await d.sync.syncNow();
-
-  // Held after the sync has read this phone's archive, so the record Done
-  // makes is one that list has never heard of.
-  const hold = stall(d, "fetchArchivedPlans");
-  const running = d.sync.syncNow();
-  await hold.arrived;
-  const done = await d.sync.completePlan(Date.now());
-  hold.release();
-  await running;
-  await d.sync.syncNow();
-
-  assert.deepEqual(d.planStore.archive.map((p) => p.id), [done.archived.id], "still on this phone's record");
-  assert.deepEqual(cloud.db.plans.map((p) => p.id), [done.archived.id], "and on the book's");
-  assert.deepEqual(d.planStore.plan.meals, [], "and the live plan is the empty one");
-});
-
 test("J12.13 · a line added while a sync is running is kept", async () => {
   const cloud = fakeCloud();
   const d = device(cloud);
@@ -1349,62 +1033,6 @@ test("J12.13 · a line added while a sync is running is kept", async () => {
 
   assert.deepEqual(d.plan.liveItems(d.planStore.plan).map((i) => i.text), ["milk", "eggs"]);
   assert.deepEqual(d.plan.liveItems(cloud.db.live_plans[0].data).map((i) => i.text), ["milk", "eggs"]);
-});
-
-test("J14.2 · Undo after a list-only Done keeps what was added since, here or on the other phone", async () => {
-  const cloud = fakeCloud();
-  const a = device(cloud);
-  const b = device(cloud);
-  a.planStore.setPlan(a.plan.addItem(a.planStore.plan, "milk", 1000));
-  await a.sync.syncNow();
-  await b.sync.syncNow();
-
-  const done = await a.sync.completePlan(Date.now());
-  await b.sync.syncNow();
-  b.planStore.setPlan(b.plan.addItem(b.planStore.plan, "eggs", Date.now()));
-  await b.sync.syncNow();
-  await a.sync.syncNow();
-
-  a.sync.restoreUnrecorded(done.previous, Date.now());
-  await a.sync.syncNow();
-  await b.sync.syncNow();
-
-  for (const d of [a, b]) {
-    assert.deepEqual(d.plan.liveItems(d.planStore.plan).map((i) => i.text).sort(), ["eggs", "milk"]);
-  }
-});
-
-test("J14.2 · the plan Undo brings back is a new plan, so no old copy of it can outrank it", async () => {
-  const cloud = fakeCloud();
-  const d = device(cloud);
-  d.planStore.setPlan(d.plan.addItem(d.planStore.plan, "milk", 1000));
-  const done = await d.sync.completePlan(7000);
-  const back = d.sync.restoreUnrecorded(done.previous, 8000);
-  assert.notEqual(back.id, done.previous.id,
-    "a copy of the old plan elsewhere would merge into it by id and take its older birthday");
-  assert.notEqual(back.id, done.plan.id);
-});
-
-test("J12.10 · a viewer cannot bring a finished list back", () => {
-  const cloud = fakeCloud();
-  const d = device(cloud, { readOnly: true });
-  const previous = d.plan.addItem(d.plan.emptyPlan(1), "milk", 1000);
-  assert.throws(() => d.sync.restoreUnrecorded(previous, 8000), /read/);
-  assert.deepEqual(d.planStore.plan.items, []);
-});
-
-test("J14.2 · Undo of a recorded Done keeps a line added since, too", async () => {
-  const cloud = fakeCloud();
-  const recipe = shareRecipe(cloud);
-  const d = device(cloud);
-  d.planStore.setPlan(d.plan.addMeal(d.planStore.plan, recipe, 1000));
-  const { archived, items } = await d.sync.completePlan(7000);
-  d.planStore.setPlan(d.plan.addItem(d.planStore.plan, "eggs", 7500));
-
-  const restored = await d.sync.undoComplete(archived.id, 8000, items);
-
-  assert.deepEqual(restored.meals.map((m) => m.name), ["Bolognese"]);
-  assert.deepEqual(d.plan.liveItems(d.planStore.plan).map((i) => i.text), ["eggs"]);
 });
 
 test("J12.13 · a new phone's first line, added while its first sync runs, does not replace the book's plan", async () => {
@@ -1430,21 +1058,6 @@ test("J12.13 · a new phone's first line, added while its first sync runs, does 
     assert.deepEqual(d.plan.liveItems(d.planStore.plan).map((i) => i.text), ["milk"], "and so is the milk");
   }
   assert.deepEqual(cloud.db.live_plans[0].data.meals.map((m) => m.name), ["Bolognese"]);
-});
-
-test("J14.2 · Undo keeps the later word on a line, not the older one", async () => {
-  const cloud = fakeCloud();
-  const recipe = shareRecipe(cloud);
-  const d = device(cloud);
-  let plan = d.plan.addMeal(d.planStore.plan, recipe, 1000);
-  plan = d.plan.settle(plan, "onion|unit:", "have", 1, 1500);
-  d.planStore.setPlan(plan);
-  const { archived, items } = await d.sync.completePlan(2000);
-  d.planStore.setPlan(d.plan.settle(d.planStore.plan, "onion|unit:", "have", 4, 6500));
-
-  await d.sync.undoComplete(archived.id, 8000, items);
-
-  assert.deepEqual(d.plan.settledFor(d.planStore.plan, "onion|unit:"), { have: 4, got: 0 });
 });
 
 test("J14.4 · a tick on the old week, made while a sync brings in the new one, stays with the old week", async () => {

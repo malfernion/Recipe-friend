@@ -26,7 +26,7 @@ const { loadApp } = require("../test/helpers/load.js");
 /** Everything the planner needs, and nothing that wants a browser. */
 const MODULES = [
   "units.js", "scale.js", "storage.js",
-  "plan.js", "planstore.js", "shoplist.js",
+  "plan.js", "planstore.js",
   "search.js", "sync.js",
 ];
 

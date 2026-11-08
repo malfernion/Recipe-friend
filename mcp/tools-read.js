@@ -372,7 +372,7 @@ const recipesSharingIngredients = {
   },
   async run(book, args = {}) {
     const win = book.win;
-    const stem = (word) => win.RecipeShopList.stemWord(String(word || "").trim());
+    const stem = (word) => win.RecipeSearch.stemWord(String(word || "").trim());
     const planned = book.planStore.plannedIndex();
 
     // Stem to the word it came from, both ways round: matched on the

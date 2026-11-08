@@ -18,7 +18,7 @@ const BOOK = "11111111-1111-4111-8111-111111111111";
  * names recipe ids, and those are not known until the rows are made.
  */
 async function agentBook({ recipes = [], archive = () => [], role = "agent" } = {}) {
-  const win = loadApp("units.js", "scale.js", "storage.js", "plan.js", "planstore.js", "shoplist.js", "search.js");
+  const win = loadApp("units.js", "scale.js", "storage.js", "plan.js", "planstore.js", "search.js");
   const rows = recipes.map((raw, i) => {
     const recipe = win.RecipeStore.sanitizeRecipe(raw);
     return { id: recipe.id, data: recipe, updated_at: new Date(1000 + i).toISOString(), deleted_at: null };
