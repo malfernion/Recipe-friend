@@ -310,7 +310,7 @@ no tool for them. Lists are named by name, in any case, or by id.
 
 | Tool | Takes | Does |
 | --- | --- | --- |
-| `get_lists` | optionally a list | every list's name, kind, size and when it was last edited; and that list in full — each item's id, text, depth, and tick or count |
+| `get_lists` | optionally a list | every list's name, kind, size and `editedAt` (its latest change by anyone, the agent included); and that list in full — each item's id, text, depth, and tick or count |
 | `add_to_list` | a list, and lines of text or a recipe id with servings or a multiplier; optionally where | adds the lines, or the recipe as one item with its ingredients under it, scaled (checklists only) |
 | `edit_list` | a list and up to 50 changes by item id | changes text (saying what it read), ticks, sets or changes counts, moves, nests, deletes |
 

@@ -71,16 +71,18 @@ function findList(book, ref) {
 /** One list in brief. */
 function summary(L, list) {
   const live = L.liveItems(list);
-  // When it was last changed, by anyone: the phone's "Edited …" (J18.28), so
-  // an agent can tell a list the household has been keeping from a stale one.
-  const at = L.lastEdited(list);
+  // When it was last changed, by anyone, the agent included: the phone's
+  // "Edited …" (J18.28). Stamps come from device clocks and merge by the
+  // newest, so one wrong clock could pin a list in the future for good; it is
+  // never reported later than now.
+  const at = Math.min(L.lastEdited(list), Date.now());
   return {
     id: list.id,
     name: list.name,
     kind: list.kind,
     items: live.length,
     ...(list.kind === "checklist" ? { ticked: live.filter((i) => i.ticked).length } : {}),
-    edited: at ? new Date(at).toISOString() : null,
+    editedAt: at ? new Date(at).toISOString() : null,
   };
 }
 
@@ -224,7 +226,7 @@ const getLists = {
   description:
     "The book's lists — shopping, the freezer, whatever the household keeps. Gives back: each " +
     "list's id, name, kind ('checklist' has ticks, 'stock' has counts), how many items it " +
-    "holds and when it was last edited; and with `list` (a name or id), that list in full, top to bottom — each item's " +
+    "holds and editedAt (ISO, UTC: its latest change by anyone, you included); and with `list` (a name or id), that list in full, top to bottom — each item's " +
     "itemId, text, depth and parentId, and `ticked` or `count`. A stock item with items under " +
     "it is a heading and has no count. " + LIST_DATA,
   annotations: { readOnlyHint: true, openWorldHint: false },
