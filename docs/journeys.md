@@ -1414,7 +1414,11 @@ and a recipe drops onto it as a single item.
     item's counter keeps the date of its latest change, merged by the
     newest), so it is there offline and moves when a change arrives. It
     stays current while the list is open, and says nothing if the list
-    holds no date.
+    holds no date. An agent reading the lists (J18.25) gets the same
+    time for each as `editedAt`, never later than now (a device with a
+    wrong clock cannot pin a list in the future). It counts every change,
+    the agent's own included, so it says how fresh a list is, not who
+    keeps it up.
 29. **On a phone the app bar is one line**: logo, title, "+ New" and
     "···". The title is the book you are in, with a ▾, and opens Books;
     there is no separate Books button and no account name in the bar —
