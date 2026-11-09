@@ -69,8 +69,8 @@ test("J18.25 · the agent sees every list in its book, and one in full as the ph
 
   const all = await call(GET);
   assert.deepEqual(all.lists, [
-    { id: SHOP, name: "Shopping", kind: "checklist", items: 2, ticked: 0 },
-    { id: FREEZER, name: "Freezer", kind: "stock", items: 3 },
+    { id: SHOP, name: "Shopping", kind: "checklist", items: 2, ticked: 0, edited: new Date(1000).toISOString() },
+    { id: FREEZER, name: "Freezer", kind: "stock", items: 3, edited: new Date(1000).toISOString() },
   ]);
   assert.equal(all.list, undefined, "names first, a list in full only when asked");
 
@@ -82,6 +82,20 @@ test("J18.25 · the agent sees every list in its book, and one in full as the ph
     { itemId: PEAS, text: "peas", depth: 1, parentId: DRAWER, count: 1 },
   ]);
   assert.equal((await call(GET, { list: SHOP })).list.name, "Shopping", "by id as well as by name");
+});
+
+test("J18.28 · each list says when it was last edited, by anyone, as the phone's header does", async () => {
+  const stamped = lists();
+  stamped[1].items[0].countAt = 5000; // a counter tap on the Bolognese
+  const { call } = await agentBook({ lists: stamped });
+  const [shop, freezer] = (await call(GET)).lists;
+  assert.equal(shop.edited, new Date(1000).toISOString());
+  assert.equal(freezer.edited, new Date(5000).toISOString(), "a counter tap is an edit too");
+
+  const { call: after } = await aBook();
+  await after(ADD, { list: "Shopping", items: ["bread"] });
+  const moved = (await after(GET)).lists[0].edited;
+  assert.ok(Date.parse(moved) > 1000, "the agent's own change moves it like anyone's");
 });
 
 test("J18.25 · a list that is not there says who makes lists, rather than inviting a try", async () => {
@@ -462,7 +476,9 @@ test("J17.13 · a write answers with what it touched and the list's size, not th
   const { call } = await aBook();
   const out = await call(EDIT, { list: "Shopping", changes: [{ itemId: MILK, ticked: true }] });
   assert.deepEqual(out.edited, [{ itemId: MILK, text: "milk", depth: 0, ticked: true }]);
-  assert.deepEqual(out.list, { id: SHOP, name: "Shopping", kind: "checklist", items: 2, ticked: 1 });
+  const { edited, ...size } = out.list;
+  assert.deepEqual(size, { id: SHOP, name: "Shopping", kind: "checklist", items: 2, ticked: 1 });
+  assert.ok(Date.parse(edited) > 1000, "and when it was last edited, this change included");
   assert.equal(out.summary, "Changed 1 item. Shopping now holds 2 items, 1 ticked.");
 });
 
