@@ -1334,7 +1334,11 @@ and a recipe drops onto it as a single item.
     used.
 15. **At 0 an item stays on the list, faded**, so the list shows what
     has run out. It is never taken off by the counter, only by deleting
-    it (J18.10). The counter does not go below 0.
+    it. The counter does not go below 0, so at 0 the − becomes a bin, in
+    the same colour as the + beside it: a tap deletes the item with an
+    Undo, as J18.10 does. The bin comes up under a finger that is still
+    counting down, so a tap on it within a moment of that − reaching 0
+    does nothing.
 16. **An item with something nested under it is a heading and has no
     counter** — "Top drawer" holds things rather than being one. If what
     is under it goes, its counter comes back.

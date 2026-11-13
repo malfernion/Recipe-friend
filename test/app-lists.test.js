@@ -457,7 +457,51 @@ test("J18.14, J18.15 · a counter starts at 1, steps with − and +, and fades a
   assert.deepEqual(app.rows(), ["0 Bolognese"], "never below 0, and still on the list");
   const html = app.el("list-content").innerHTML;
   assert.match(html, /class="li-row li-faded"/);
-  assert.match(html, /data-li="down"[^>]*disabled/);
+  assert.doesNotMatch(html, /data-li="down"/, "at 0 the − has gone");
+  assert.match(html, /data-li="bin"[^>]*aria-label="Delete Bolognese"/, "and a bin is in its place");
+});
+
+test("J18.15 · the bin at 0 deletes the item with an Undo, but not under a finger still counting down", () => {
+  const realNow = Date.now;
+  let now = 1_000_000;
+  Date.now = () => now;
+  try {
+    const app = lists();
+    app.openLists();
+    app.make("Freezer", "stock");
+    app.typeOut("Peas", "Bolognese");
+    const peas = app.idOf("Peas");
+    app.tap({ li: "down", id: peas });
+    assert.deepEqual(app.rows(), ["0 Peas", "1 Bolognese"]);
+
+    now += 200;
+    app.tap({ li: "bin", id: peas });
+    assert.deepEqual(app.rows(), ["0 Peas", "1 Bolognese"], "a tap just after the − reached 0 was meant for the −");
+
+    now += 600;
+    app.tap({ li: "bin", id: peas });
+    assert.deepEqual(app.rows(), ["1 Bolognese"]);
+    assert.match(app.el("toast").textContent, /Deleted “Peas”/);
+    app.el("toast-action").fire("click");
+    assert.deepEqual(app.rows(), ["0 Peas", "1 Bolognese"], "Undo brings it back, still at 0");
+  } finally {
+    Date.now = realNow;
+  }
+});
+
+test("J18.4 · a viewer sees a run-out item with no bin, and a bin tap that got through is refused", () => {
+  const app = lists();
+  const list = app.listStore.create("Freezer", "stock");
+  app.listStore.change(list.id, (l) => app.Lists.addItem(l, { text: "Peas" }));
+  const peas = app.Lists.liveItems(app.listStore.get(list.id))[0].id;
+  app.listStore.change(list.id, (l) => app.Lists.setCount(l, peas, 0, app.listStore.deviceId));
+  app.app.setCanEdit(false);
+  app.openLists();
+  app.tapList(list.id);
+  assert.deepEqual(app.rows(), ["0 Peas"]);
+  assert.doesNotMatch(app.el("list-content").innerHTML, /data-li="bin"/);
+  app.tap({ li: "bin", id: peas });
+  assert.deepEqual(app.rows(), ["0 Peas"]);
 });
 
 test("J18.16 · an item with something nested under it is a heading, with no counter", () => {

@@ -2279,9 +2279,17 @@ button.crumb:hover {
   color: var(--accent);
 }
 
-.li-step:disabled {
-  opacity: 0.35;
-  cursor: default;
+/* At 0 the − is a bin, in the same colour as the steps beside it. */
+.li-bin {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* Sized by the step's own font, so it matches − and + at every width. */
+.li-bin-icon {
+  width: 0.9em;
+  height: 0.9em;
 }
 
 .li-step:focus-visible {
