@@ -1910,6 +1910,16 @@
     if (cold) openListsView();
   }
 
+  // A run-out item's − becomes a bin (J18.15): the place to take it off.
+  const BIN_ICON = `<svg class="li-bin-icon" viewBox="0 0 24 24" aria-hidden="true"
+      focusable="false" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"
+      stroke-linejoin="round"><path d="M4 7h16M9 7V4.5h6V7M6.5 7l1 12.5h9l1-12.5M10 11v5M14 11v5"/></svg>`;
+
+  // The bin appears under the finger the moment a − reaches 0, so a tap
+  // on it this soon after was meant for the − and is ignored.
+  const BIN_GRACE_MS = 600;
+  let reachedZero = null; // { id, at }
+
   function itemRowHTML(list, row, editable) {
     const item = row.item;
     const id = escapeHTML(item.id);
@@ -1934,8 +1944,13 @@
     if (row.counter !== null) {
       counter = editable
         ? `<span class="li-count" role="group" aria-label="How many ${said}">
-            <button type="button" class="li-step" data-li="down" data-id="${id}"
-                    aria-label="One fewer ${said}"${row.counter === 0 ? " disabled" : ""}>−</button>
+            ${
+              row.counter === 0
+                ? `<button type="button" class="li-step li-bin" data-li="bin" data-id="${id}"
+                    aria-label="Delete ${said}">${BIN_ICON}</button>`
+                : `<button type="button" class="li-step" data-li="down" data-id="${id}"
+                    aria-label="One fewer ${said}">−</button>`
+            }
             <span class="li-n">${row.counter}</span>
             <button type="button" class="li-step" data-li="up" data-id="${id}"
                     aria-label="One more ${said}">+</button>
@@ -2311,8 +2326,17 @@
       listStore.change(list.id, (l) => RecipeLists.setTicked(l, data.id, !item.ticked));
       renderList();
     } else if (action === "up" || action === "down") {
-      listStore.change(list.id, (l) => RecipeLists.bump(l, data.id, action === "up" ? 1 : -1, listStore.deviceId));
+      const after = listStore.change(list.id, (l) => RecipeLists.bump(l, data.id, action === "up" ? 1 : -1, listStore.deviceId));
+      const item = action === "down" && after && RecipeLists.liveItems(after).find((i) => i.id === data.id);
+      if (item && RecipeLists.count(item) === 0) reachedZero = { id: data.id, at: Date.now() };
       renderList();
+    } else if (action === "bin") {
+      if (reachedZero && reachedZero.id === data.id && Date.now() - reachedZero.at < BIN_GRACE_MS) return;
+      const item = RecipeLists.liveItems(list).find((i) => i.id === data.id);
+      if (!item) return;
+      const ids = RecipeLists.subtree(list, data.id);
+      deleteWithUndo(ids, deletedLabel(item, ids.length));
+      renderList(true);
     } else if (action === "add") {
       const newId = RecipeLists.newId();
       const after = listStore.change(list.id, (l) => RecipeLists.addItem(l, { id: newId }));
